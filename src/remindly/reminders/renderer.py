@@ -43,10 +43,19 @@ class ReminderRenderer:
 
     def render_delivery(self, reminder: Reminder, participants: list[Participant]) -> str:
         mention_text = self.render_participants(participants)
-        lines = [f"提醒：{html_escape(reminder.title)}"]
+        lines = [f"提醒：{html_escape(reminder.title)}", f"ID：{html_escape(reminder.short_id)}"]
         if mention_text:
             lines.extend(["", f"對象：{mention_text}"])
         return "\n".join(lines)
+
+    def render_snoozed(self, reminder: Reminder) -> str:
+        return "\n".join(
+            [
+                f"已延後提醒 {html_escape(reminder.short_id)}",
+                f"時間：{format_datetime(reminder.remind_at)}",
+                f"事項：{html_escape(reminder.title)}",
+            ]
+        )
 
     def render_grouped_list(self, groups: list[ReminderListGroup]) -> str:
         lines = ["未到期提醒（依建立者）："]
@@ -131,6 +140,29 @@ def reminder_list_keyboard(groups: list[ReminderListGroup]) -> dict[str, object]
                 ]
             )
     return {"inline_keyboard": rows}
+
+
+def delivery_snooze_keyboard(short_id: str) -> dict[str, object]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "10 分鐘後",
+                    "callback_data": reminder_callback("snooze", short_id, "10m"),
+                },
+                {
+                    "text": "1 小時後",
+                    "callback_data": reminder_callback("snooze", short_id, "1h"),
+                },
+            ],
+            [
+                {
+                    "text": "明天同時間",
+                    "callback_data": reminder_callback("snooze", short_id, "1d"),
+                }
+            ],
+        ]
+    }
 
 
 def reminder_actions_keyboard(short_id: str) -> dict[str, object]:

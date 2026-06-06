@@ -88,6 +88,17 @@ class ReminderRepository(ReminderDeliveryRepository, Protocol):
         """更新提醒時間；實作層需限制只有建立者可修改。"""
         ...
 
+    def snooze(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        remind_at: datetime,
+        now: datetime,
+    ) -> Reminder | None:
+        """把已送出的提醒延後，重新排回 pending 狀態。"""
+        ...
+
     def get_user_timezone(self, user_id: int, default_timezone: str) -> str:
         """取得使用者偏好時區；沒有設定時回傳系統預設時區。"""
         ...

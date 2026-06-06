@@ -99,6 +99,60 @@ class ReminderRepositoryTest(unittest.TestCase):
         self.assertEqual(1, len(first_claim))
         self.assertEqual([], second_claim)
 
+    def test_snooze_fired_reminder_requeues_pending(self) -> None:
+        reminder = self._reminder(remind_at=self.now - timedelta(minutes=1))
+        self.repository.create_reminder(reminder, [])
+        claimed = self.repository.claim_due(self.now)
+        self.repository.mark_fired(claimed[0].id, self.now)
+
+        snoozed = self.repository.snooze(
+            chat_id=100,
+            short_id="R-TEST",
+            actor_user_id=7,
+            remind_at=self.now + timedelta(minutes=10),
+            now=self.now,
+        )
+
+        self.assertIsNotNone(snoozed)
+        pending = self.repository.list_pending(chat_id=100)
+        self.assertEqual(1, len(pending))
+        self.assertEqual(self.now + timedelta(minutes=10), pending[0].remind_at)
+
+    def test_snooze_rejects_non_creator(self) -> None:
+        reminder = self._reminder(remind_at=self.now - timedelta(minutes=1))
+        self.repository.create_reminder(reminder, [])
+        claimed = self.repository.claim_due(self.now)
+        self.repository.mark_fired(claimed[0].id, self.now)
+
+        snoozed = self.repository.snooze(
+            chat_id=100,
+            short_id="R-TEST",
+            actor_user_id=999,
+            remind_at=self.now + timedelta(minutes=10),
+            now=self.now,
+        )
+
+        self.assertIsNone(snoozed)
+        self.assertEqual([], self.repository.list_pending(chat_id=100))
+
+    def test_mark_fired_does_not_override_snoozed_firing_reminder(self) -> None:
+        reminder = self._reminder(remind_at=self.now - timedelta(minutes=1))
+        self.repository.create_reminder(reminder, [])
+        claimed = self.repository.claim_due(self.now)
+
+        self.repository.snooze(
+            chat_id=100,
+            short_id="R-TEST",
+            actor_user_id=7,
+            remind_at=self.now + timedelta(minutes=10),
+            now=self.now,
+        )
+        self.repository.mark_fired(claimed[0].id, self.now)
+
+        pending = self.repository.list_pending(chat_id=100)
+        self.assertEqual(1, len(pending))
+        self.assertEqual(ReminderStatus.PENDING, pending[0].status)
+
     def _reminder(self, remind_at: datetime) -> Reminder:
         return Reminder(
             id="rmd_test",

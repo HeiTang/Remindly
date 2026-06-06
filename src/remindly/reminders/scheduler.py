@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from remindly.reminders.renderer import ReminderRenderer
+from remindly.reminders.renderer import ReminderRenderer, delivery_snooze_keyboard
 from remindly.reminders.repositories import ReminderDeliveryRepository
 from remindly.telegram.client import TelegramClient
 
@@ -47,6 +47,7 @@ class ReminderScheduler:
                     reminder.chat_id,
                     self._renderer.render_delivery(reminder, participants),
                     parse_mode="HTML",
+                    reply_markup=delivery_snooze_keyboard(reminder.short_id),
                 )
                 self._repository.mark_fired(reminder.id, now)
             except Exception:

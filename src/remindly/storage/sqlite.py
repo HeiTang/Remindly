@@ -269,15 +269,66 @@ class ReminderRepository:
                 """
                 update reminders
                 set status = ?, updated_at = ?, fired_at = coalesce(?, fired_at)
-                where id = ?
+                where id = ? and status = ?
                 """,
                 (
                     status.value,
                     now.isoformat(),
                     fired_at.isoformat() if fired_at else None,
                     reminder_id,
+                    ReminderStatus.FIRING.value,
                 ),
             )
+
+    def snooze(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        remind_at: datetime,
+        now: datetime,
+    ) -> Reminder | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                select * from reminders
+                where chat_id = ?
+                  and upper(short_id) = upper(?)
+                  and status in (?, ?)
+                limit 1
+                """,
+                (
+                    chat_id,
+                    short_id,
+                    ReminderStatus.FIRING.value,
+                    ReminderStatus.FIRED.value,
+                ),
+            ).fetchone()
+            if not row or int(row["creator_user_id"]) != actor_user_id:
+                return None
+
+            connection.execute(
+                """
+                update reminders
+                set status = ?, remind_at = ?, fired_at = null, updated_at = ?
+                where id = ? and status in (?, ?)
+                """,
+                (
+                    ReminderStatus.PENDING.value,
+                    remind_at.isoformat(),
+                    now.isoformat(),
+                    row["id"],
+                    ReminderStatus.FIRING.value,
+                    ReminderStatus.FIRED.value,
+                ),
+            )
+
+        return replace(
+            row_to_reminder(row),
+            status=ReminderStatus.PENDING,
+            remind_at=remind_at,
+            updated_at=now,
+        )
 
     def update_title(
         self,
