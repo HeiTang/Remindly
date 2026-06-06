@@ -1,0 +1,15 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Remindly</title>
+  <desc id="desc">Remindly brand banner for a reminder assistant.</desc>
+  <rect width="1200" height="320" rx="36" fill="#080A1F"/>
+  <path d="M82 54C82 36.3269 96.3269 22 114 22H1086C1103.67 22 1118 36.3269 1118 54V266C1118 283.673 1103.67 298 1086 298H114C96.3269 298 82 283.673 82 266V54Z" fill="#111338" stroke="#312E81" stroke-width="2"/>
+  <path d="M948 42C1039.13 42 1092 88.2746 1092 157.5C1092 226.725 1039.13 273 948 273C856.873 273 804 226.725 804 157.5C804 88.2746 856.873 42 948 42Z" fill="#4F46E5" fill-opacity="0.16"/>
+  <path d="M176 248C117.801 223.353 105.596 158.426 126.665 112.743C148.044 66.3883 209.164 38.6926 266.857 61.391C324.55 84.0894 350.201 141.663 334.212 194.292C318.224 246.92 259.776 280.171 204.617 263.968L168.758 278.493C161.755 281.33 154.909 274.053 158.169 267.237L176 248Z" fill="#F97316"/>
+  <path d="M189.54 232.018C144.586 211.734 134.918 161.084 151.233 125.548C167.785 89.4962 215.112 67.9429 259.714 85.589C304.316 103.235 324.119 148.029 311.748 188.962C299.377 229.895 254.179 255.755 211.536 243.131L185.014 253.65L198.12 229.096L189.54 232.018Z" fill="#080A1F" fill-opacity="0.88"/>
+  <rect x="194" y="139" width="34" height="52" rx="17" fill="#F97316"/>
+  <rect x="251" y="139" width="34" height="52" rx="17" fill="#F97316"/>
+  <path d="M285 72L302 107L340 115L312 140L319 178L285 159L251 178L258 140L230 115L268 107L285 72Z" fill="#818CF8"/>
+  <text x="405" y="184" fill="#F8FAFC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="112" font-weight="850">Remind</text>
+  <text x="804" y="184" fill="#F97316" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="112" font-weight="850">ly</text>
+  <text x="410" y="232" fill="#C7D2FE" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="27" font-weight="600">A tiny reminder assistant that nudges at the right time.</text>
+</svg>

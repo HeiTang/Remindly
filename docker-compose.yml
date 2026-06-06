@@ -1,0 +1,26 @@
+services:
+  remindly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: build
+    image: remindly:local
+    container_name: remindly
+    init: true
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env or Portainer stack env}
+      BOT_USERNAME: ${BOT_USERNAME:-}
+      DATABASE_PATH: /app/data/reminders.db
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Asia/Taipei}
+      POLL_TIMEOUT_SECONDS: ${POLL_TIMEOUT_SECONDS:-25}
+      SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-10}
+      DRAFT_TTL_MINUTES: ${DRAFT_TTL_MINUTES:-10}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - remindly-data:/app/data
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  remindly-data:
+    name: remindly-data

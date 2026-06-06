@@ -1,0 +1,185 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta
+
+from remindly.reminders.drafts import EditSession
+from remindly.reminders.models import MentionKind, Participant, ReminderDraft
+from remindly.storage.sqlite import ReminderRepository
+
+
+class SqliteDraftStore:
+    def __init__(self, ttl_minutes: int, repository: ReminderRepository) -> None:
+        self._ttl = timedelta(minutes=ttl_minutes)
+        self._repository = repository
+
+    def save(self, draft: ReminderDraft, now: datetime) -> ReminderDraft:
+        self.delete_for_context(draft.chat_id, draft.creator_user_id)
+        draft.expires_at = now + self._ttl
+        with self._repository.connect() as connection:
+            connection.execute(
+                """
+                insert into reminder_drafts (
+                    id, chat_id, chat_type, creator_user_id, timezone, source_text, title,
+                    remind_at, participants, missing_fields, parse_result, expires_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft.id,
+                    draft.chat_id,
+                    draft.chat_type,
+                    draft.creator_user_id,
+                    draft.timezone,
+                    draft.source_text,
+                    draft.title,
+                    draft.remind_at.isoformat() if draft.remind_at else None,
+                    json.dumps(
+                        [participant_to_dict(participant) for participant in draft.participants],
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(draft.missing_fields, ensure_ascii=False),
+                    json.dumps(draft.parse_result, ensure_ascii=False),
+                    draft.expires_at.isoformat() if draft.expires_at else None,
+                ),
+            )
+        return draft
+
+    def get_by_id(self, draft_id: str, now: datetime) -> ReminderDraft | None:
+        with self._repository.connect() as connection:
+            row = connection.execute(
+                "select * from reminder_drafts where id = ? limit 1",
+                (draft_id,),
+            ).fetchone()
+        draft = row_to_draft(row) if row else None
+        if not draft:
+            return None
+        if draft.expires_at and draft.expires_at <= now:
+            self.delete(draft_id)
+            return None
+        return draft
+
+    def get_for_context(self, chat_id: int, user_id: int, now: datetime) -> ReminderDraft | None:
+        with self._repository.connect() as connection:
+            row = connection.execute(
+                """
+                select * from reminder_drafts
+                where chat_id = ? and creator_user_id = ?
+                order by expires_at desc
+                limit 1
+                """,
+                (chat_id, user_id),
+            ).fetchone()
+        draft = row_to_draft(row) if row else None
+        if not draft:
+            return None
+        return self.get_by_id(draft.id, now)
+
+    def delete(self, draft_id: str) -> None:
+        with self._repository.connect() as connection:
+            connection.execute("delete from reminder_drafts where id = ?", (draft_id,))
+
+    def delete_for_context(self, chat_id: int, user_id: int) -> None:
+        with self._repository.connect() as connection:
+            connection.execute(
+                "delete from reminder_drafts where chat_id = ? and creator_user_id = ?",
+                (chat_id, user_id),
+            )
+
+
+class SqliteEditSessionStore:
+    def __init__(self, ttl_minutes: int, repository: ReminderRepository) -> None:
+        self._ttl = timedelta(minutes=ttl_minutes)
+        self._repository = repository
+
+    def save(self, session: EditSession, now: datetime) -> EditSession:
+        session.expires_at = now + self._ttl
+        with self._repository.connect() as connection:
+            connection.execute(
+                """
+                insert into edit_sessions (chat_id, user_id, short_id, field, expires_at)
+                values (?, ?, ?, ?, ?)
+                on conflict(chat_id, user_id) do update set
+                    short_id = excluded.short_id,
+                    field = excluded.field,
+                    expires_at = excluded.expires_at
+                """,
+                (
+                    session.chat_id,
+                    session.user_id,
+                    session.short_id,
+                    session.field,
+                    session.expires_at.isoformat() if session.expires_at else None,
+                ),
+            )
+        return session
+
+    def get_for_context(self, chat_id: int, user_id: int, now: datetime) -> EditSession | None:
+        with self._repository.connect() as connection:
+            row = connection.execute(
+                """
+                select * from edit_sessions
+                where chat_id = ? and user_id = ?
+                limit 1
+                """,
+                (chat_id, user_id),
+            ).fetchone()
+        session = row_to_edit_session(row) if row else None
+        if not session:
+            return None
+        if session.expires_at and session.expires_at <= now:
+            self.delete(chat_id, user_id)
+            return None
+        return session
+
+    def delete(self, chat_id: int, user_id: int) -> None:
+        with self._repository.connect() as connection:
+            connection.execute(
+                "delete from edit_sessions where chat_id = ? and user_id = ?",
+                (chat_id, user_id),
+            )
+
+
+def participant_to_dict(participant: Participant) -> dict[str, object]:
+    return {
+        "display_name": participant.display_name,
+        "mention_kind": participant.mention_kind.value,
+        "user_id": participant.user_id,
+        "username": participant.username,
+    }
+
+
+def participant_from_dict(data: dict[str, object]) -> Participant:
+    return Participant(
+        display_name=str(data["display_name"]),
+        mention_kind=MentionKind(str(data["mention_kind"])),
+        user_id=int(data["user_id"]) if data.get("user_id") is not None else None,
+        username=str(data["username"]) if data.get("username") is not None else None,
+    )
+
+
+def row_to_draft(row) -> ReminderDraft:
+    return ReminderDraft(
+        id=str(row["id"]),
+        chat_id=int(row["chat_id"]),
+        chat_type=str(row["chat_type"]),
+        creator_user_id=int(row["creator_user_id"]),
+        timezone=str(row["timezone"]),
+        source_text=str(row["source_text"]),
+        title=row["title"],
+        remind_at=datetime.fromisoformat(str(row["remind_at"])) if row["remind_at"] else None,
+        participants=[participant_from_dict(item) for item in json.loads(str(row["participants"]))],
+        missing_fields=list(json.loads(str(row["missing_fields"]))),
+        parse_result=dict(json.loads(str(row["parse_result"]))),
+        expires_at=datetime.fromisoformat(str(row["expires_at"])) if row["expires_at"] else None,
+    )
+
+
+def row_to_edit_session(row) -> EditSession:
+    return EditSession(
+        chat_id=int(row["chat_id"]),
+        user_id=int(row["user_id"]),
+        short_id=str(row["short_id"]),
+        field=str(row["field"]),
+        expires_at=datetime.fromisoformat(str(row["expires_at"])) if row["expires_at"] else None,
+    )

@@ -1,0 +1,13 @@
+.env
+.venv/
+data/*.db
+data/*.db-*
+__pycache__/
+*.py[cod]
+.DS_Store
+.ruff_cache/
+.pytest_cache/
+.uv-cache/
+dist/
+build/
+*.egg-info/
