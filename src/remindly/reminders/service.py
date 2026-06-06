@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from remindly.reminders.drafts import (
@@ -65,6 +65,18 @@ class EditPrompt:
 class EditResult:
     details: ReminderDetails
     message: str
+
+
+@dataclass(frozen=True)
+class SnoozeResult:
+    reminder: Reminder
+
+
+SNOOZE_DELAYS = {
+    "10m": timedelta(minutes=10),
+    "1h": timedelta(hours=1),
+    "1d": timedelta(days=1),
+}
 
 
 class ReminderService:
@@ -328,6 +340,31 @@ class ReminderService:
 
     def cancel_edit(self, chat_id: int, user_id: int) -> None:
         self._edit_store.delete(chat_id, user_id)
+
+    def snooze(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        delay_key: str,
+        now: datetime,
+    ) -> SnoozeResult | None:
+        """依固定延後選項重新排程已送出的提醒。"""
+        delay = SNOOZE_DELAYS.get(delay_key)
+        if delay is None:
+            return None
+
+        current = self._repository.get_by_short_id(chat_id, short_id)
+        if not current:
+            return None
+
+        if delay_key == "1d":
+            remind_at = current.remind_at + delay
+        else:
+            remind_at = now.astimezone(ZoneInfo(current.timezone)) + delay
+
+        reminder = self._repository.snooze(chat_id, short_id, actor_user_id, remind_at, now)
+        return SnoozeResult(reminder) if reminder else None
 
     def set_timezone(self, user_id: int, timezone: str) -> None:
         ZoneInfo(timezone)
