@@ -4,7 +4,7 @@ from datetime import datetime
 
 from remindly.reminders.callback_data import reminder_callback
 from remindly.reminders.models import MentionKind, Participant, Reminder, ReminderDraft
-from remindly.reminders.service import ReminderListGroup
+from remindly.reminders.service import ReminderListFilter, ReminderListGroup
 from remindly.reminders.text import html_escape
 
 
@@ -57,8 +57,16 @@ class ReminderRenderer:
             ]
         )
 
-    def render_grouped_list(self, groups: list[ReminderListGroup]) -> str:
-        lines = ["未到期提醒（依建立者）："]
+    def render_grouped_list(
+        self,
+        groups: list[ReminderListGroup],
+        list_filter: ReminderListFilter,
+    ) -> str:
+        lines = [f"未到期提醒（{list_filter_label(list_filter)}｜依建立者）："]
+        if not groups:
+            lines.extend(["", "目前沒有符合條件的提醒。"])
+            return "\n".join(lines)
+
         for group in groups:
             lines.extend(["", f"建立者：{html_escape(group.creator_label)}"])
             for reminder in group.reminders:
@@ -91,6 +99,21 @@ def truncate_button_text(value: str, limit: int = 42) -> str:
     return value if len(value) <= limit else f"{value[: limit - 1]}…"
 
 
+def list_filter_label(list_filter: ReminderListFilter) -> str:
+    labels = {
+        ReminderListFilter.ALL: "全部",
+        ReminderListFilter.TODAY: "今天",
+        ReminderListFilter.WEEK: "本週",
+        ReminderListFilter.MINE: "我的",
+    }
+    return labels[list_filter]
+
+
+def filter_button_text(list_filter: ReminderListFilter, active_filter: ReminderListFilter) -> str:
+    label = list_filter_label(list_filter)
+    return f"{label} ✓" if list_filter == active_filter else label
+
+
 def confirmation_keyboard(draft_id: str) -> dict[str, object]:
     return {
         "inline_keyboard": [
@@ -117,8 +140,11 @@ def quick_time_keyboard(draft_id: str) -> dict[str, object]:
     }
 
 
-def reminder_list_keyboard(groups: list[ReminderListGroup]) -> dict[str, object]:
-    rows: list[list[dict[str, str]]] = []
+def reminder_list_keyboard(
+    groups: list[ReminderListGroup],
+    active_filter: ReminderListFilter,
+) -> dict[str, object]:
+    rows: list[list[dict[str, str]]] = [list_filter_keyboard_row(active_filter)]
     for group in groups:
         rows.append(
             [
@@ -140,6 +166,21 @@ def reminder_list_keyboard(groups: list[ReminderListGroup]) -> dict[str, object]
                 ]
             )
     return {"inline_keyboard": rows}
+
+
+def list_filter_keyboard_row(active_filter: ReminderListFilter) -> list[dict[str, str]]:
+    return [
+        {
+            "text": filter_button_text(list_filter, active_filter),
+            "callback_data": reminder_callback("list", "_", list_filter.value),
+        }
+        for list_filter in (
+            ReminderListFilter.TODAY,
+            ReminderListFilter.WEEK,
+            ReminderListFilter.MINE,
+            ReminderListFilter.ALL,
+        )
+    ]
 
 
 def delivery_snooze_keyboard(short_id: str) -> dict[str, object]:

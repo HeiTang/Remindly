@@ -171,18 +171,22 @@ class BotRouterTest(unittest.TestCase):
             self.assertIn("已建立提醒", client.messages[-1].text)
 
             send_text(router, 4, "/list")
-            self.assertIn("未到期提醒", client.messages[-1].text)
+            self.assertIn("未到期提醒（全部", client.messages[-1].text)
+            self.assertIn("今天", button_labels(client.messages[-1].reply_markup))
 
-            click_button(router, 5, client.messages[-1], "R-")
+            click_button(router, 5, client.messages[-1], "我的")
+            self.assertIn("未到期提醒（我的", client.messages[-1].text)
+
+            click_button(router, 6, client.messages[-1], "R-")
             self.assertIn("提醒 R-", client.messages[-1].text)
 
-            click_button(router, 6, client.messages[-1], "修改內容")
-            send_text(router, 7, "倒回收")
+            click_button(router, 7, client.messages[-1], "修改內容")
+            send_text(router, 8, "倒回收")
             self.assertIn("已更新提醒內容。", client.messages[-1].text)
             self.assertIn("倒回收", client.messages[-1].text)
 
-            click_button(router, 8, client.messages[-1], "刪除")
-            click_button(router, 9, client.messages[-1], "確認刪除")
+            click_button(router, 9, client.messages[-1], "刪除")
+            click_button(router, 10, client.messages[-1], "確認刪除")
 
             self.assertIn("已刪除提醒", client.messages[-1].text)
             self.assertEqual([], repository.list_pending(CHAT.id))
@@ -247,6 +251,16 @@ def click_button(
         data=find_callback_data(message.reply_markup, label_contains),
     )
     router.handle_update(TelegramUpdate(id=update_id, callback_query=callback))
+
+
+def button_labels(reply_markup: dict[str, Any] | None) -> list[str]:
+    if not reply_markup:
+        return []
+    return [
+        str(button["text"])
+        for row in reply_markup.get("inline_keyboard", [])
+        for button in row
+    ]
 
 
 def find_callback_data(reply_markup: dict[str, Any] | None, label_contains: str) -> str:

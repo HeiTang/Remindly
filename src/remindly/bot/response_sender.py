@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from remindly.reminders.models import Reminder
 from remindly.reminders.renderer import (
@@ -18,6 +19,7 @@ from remindly.reminders.service import (
     DraftPrompt,
     EditPrompt,
     EditResult,
+    ReminderListFilter,
     ReminderService,
     SnoozeResult,
 )
@@ -43,20 +45,23 @@ class ResponseSender:
         chat_id: int,
         *,
         viewer_user_id: int | None,
+        now: datetime,
+        active_filter: ReminderListFilter = ReminderListFilter.ALL,
         edit_message_id: int | None = None,
     ) -> None:
         """取得未到期提醒，並用可點擊列表回覆或更新原 callback 訊息。"""
-        groups = self._reminder_service.list_pending_grouped(chat_id, viewer_user_id)
-        if not groups:
-            self.edit_or_send(chat_id, edit_message_id, "目前沒有未到期提醒。")
-            return
-
+        groups = self._reminder_service.list_pending_grouped(
+            chat_id,
+            viewer_user_id,
+            now,
+            active_filter,
+        )
         self.edit_or_send(
             chat_id,
             edit_message_id,
-            self._renderer.render_grouped_list(groups),
+            self._renderer.render_grouped_list(groups, active_filter),
             parse_mode="HTML",
-            reply_markup=reminder_list_keyboard(groups),
+            reply_markup=reminder_list_keyboard(groups, active_filter),
         )
 
     def show_reminder_detail(

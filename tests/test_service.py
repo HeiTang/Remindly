@@ -14,7 +14,7 @@ from remindly.reminders.models import (
     ReminderStatus,
 )
 from remindly.reminders.parser import ReminderParser
-from remindly.reminders.service import ReminderService
+from remindly.reminders.service import ReminderListFilter, ReminderService
 from remindly.storage.sqlite import ReminderRepository
 
 
@@ -60,13 +60,70 @@ class ReminderServiceListGroupingTest(unittest.TestCase):
             ],
         )
 
-        groups = self.service.list_pending_grouped(chat_id=100, viewer_user_id=7)
+        groups = self.service.list_pending_grouped(chat_id=100, viewer_user_id=7, now=self.now)
 
         self.assertEqual(["你", "@alice"], [group.creator_label for group in groups])
         self.assertEqual(
             [["R-0001"], ["R-0002"]],
             [[reminder.short_id for reminder in group.reminders] for group in groups],
         )
+
+    def test_list_filter_today(self) -> None:
+        self.repository.create_reminder(
+            self._reminder("rmd_1", "R-0001", creator_user_id=7, title="倒垃圾", hours=1),
+            [],
+        )
+        self.repository.create_reminder(
+            self._reminder("rmd_2", "R-0002", creator_user_id=8, title="明天開會", hours=24),
+            [],
+        )
+
+        groups = self.service.list_pending_grouped(
+            chat_id=100,
+            viewer_user_id=7,
+            now=self.now,
+            list_filter=ReminderListFilter.TODAY,
+        )
+
+        self.assertEqual([["R-0001"]], reminders_by_group(groups))
+
+    def test_list_filter_week_excludes_next_week(self) -> None:
+        self.repository.create_reminder(
+            self._reminder("rmd_1", "R-0001", creator_user_id=7, title="本週", hours=24),
+            [],
+        )
+        self.repository.create_reminder(
+            self._reminder("rmd_2", "R-0002", creator_user_id=7, title="下週", hours=24 * 7),
+            [],
+        )
+
+        groups = self.service.list_pending_grouped(
+            chat_id=100,
+            viewer_user_id=7,
+            now=self.now,
+            list_filter=ReminderListFilter.WEEK,
+        )
+
+        self.assertEqual([["R-0001"]], reminders_by_group(groups))
+
+    def test_list_filter_mine(self) -> None:
+        self.repository.create_reminder(
+            self._reminder("rmd_1", "R-0001", creator_user_id=7, title="我的", hours=1),
+            [],
+        )
+        self.repository.create_reminder(
+            self._reminder("rmd_2", "R-0002", creator_user_id=8, title="別人的", hours=2),
+            [],
+        )
+
+        groups = self.service.list_pending_grouped(
+            chat_id=100,
+            viewer_user_id=7,
+            now=self.now,
+            list_filter=ReminderListFilter.MINE,
+        )
+
+        self.assertEqual([["R-0001"]], reminders_by_group(groups))
 
     def _reminder(
         self,
@@ -92,6 +149,10 @@ class ReminderServiceListGroupingTest(unittest.TestCase):
             created_at=self.now,
             updated_at=self.now,
         )
+
+
+def reminders_by_group(groups):
+    return [[reminder.short_id for reminder in group.reminders] for group in groups]
 
 
 if __name__ == "__main__":

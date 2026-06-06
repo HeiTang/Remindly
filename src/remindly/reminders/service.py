@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 from zoneinfo import ZoneInfo
 
 from remindly.reminders.drafts import (
@@ -53,6 +54,13 @@ class ReminderListGroup:
     creator_user_id: int
     creator_label: str
     reminders: list[Reminder]
+
+
+class ReminderListFilter(StrEnum):
+    ALL = "all"
+    TODAY = "today"
+    WEEK = "week"
+    MINE = "mine"
 
 
 @dataclass(frozen=True)
@@ -238,9 +246,21 @@ class ReminderService:
         self,
         chat_id: int,
         viewer_user_id: int | None,
+        now: datetime,
+        list_filter: ReminderListFilter = ReminderListFilter.ALL,
     ) -> list[ReminderListGroup]:
         groups_by_creator: dict[int, ReminderListGroup] = {}
-        for reminder in self._repository.list_pending(chat_id):
+        viewer_zone = self._viewer_zone(viewer_user_id)
+        for reminder in self._repository.list_pending(chat_id, limit=50):
+            if not self._matches_list_filter(
+                reminder,
+                viewer_user_id,
+                now,
+                viewer_zone,
+                list_filter,
+            ):
+                continue
+
             group = groups_by_creator.get(reminder.creator_user_id)
             if group is None:
                 group = ReminderListGroup(
@@ -377,6 +397,34 @@ class ReminderService:
             details=ReminderDetails(reminder, self._repository.list_participants(reminder.id)),
             message=message,
         )
+
+    def _matches_list_filter(
+        self,
+        reminder: Reminder,
+        viewer_user_id: int | None,
+        now: datetime,
+        viewer_zone: ZoneInfo,
+        list_filter: ReminderListFilter,
+    ) -> bool:
+        if list_filter == ReminderListFilter.ALL:
+            return True
+
+        if list_filter == ReminderListFilter.MINE:
+            return viewer_user_id is not None and reminder.creator_user_id == viewer_user_id
+
+        viewer_today = now.astimezone(viewer_zone).date()
+        reminder_date = reminder.remind_at.astimezone(viewer_zone).date()
+        if list_filter == ReminderListFilter.TODAY:
+            return reminder_date == viewer_today
+
+        week_start = viewer_today - timedelta(days=viewer_today.weekday())
+        return week_start <= reminder_date < week_start + timedelta(days=7)
+
+    def _viewer_zone(self, viewer_user_id: int | None) -> ZoneInfo:
+        if viewer_user_id is None:
+            return ZoneInfo(self._default_timezone)
+
+        return ZoneInfo(self._repository.get_user_timezone(viewer_user_id, self._default_timezone))
 
     def _creator_label(self, reminder: Reminder, viewer_user_id: int | None) -> str:
         if viewer_user_id == reminder.creator_user_id:
