@@ -72,9 +72,7 @@ class BotRouter:
         if message.chat.type == "private":
             return "提醒" in text
 
-        if self._bot_username and message.text.strip().lower().startswith(
-            f"@{self._bot_username.lower()}"
-        ):
-            return True
-
-        return bool(message.reply_to_message and message.reply_to_message.from_user is None)
+        return bool(
+            self._bot_username
+            and message.text.strip().lower().startswith(f"@{self._bot_username.lower()}")
+        )

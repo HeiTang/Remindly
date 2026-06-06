@@ -78,6 +78,12 @@ Telegram Update
 明天下午三點提醒我和 @alice 倒垃圾
 ```
 
+### 群組使用
+
+群組請用 `/remind@你的BotUsername 明天下午三點提醒我倒垃圾` 或 `@你的BotUsername 提醒我明天倒垃圾` 建立提醒；bot 追問時直接輸入下一句即可。
+
+一般群組聊天不會被當成提醒，避免「提醒我...」這類對話誤觸 bot。
+
 ## 部署
 
 ### 環境變數
@@ -89,7 +95,7 @@ cp .env.example .env
 | 變數 | 必填 | 預設 | 說明 |
 | --- | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | 是 | 無 | Telegram Bot token。 |
-| `BOT_USERNAME` | 否 | 無 | Bot username，群組 mention 判斷用。 |
+| `BOT_USERNAME` | 否 | 無 | Bot username，群組 @bot 與 `/command@bot` 判斷用。 |
 | `DATABASE_PATH` | 否 | `data/reminders.db` | SQLite DB 路徑。 |
 | `DEFAULT_TIMEZONE` | 否 | `Asia/Taipei` | 預設時區。 |
 | `POLL_TIMEOUT_SECONDS` | 否 | `25` | Telegram long polling timeout。 |

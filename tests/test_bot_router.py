@@ -21,6 +21,7 @@ from remindly.telegram.models import (
 )
 
 CHAT = TelegramChat(id=100, type="private")
+GROUP_CHAT = TelegramChat(id=-100, type="group", title="Test Group")
 USER = TelegramUser(id=7, first_name="Orange", username="orange")
 
 
@@ -78,6 +79,37 @@ class FakeTelegramClient:
 
 
 class BotRouterTest(unittest.TestCase):
+    def test_group_plain_text_reminder_request_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我要洗衣服", chat=GROUP_CHAT)
+
+            self.assertEqual([], client.messages)
+
+    def test_group_bot_mention_starts_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "@ReminderBot 提醒我要洗衣服", chat=GROUP_CHAT)
+
+            self.assertIn("什麼時候提醒？", client.messages[-1].text)
+
+    def test_group_next_message_continues_draft(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "@ReminderBot 提醒我要洗衣服", chat=GROUP_CHAT)
+            send_text(router, 2, "明天下午三點", chat=GROUP_CHAT)
+
+            self.assertIn("確認建立提醒？", client.messages[-1].text)
+
     def test_create_list_edit_and_delete_flow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FakeTelegramClient()
@@ -135,10 +167,16 @@ def build_router(
     )
 
 
-def send_text(router: BotRouter, update_id: int, text: str) -> None:
+def send_text(
+    router: BotRouter,
+    update_id: int,
+    text: str,
+    *,
+    chat: TelegramChat = CHAT,
+) -> None:
     message = TelegramMessage(
         id=update_id,
-        chat=CHAT,
+        chat=chat,
         from_user=USER,
         text=text,
         entities=(),
