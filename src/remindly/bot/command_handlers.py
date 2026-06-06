@@ -97,9 +97,13 @@ class CommandHandlers:
 
     def _list(self, message: TelegramMessage, body: str, now: datetime) -> None:
         """列出目前聊天室的未到期提醒，並依建立者分組。"""
-        del body, now
+        del body
         viewer_user_id = message.from_user.id if message.from_user else None
-        self._responses.send_reminder_list(message.chat.id, viewer_user_id=viewer_user_id)
+        self._responses.send_reminder_list(
+            message.chat.id,
+            viewer_user_id=viewer_user_id,
+            now=now,
+        )
 
     def _cancel(self, message: TelegramMessage, body: str, now: datetime) -> None:
         """用提醒 short id 取消提醒，只允許建立者取消。"""

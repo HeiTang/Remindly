@@ -10,7 +10,7 @@ from remindly.reminders.callback_data import (
     CallbackDataError,
     parse_reminder_callback,
 )
-from remindly.reminders.service import ReminderService
+from remindly.reminders.service import ReminderListFilter, ReminderService
 from remindly.telegram.client import TelegramClient
 from remindly.telegram.models import TelegramCallbackQuery
 
@@ -90,6 +90,8 @@ class CallbackHandlers:
         self._responses.send_reminder_list(
             context.chat_id,
             viewer_user_id=context.callback.from_user.id,
+            now=context.now,
+            active_filter=parse_list_filter(context.data.value),
             edit_message_id=context.message_id,
         )
 
@@ -236,3 +238,13 @@ class CallbackHandlers:
 
         self._client.answer_callback_query(context.callback.id, "請輸入新值")
         self._responses.show_edit_prompt(context.chat_id, context.message_id, prompt)
+
+
+def parse_list_filter(value: str | None) -> ReminderListFilter:
+    if value is None:
+        return ReminderListFilter.ALL
+
+    try:
+        return ReminderListFilter(value)
+    except ValueError:
+        return ReminderListFilter.ALL
