@@ -7,7 +7,8 @@
   <a href="#技術">技術</a> ·
   <a href="#使用方式">使用方式</a> ·
   <a href="#部署">部署</a> ·
-  <a href="#開發">開發</a>
+  <a href="#開發">開發</a> ·
+  <a href="#版本紀錄">版本紀錄</a>
 </p>
 
 <p align="center">
@@ -180,3 +181,16 @@ Smoke test 會模擬：
 | `src/remindly/storage/` | SQLite repository、session stores、versioned migrations。 |
 | `src/remindly/telegram/` | Telegram Bot API client 與 DTO。 |
 | `src/remindly/app.py` | Composition root，組裝 dependencies 並啟動 polling/scheduler。 |
+
+### GitOps 流程
+
+```text
+main -> dev -> feature/<name> -> PR -> dev -> PR -> main
+```
+
+Feature branch 合併到 `dev` 必須開 PR；`dev` 驗證通過後再以 release PR 合併回 `main`。
+
+## 版本紀錄
+
+- [CHANGELOG.md](CHANGELOG.md)
+
