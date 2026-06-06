@@ -3,12 +3,15 @@ from __future__ import annotations
 import tempfile
 import unittest
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from remindly.bot.router import BotRouter
+from remindly.reminders.models import Reminder, ReminderStatus
 from remindly.reminders.parser import ReminderParser
-from remindly.reminders.renderer import ReminderRenderer
+from remindly.reminders.renderer import ReminderRenderer, delivery_snooze_keyboard
 from remindly.reminders.service import ReminderService
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
@@ -109,6 +112,46 @@ class BotRouterTest(unittest.TestCase):
             send_text(router, 2, "明天下午三點", chat=GROUP_CHAT)
 
             self.assertIn("確認建立提醒？", client.messages[-1].text)
+
+    def test_snooze_delivery_callback_requeues_reminder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+            now = datetime.now(ZoneInfo("Asia/Taipei"))
+            repository.create_reminder(
+                Reminder(
+                    id="rmd_snooze",
+                    short_id="R-SNZ1",
+                    chat_id=CHAT.id,
+                    chat_type=CHAT.type,
+                    creator_user_id=USER.id,
+                    title="洗衣服",
+                    remind_at=now - timedelta(minutes=1),
+                    timezone="Asia/Taipei",
+                    status=ReminderStatus.FIRED,
+                    source_text="提醒我要洗衣服",
+                    parse_result={},
+                    created_at=now - timedelta(minutes=5),
+                    updated_at=now,
+                ),
+                [],
+            )
+            delivery_message = SentMessage(
+                id=2000,
+                chat_id=CHAT.id,
+                text="提醒：洗衣服",
+                reply_markup=delivery_snooze_keyboard("R-SNZ1"),
+            )
+            client.messages.append(delivery_message)
+
+            click_button(router, 1, delivery_message, "10 分鐘後")
+
+            self.assertEqual("已延後", client.callback_answers[-1])
+            self.assertIn("已延後提醒 R-SNZ1", client.messages[-1].text)
+            pending = repository.list_pending(CHAT.id)
+            self.assertEqual(1, len(pending))
+            self.assertGreater(pending[0].remind_at, now)
 
     def test_create_list_edit_and_delete_flow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

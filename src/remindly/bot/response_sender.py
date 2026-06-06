@@ -19,6 +19,7 @@ from remindly.reminders.service import (
     EditPrompt,
     EditResult,
     ReminderService,
+    SnoozeResult,
 )
 from remindly.reminders.text import html_escape
 from remindly.telegram.client import TelegramApiError, TelegramClient
@@ -183,6 +184,20 @@ class ResponseSender:
         self._client.send_message(
             chat_id,
             self._renderer.render_created(reminder),
+            parse_mode="HTML",
+        )
+
+    def show_snooze_result(
+        self,
+        chat_id: int,
+        message_id: int | None,
+        result: SnoozeResult,
+    ) -> None:
+        """把到期提醒訊息更新成已延後狀態，避免同一組按鈕重複觸發。"""
+        self.edit_or_send(
+            chat_id,
+            message_id,
+            self._renderer.render_snoozed(result.reminder),
             parse_mode="HTML",
         )
 

@@ -48,6 +48,7 @@ class CallbackHandlers:
             "confirm": self._confirm,
             "discard": self._discard,
             "time": self._time,
+            "snooze": self._snooze,
         }
 
     def handle(self, callback: TelegramCallbackQuery, now: datetime) -> None:
@@ -199,6 +200,26 @@ class CallbackHandlers:
 
         self._client.answer_callback_query(context.callback.id, "已套用時間")
         self._responses.send_draft_result(context.chat_id, result)
+
+    def _snooze(self, context: CallbackContext) -> None:
+        """延後已送出的提醒，並把原到期訊息更新成延後結果。"""
+        if context.data.value is None:
+            self._client.answer_callback_query(context.callback.id, "未知操作。")
+            return
+
+        result = self._reminder_service.snooze(
+            context.chat_id,
+            context.data.target_id,
+            context.callback.from_user.id,
+            context.data.value,
+            context.now,
+        )
+        if not result:
+            self._client.answer_callback_query(context.callback.id, "找不到可延後的提醒")
+            return
+
+        self._client.answer_callback_query(context.callback.id, "已延後")
+        self._responses.show_snooze_result(context.chat_id, context.message_id, result)
 
     def _begin_edit(self, context: CallbackContext, field: str) -> None:
         """建立修改 session，讓下一則訊息可以安全地接續到指定欄位。"""
