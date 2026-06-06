@@ -45,7 +45,7 @@ TIME_RE = re.compile(
 )
 
 RELATIVE_RE = re.compile(
-    r"(?P<amount>\d+|[零〇一二兩两三四五六七八九十]{1,3})\s*"
+    r"(?P<amount>半|\d+|[零〇一二兩两三四五六七八九十]{1,3})\s*"
     r"(?P<unit>分鐘|分|小時|小时|個小時|个小时|天|日)\s*後"
 )
 
@@ -53,6 +53,30 @@ ABSOLUTE_RE = re.compile(
     r"(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})"
     r"(?:\s+(?P<hour>\d{1,2})[:：](?P<minute>\d{1,2}))?"
 )
+
+
+PART_OF_DAY_RE = re.compile(
+    r"(?P<day>今|明|後)?"
+    r"(?P<period>早上|早晨|早|上午|中午|下午|晚上|晚|今晚)"
+)
+
+WEEKDAY_RE = re.compile(
+    r"(?P<prefix>這|本|下)?"
+    r"(?:週|周|禮拜|礼拜|星期)"
+    r"(?P<weekday>[一二三四五六日天])"
+)
+
+DEFAULT_PERIOD_TIME = {
+    "早上": (8, 0),
+    "早晨": (8, 0),
+    "早": (8, 0),
+    "上午": (9, 0),
+    "中午": (12, 0),
+    "下午": (12, 0),
+    "晚上": (20, 0),
+    "晚": (20, 0),
+    "今晚": (20, 0),
+}
 
 
 @dataclass(frozen=True)
@@ -140,7 +164,7 @@ class ReminderParser:
     ) -> TimeParse:
         relative = RELATIVE_RE.search(text)
         if relative:
-            amount = parse_number(relative.group("amount"))
+            amount = parse_relative_amount(relative.group("amount"), relative.group("unit"))
             unit = relative.group("unit")
             delta = timedelta(minutes=amount)
             if "小時" in unit or "小时" in unit:
@@ -183,6 +207,10 @@ class ReminderParser:
                 is_past=remind_at <= now,
             )
 
+        part_of_day = self._parse_part_of_day(text, now, base_date, date_text)
+        if part_of_day:
+            return part_of_day
+
         if date_text and missing_time:
             return TimeParse(base_date, date_text, "day", missing_time=True)
 
@@ -198,14 +226,49 @@ class ReminderParser:
             matched = "今天" if "今天" in text else "今日"
             return now, matched, True
 
-        weekday = re.search(r"(下週|下周|下禮拜|下礼拜)(?P<weekday>[一二三四五六日天])", text)
+        weekday = WEEKDAY_RE.search(text)
         if weekday:
             target = WEEKDAY_MAP[weekday.group("weekday")]
-            days = (target - now.weekday()) % 7
-            days = days or 7
+            days = days_until_weekday(now.weekday(), target, weekday.group("prefix"))
             return now + timedelta(days=days), weekday.group(0), True
 
         return now, "", False
+
+    def _parse_part_of_day(
+        self,
+        text: str,
+        now: datetime,
+        base_date: datetime,
+        date_text: str,
+    ) -> TimeParse | None:
+        match = PART_OF_DAY_RE.search(text)
+        if not match:
+            return None
+
+        period_text = match.group("period")
+        joined_text = f"{date_text}{match.group(0)}"
+        consumed_text = joined_text if joined_text in text else normalize_spaces(
+            f"{date_text} {match.group(0)}"
+        )
+        if period_text == "今晚":
+            period_text = "晚上"
+            consumed_text = "今晚"
+
+        target_date = base_date
+        if match.group("day") == "明" and not date_text:
+            target_date = now + timedelta(days=1)
+        elif match.group("day") == "後" and not date_text:
+            target_date = now + timedelta(days=2)
+
+        hour, minute = DEFAULT_PERIOD_TIME[period_text]
+        remind_at = target_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if date_text and match.group("day") is None:
+            return TimeParse(remind_at, consumed_text, "period", missing_time=True)
+
+        if not date_text and match.group("day") is None and remind_at <= now:
+            remind_at += timedelta(days=1)
+
+        return TimeParse(remind_at, consumed_text, "period", is_past=remind_at <= now)
 
     def _parse_clock(self, match: re.Match[str]) -> tuple[int, int]:
         hour = parse_number(match.group("hour"))
@@ -260,8 +323,8 @@ class ReminderParser:
         title = RELATIVE_RE.sub(" ", title)
         title = ABSOLUTE_RE.sub(" ", title)
         title = TIME_RE.sub(" ", title)
-        title = re.sub(r"(今天|今日|明天|明日|後天)", " ", title)
-        title = re.sub(r"(下週|下周|下禮拜|下礼拜)[一二三四五六日天]", " ", title)
+        title = re.sub(r"(今天|今日|明天|明日|後天|今晚|明早|明晚|後早|後晚)", " ", title)
+        title = WEEKDAY_RE.sub(" ", title)
         title = re.sub(r"^@\w+\s*", " ", title)
         title = re.sub(r"@\w+", " ", title)
         title = re.sub(r"\b提醒(?:我|我們|大家)?\b", " ", title)
@@ -303,6 +366,19 @@ def dedupe_participants(participants: list[Participant]) -> list[Participant]:
         seen.add(key)
         deduped.append(participant)
     return deduped
+
+
+def parse_relative_amount(value: str, unit: str) -> float:
+    if value == "半":
+        return 30 if unit in {"分鐘", "分"} else 0.5
+    return parse_number(value)
+
+
+def days_until_weekday(current_weekday: int, target_weekday: int, prefix: str | None) -> int:
+    days = (target_weekday - current_weekday) % 7
+    if prefix in {"下"} or days == 0:
+        return days + 7
+    return days
 
 
 def parse_number(value: str) -> int:
