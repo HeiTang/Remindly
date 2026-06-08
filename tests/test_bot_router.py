@@ -132,15 +132,48 @@ class BotRouterTest(unittest.TestCase):
 
             self.assertEqual("這個設定只能在群組使用。", client.messages[-1].text)
 
-    def test_groupmode_status_shows_disabled_by_default(self) -> None:
+    def test_groupmode_status_shows_toggle_panel_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FakeTelegramClient()
             repository = ReminderRepository(Path(directory) / "test.db")
             router = build_router(client, repository)
 
-            send_text(router, 1, "/groupmode status", chat=GROUP_CHAT)
+            send_text(router, 1, "/groupmode", chat=GROUP_CHAT)
 
-            self.assertEqual("群組自然語言模式：關閉", client.messages[-1].text)
+            self.assertIn("群組自然語言模式：關閉", client.messages[-1].text)
+            self.assertIn("這個開關的意思", client.messages[-1].text)
+            self.assertIn("Group Privacy", client.messages[-1].text)
+            self.assertEqual(["開啟"], button_labels(client.messages[-1].reply_markup))
+
+    def test_groupmode_button_toggles_enabled_for_admin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(chat_member_statuses={USER.id: "administrator"})
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode", chat=GROUP_CHAT)
+            click_button(router, 2, client.messages[-1], "開啟")
+
+            self.assertEqual("已開啟", client.callback_answers[-1])
+            self.assertIn("群組自然語言模式：開啟", client.messages[-1].text)
+            self.assertEqual(["關閉"], button_labels(client.messages[-1].reply_markup))
+
+            send_text(router, 3, "提醒我要洗衣服", chat=GROUP_CHAT)
+
+            self.assertIn("什麼時候提醒？", client.messages[-1].text)
+
+    def test_groupmode_button_rejects_non_admin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(chat_member_statuses={USER.id: "member"})
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode", chat=GROUP_CHAT)
+            click_button(router, 2, client.messages[-1], "開啟")
+
+            self.assertEqual("只有群組管理員可以切換。", client.callback_answers[-1])
+            self.assertIn("群組自然語言模式：關閉", client.messages[-1].text)
+            self.assertEqual(["開啟"], button_labels(client.messages[-1].reply_markup))
 
     def test_groupmode_admin_enables_plain_text_reminders(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -151,8 +184,9 @@ class BotRouterTest(unittest.TestCase):
             send_text(router, 1, "/groupmode on", chat=GROUP_CHAT)
             send_text(router, 2, "提醒我要洗衣服", chat=GROUP_CHAT)
 
-            self.assertIn("已開啟群組自然語言模式。", client.messages[0].text)
+            self.assertIn("群組自然語言模式：開啟", client.messages[0].text)
             self.assertIn("Group Privacy", client.messages[0].text)
+            self.assertEqual(["關閉"], button_labels(client.messages[0].reply_markup))
             self.assertIn("什麼時候提醒？", client.messages[-1].text)
 
     def test_groupmode_off_disables_plain_text_reminders(self) -> None:
@@ -166,7 +200,8 @@ class BotRouterTest(unittest.TestCase):
             message_count = len(client.messages)
             send_text(router, 3, "提醒我要洗衣服", chat=GROUP_CHAT)
 
-            self.assertIn("已關閉群組自然語言模式。", client.messages[-1].text)
+            self.assertIn("群組自然語言模式：關閉", client.messages[-1].text)
+            self.assertEqual(["開啟"], button_labels(client.messages[-1].reply_markup))
             self.assertEqual(message_count, len(client.messages))
 
     def test_groupmode_rejects_non_admin(self) -> None:
@@ -332,9 +367,10 @@ def click_button(
     message: SentMessage,
     label_contains: str,
 ) -> None:
+    callback_chat = GROUP_CHAT if message.chat_id == GROUP_CHAT.id else CHAT
     callback_message = TelegramMessage(
         id=message.id,
-        chat=CHAT,
+        chat=callback_chat,
         from_user=None,
         text=message.text,
         entities=(),
