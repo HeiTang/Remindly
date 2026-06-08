@@ -1,4 +1,4 @@
-.PHONY: sync run lint test smoke check docker-up docker-logs docker-down
+.PHONY: sync run lint test smoke check docker-up docker-logs docker-down backup-db
 
 sync:
 	uv sync
@@ -25,3 +25,6 @@ docker-logs:
 
 docker-down:
 	docker compose down
+
+backup-db:
+	docker compose exec remindly python -c "import sqlite3; src=sqlite3.connect('/app/data/reminders.db'); dst=sqlite3.connect('/app/data/reminders.backup.db'); src.backup(dst); dst.close(); src.close()"
