@@ -160,9 +160,11 @@ class BotRouterTest(unittest.TestCase):
             router = build_router(client, repository)
 
             send_text(router, 1, "提醒我明天倒垃圾")
-            self.assertIn("那天幾點？", client.messages[-1].text)
+            quick_time_prompt = client.messages[-1]
+            self.assertIn("那天幾點？", quick_time_prompt.text)
 
-            click_button(router, 2, client.messages[-1], "09:00")
+            click_button(router, 2, quick_time_prompt, "09:00")
+            self.assertIn(quick_time_prompt.id, client.deleted_messages)
             confirmation_message = client.messages[-1]
             self.assertIn("確認建立提醒？", confirmation_message.text)
 

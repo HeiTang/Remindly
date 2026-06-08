@@ -77,12 +77,30 @@ class ReminderParserTest(unittest.TestCase):
         self.assertEqual("喝水", result.title)
         self.assertEqual((), result.missing_fields)
 
+    def test_parse_tonight_rolls_forward_when_default_time_has_passed(self) -> None:
+        late_now = datetime(2026, 6, 3, 21, 0, tzinfo=self.zone)
+
+        result = self.parser.parse("今晚提醒我洗衣服", self.message, late_now)
+
+        self.assertEqual(datetime(2026, 6, 4, 20, 0, tzinfo=self.zone), result.remind_at)
+        self.assertEqual("洗衣服", result.title)
+        self.assertEqual((), result.missing_fields)
+
     def test_parse_weekday_without_clock_requires_follow_up(self) -> None:
         result = self.parser.parse("週五下午提醒我開會", self.message, self.now)
 
-        self.assertEqual(datetime(2026, 6, 5, 12, 0, tzinfo=self.zone), result.remind_at)
+        self.assertEqual(datetime(2026, 6, 5, 15, 0, tzinfo=self.zone), result.remind_at)
         self.assertEqual("開會", result.title)
         self.assertEqual(("time",), result.missing_fields)
+
+    def test_parse_same_weekday_can_target_today(self) -> None:
+        friday_morning = datetime(2026, 6, 5, 9, 0, tzinfo=self.zone)
+
+        result = self.parser.parse("週五下午三點提醒我開會", self.message, friday_morning)
+
+        self.assertEqual(datetime(2026, 6, 5, 15, 0, tzinfo=self.zone), result.remind_at)
+        self.assertEqual("開會", result.title)
+        self.assertEqual((), result.missing_fields)
 
     def test_parse_chinese_number(self) -> None:
         self.assertEqual(9, parse_number("九"))
