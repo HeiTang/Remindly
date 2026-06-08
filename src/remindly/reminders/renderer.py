@@ -109,6 +109,21 @@ def list_filter_label(list_filter: ReminderListFilter) -> str:
     return labels[list_filter]
 
 
+def render_groupmode_panel(enabled: bool) -> str:
+    status = "開啟" if enabled else "關閉"
+    return "\n".join(
+        [
+            f"群組自然語言模式：{status}",
+            "",
+            "這個開關的意思：",
+            "開啟：群組一般文字如果像提醒，例如「提醒我明天倒垃圾」，Remindly 會嘗試建立提醒。",
+            "關閉：一般聊天會被忽略；仍可用 /remind 或 @bot 建立提醒。",
+            "",
+            "注意：若 BotFather Group Privacy 沒關，開啟後 bot 仍收不到一般群組訊息。",
+        ]
+    )
+
+
 def filter_button_text(list_filter: ReminderListFilter, active_filter: ReminderListFilter) -> str:
     label = list_filter_label(list_filter)
     return f"{label} ✓" if list_filter == active_filter else label
@@ -181,6 +196,21 @@ def list_filter_keyboard_row(active_filter: ReminderListFilter) -> list[dict[str
             ReminderListFilter.ALL,
         )
     ]
+
+
+def groupmode_keyboard(enabled: bool) -> dict[str, object]:
+    next_value = "off" if enabled else "on"
+    button_text = "關閉" if enabled else "開啟"
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": button_text,
+                    "callback_data": reminder_callback("groupmode", "_", next_value),
+                }
+            ]
+        ]
+    }
 
 
 def delivery_snooze_keyboard(short_id: str) -> dict[str, object]:

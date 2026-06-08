@@ -4,16 +4,14 @@ from collections.abc import Callable
 from datetime import datetime
 from zoneinfo import ZoneInfoNotFoundError
 
+from remindly.bot.groupmode import GROUP_CHAT_TYPES, GroupModeAuthorizer
 from remindly.bot.response_sender import ResponseSender
 from remindly.reminders.service import ReminderService
 from remindly.reminders.text import command_body, html_escape
-from remindly.telegram.client import TelegramApiError, TelegramClient
+from remindly.telegram.client import TelegramClient
 from remindly.telegram.models import TelegramMessage
 
 CommandHandler = Callable[[TelegramMessage, str, datetime], None]
-
-GROUP_CHAT_TYPES = {"group", "supergroup"}
-ADMIN_STATUSES = {"creator", "administrator"}
 
 
 class CommandHandlers:
@@ -29,6 +27,7 @@ class CommandHandlers:
         self._reminder_service = reminder_service
         self._responses = responses
         self._bot_username = bot_username
+        self._groupmode_authorizer = GroupModeAuthorizer(client)
         self._handlers: dict[str, CommandHandler] = {
             "start": self._start,
             "help": self._help,
@@ -168,7 +167,7 @@ class CommandHandlers:
 
         action = body.strip().lower() or "status"
         if action == "status":
-            self._send_groupmode_status(message.chat.id)
+            self._send_groupmode_panel(message.chat.id)
             return
 
         if action not in {"on", "off"}:
@@ -194,41 +193,13 @@ class CommandHandlers:
             actor.id,
             now,
         )
-        self._send_groupmode_changed(message.chat.id, enabled)
+        self._send_groupmode_panel(message.chat.id)
 
-    def _send_groupmode_status(self, chat_id: int) -> None:
-        """回覆目前群組自然語言模式狀態。"""
+    def _send_groupmode_panel(self, chat_id: int) -> None:
+        """回覆目前群組自然語言模式狀態與切換按鈕。"""
         enabled = self._reminder_service.is_group_natural_language_enabled(chat_id)
-        status = "開啟" if enabled else "關閉"
-        self._client.send_message(chat_id, f"群組自然語言模式：{status}")
-
-    def _send_groupmode_changed(self, chat_id: int, enabled: bool) -> None:
-        """切換完成後回覆狀態，開啟時提醒 Telegram privacy mode 限制。"""
-        if not enabled:
-            self._client.send_message(
-                chat_id,
-                "已關閉群組自然語言模式。群組仍可用 /remind 或 @bot 建立提醒。",
-            )
-            return
-
-        self._client.send_message(
-            chat_id,
-            "\n".join(
-                [
-                    "已開啟群組自然語言模式。",
-                    "現在群組裡可直接輸入「提醒我明天倒垃圾」。",
-                    "",
-                    "注意：若 BotFather Group Privacy 沒關，bot 仍收不到一般群組訊息；",
-                    "請到 @BotFather /setprivacy -> Disable，必要時重新加入群組。",
-                ]
-            ),
-        )
+        self._responses.show_groupmode_panel(chat_id, enabled)
 
     def _is_group_admin(self, chat_id: int, user_id: int) -> bool | None:
         """向 Telegram 查詢操作者是否為群組管理員；查詢失敗回傳 None。"""
-        try:
-            status = self._client.get_chat_member(chat_id, user_id)
-        except TelegramApiError:
-            return None
-
-        return status in ADMIN_STATUSES
+        return self._groupmode_authorizer.can_change_group_settings(chat_id, user_id)

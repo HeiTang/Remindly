@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
+from remindly.bot.groupmode import GROUP_CHAT_TYPES, GroupModeAuthorizer
 from remindly.bot.response_sender import ResponseSender
 from remindly.reminders.callback_data import (
     CallbackData,
@@ -36,6 +37,7 @@ class CallbackHandlers:
         self._client = client
         self._reminder_service = reminder_service
         self._responses = responses
+        self._groupmode_authorizer = GroupModeAuthorizer(client)
         self._handlers: dict[str, CallbackHandler] = {
             "noop": self._noop,
             "list": self._list,
@@ -49,6 +51,7 @@ class CallbackHandlers:
             "discard": self._discard,
             "time": self._time,
             "snooze": self._snooze,
+            "groupmode": self._groupmode,
         }
 
     def handle(self, callback: TelegramCallbackQuery, now: datetime) -> None:
@@ -225,6 +228,44 @@ class CallbackHandlers:
 
         self._client.answer_callback_query(context.callback.id, "已延後")
         self._responses.show_snooze_result(context.chat_id, context.message_id, result)
+
+    def _groupmode(self, context: CallbackContext) -> None:
+        """用 inline button 切換群組自然語言模式，並更新原狀態卡。"""
+        if context.callback.message and context.callback.message.chat.type not in GROUP_CHAT_TYPES:
+            self._client.answer_callback_query(context.callback.id, "這個設定只能在群組使用。")
+            return
+
+        if context.data.value not in {"on", "off"}:
+            self._client.answer_callback_query(context.callback.id, "未知操作。")
+            return
+
+        can_change = self._groupmode_authorizer.can_change_group_settings(
+            context.chat_id,
+            context.callback.from_user.id,
+        )
+        if can_change is None:
+            self._client.answer_callback_query(context.callback.id, "無法確認你的群組權限。")
+            return
+        if not can_change:
+            self._client.answer_callback_query(context.callback.id, "只有群組管理員可以切換。")
+            return
+
+        enabled = context.data.value == "on"
+        self._reminder_service.set_group_natural_language_enabled(
+            context.chat_id,
+            enabled,
+            context.callback.from_user.id,
+            context.now,
+        )
+        self._client.answer_callback_query(
+            context.callback.id,
+            "已開啟" if enabled else "已關閉",
+        )
+        self._responses.show_groupmode_panel(
+            context.chat_id,
+            enabled,
+            edit_message_id=context.message_id,
+        )
 
     def _begin_edit(self, context: CallbackContext, field: str) -> None:
         """建立修改 session，讓下一則訊息可以安全地接續到指定欄位。"""
