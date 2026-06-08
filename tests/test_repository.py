@@ -135,6 +135,17 @@ class ReminderRepositoryTest(unittest.TestCase):
         self.assertIsNone(snoozed)
         self.assertEqual([], self.repository.list_pending(chat_id=100))
 
+    def test_chat_natural_language_setting_defaults_to_disabled(self) -> None:
+        self.assertFalse(self.repository.is_chat_natural_language_enabled(100))
+
+        self.repository.set_chat_natural_language_enabled(100, True, 7, self.now)
+
+        self.assertTrue(self.repository.is_chat_natural_language_enabled(100))
+
+        self.repository.set_chat_natural_language_enabled(100, False, 7, self.now)
+
+        self.assertFalse(self.repository.is_chat_natural_language_enabled(100))
+
     def test_mark_fired_does_not_override_snoozed_firing_reminder(self) -> None:
         reminder = self._reminder(remind_at=self.now - timedelta(minutes=1))
         self.repository.create_reminder(reminder, [])

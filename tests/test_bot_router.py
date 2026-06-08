@@ -15,6 +15,7 @@ from remindly.reminders.renderer import ReminderRenderer, delivery_snooze_keyboa
 from remindly.reminders.service import ReminderService
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
+from remindly.telegram.client import TelegramApiError
 from remindly.telegram.models import (
     TelegramCallbackQuery,
     TelegramChat,
@@ -41,6 +42,8 @@ class FakeTelegramClient:
     messages: list[SentMessage] = field(default_factory=list)
     callback_answers: list[str | None] = field(default_factory=list)
     deleted_messages: list[int] = field(default_factory=list)
+    chat_member_statuses: dict[int, str] = field(default_factory=dict)
+    fail_chat_member_lookup: bool = False
     next_message_id: int = 1000
 
     def send_message(
@@ -80,6 +83,12 @@ class FakeTelegramClient:
         del callback_query_id
         self.callback_answers.append(text)
 
+    def get_chat_member(self, chat_id: int, user_id: int) -> str:
+        del chat_id
+        if self.fail_chat_member_lookup:
+            raise TelegramApiError("getChatMember", "forced failure")
+        return self.chat_member_statuses.get(user_id, "member")
+
 
 class BotRouterTest(unittest.TestCase):
     def test_group_plain_text_reminder_request_is_ignored(self) -> None:
@@ -112,6 +121,90 @@ class BotRouterTest(unittest.TestCase):
             send_text(router, 2, "明天下午三點", chat=GROUP_CHAT)
 
             self.assertIn("確認建立提醒？", client.messages[-1].text)
+
+    def test_groupmode_private_chat_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode status")
+
+            self.assertEqual("這個設定只能在群組使用。", client.messages[-1].text)
+
+    def test_groupmode_status_shows_disabled_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode status", chat=GROUP_CHAT)
+
+            self.assertEqual("群組自然語言模式：關閉", client.messages[-1].text)
+
+    def test_groupmode_admin_enables_plain_text_reminders(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(chat_member_statuses={USER.id: "administrator"})
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode on", chat=GROUP_CHAT)
+            send_text(router, 2, "提醒我要洗衣服", chat=GROUP_CHAT)
+
+            self.assertIn("已開啟群組自然語言模式。", client.messages[0].text)
+            self.assertIn("Group Privacy", client.messages[0].text)
+            self.assertIn("什麼時候提醒？", client.messages[-1].text)
+
+    def test_groupmode_off_disables_plain_text_reminders(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(chat_member_statuses={USER.id: "creator"})
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode on", chat=GROUP_CHAT)
+            send_text(router, 2, "/groupmode off", chat=GROUP_CHAT)
+            message_count = len(client.messages)
+            send_text(router, 3, "提醒我要洗衣服", chat=GROUP_CHAT)
+
+            self.assertIn("已關閉群組自然語言模式。", client.messages[-1].text)
+            self.assertEqual(message_count, len(client.messages))
+
+    def test_groupmode_rejects_non_admin(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(chat_member_statuses={USER.id: "member"})
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode on", chat=GROUP_CHAT)
+            message_count = len(client.messages)
+            send_text(router, 2, "提醒我要洗衣服", chat=GROUP_CHAT)
+
+            self.assertEqual("只有群組管理員可以切換自然語言模式。", client.messages[-1].text)
+            self.assertEqual(message_count, len(client.messages))
+
+    def test_groupmode_rejects_permission_lookup_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(fail_chat_member_lookup=True)
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode on", chat=GROUP_CHAT)
+
+            self.assertEqual("無法確認你的群組權限，先不變更設定。", client.messages[-1].text)
+
+    def test_group_plain_text_uses_strict_reminder_patterns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(chat_member_statuses={USER.id: "administrator"})
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "/groupmode on", chat=GROUP_CHAT)
+            message_count = len(client.messages)
+            send_text(router, 2, "你提醒我想到一件事", chat=GROUP_CHAT)
+            send_text(router, 3, "明天提醒我倒垃圾", chat=GROUP_CHAT)
+
+            self.assertEqual(message_count + 1, len(client.messages))
+            self.assertIn("那天幾點？", client.messages[-1].text)
 
     def test_snooze_delivery_callback_requeues_reminder(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

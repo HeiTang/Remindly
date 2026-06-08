@@ -23,10 +23,12 @@ class MigrationTest(unittest.TestCase):
                 rows = migration_rows(connection)
                 tables = table_names(connection)
 
-        self.assertEqual([(latest_schema_version(), "initial_schema")], rows)
+        self.assertEqual(expected_migration_rows(), rows)
+        self.assertEqual(2, latest_schema_version())
         self.assertIn("reminders", tables)
         self.assertIn("reminder_drafts", tables)
         self.assertIn("edit_sessions", tables)
+        self.assertIn("chat_settings", tables)
 
     def test_migrate_adopts_unversioned_existing_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -37,7 +39,11 @@ class MigrationTest(unittest.TestCase):
 
                 rows = migration_rows(connection)
 
-        self.assertEqual([(latest_schema_version(), "initial_schema")], rows)
+        self.assertEqual(expected_migration_rows(), rows)
+
+
+def expected_migration_rows() -> list[tuple[int, str]]:
+    return [(1, "initial_schema"), (2, "chat_settings")]
 
 
 def connect(database_path: Path) -> sqlite3.Connection:

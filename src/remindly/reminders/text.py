@@ -12,6 +12,32 @@ def normalize_spaces(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+REMINDER_LEADING_TIME_RE = re.compile(
+    r"^(?:"
+    r"今天|今日|明天|明日|後天|今晚|明早|明晚|後早|後晚|"
+    r"(?:這|本|下)?(?:週|周|禮拜|礼拜|星期)[一二三四五六日天]|"
+    r"(?:半|\d+|[零〇一二兩两三四五六七八九十]{1,3})\s*"
+    r"(?:分鐘|分|小時|小时|個小時|个小时|天|日)\s*後|"
+    r"\d{1,2}\s*(?:點|点|:|：)"
+    r")"
+)
+
+
+def looks_like_reminder_request(text: str) -> bool:
+    """用保守句型判斷群組一般訊息是否像提醒，降低閒聊誤觸。"""
+    normalized = normalize_spaces(text)
+    if "提醒" not in normalized:
+        return False
+
+    if normalized.startswith(("提醒我", "提醒我們", "提醒大家")):
+        return True
+
+    if re.search(r"提醒\s*@[A-Za-z0-9_]{5,32}\b", normalized):
+        return True
+
+    return bool(REMINDER_LEADING_TIME_RE.match(normalized))
+
+
 def strip_bot_mention(text: str, bot_username: str | None) -> str:
     if not bot_username:
         return text.strip()

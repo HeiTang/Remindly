@@ -9,6 +9,7 @@ Remindly 的重要變更會記錄在這裡。
 - 到期提醒訊息加入延後按鈕，可選 10 分鐘後、1 小時後或明天同時間。
 - `/list` 支援 inline filters：今天、本週、我的、全部。
 - 中文 deterministic parser 支援常見時間片語，例如 `今晚`、`明早`、`半小時後`、`週五下午`。
+- `/groupmode` 群組自然語言模式，允許管理員 opt-in 一般文字觸發提醒。
 
 ### Changed
 
