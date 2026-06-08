@@ -10,9 +10,11 @@ from remindly.reminders.renderer import (
     confirmation_keyboard,
     delete_confirmation_keyboard,
     edit_cancel_keyboard,
+    groupmode_keyboard,
     quick_time_keyboard,
     reminder_actions_keyboard,
     reminder_list_keyboard,
+    render_groupmode_panel,
 )
 from remindly.reminders.service import (
     Confirmation,
@@ -139,6 +141,21 @@ class ResponseSender:
             text,
             parse_mode="HTML",
             reply_markup=edit_cancel_keyboard(prompt.reminder.short_id),
+        )
+
+    def show_groupmode_panel(
+        self,
+        chat_id: int,
+        enabled: bool,
+        *,
+        edit_message_id: int | None = None,
+    ) -> None:
+        """顯示群組自然語言模式狀態、用途說明與切換按鈕。"""
+        self.edit_or_send(
+            chat_id,
+            edit_message_id,
+            render_groupmode_panel(enabled),
+            reply_markup=groupmode_keyboard(enabled),
         )
 
     def send_draft_result(self, chat_id: int, result: DraftPrompt | Confirmation) -> None:

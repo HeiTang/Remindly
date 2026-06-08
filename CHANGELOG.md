@@ -13,6 +13,7 @@ Remindly 的重要變更會記錄在這裡。
 
 ### Changed
 
+- `/groupmode` 無參數或 `status` 會顯示狀態說明卡與 inline 切換按鈕。
 - 群組建立提醒需要明確使用指令或 @bot；bot 追問後可直接輸入下一句回答。
 - 到期提醒訊息會顯示 reminder short ID，讓 callback 操作更容易追蹤。
 
