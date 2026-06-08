@@ -72,7 +72,7 @@ DEFAULT_PERIOD_TIME = {
     "早": (8, 0),
     "上午": (9, 0),
     "中午": (12, 0),
-    "下午": (12, 0),
+    "下午": (15, 0),
     "晚上": (20, 0),
     "晚": (20, 0),
     "今晚": (20, 0),
@@ -265,7 +265,8 @@ class ReminderParser:
         if date_text and match.group("day") is None:
             return TimeParse(remind_at, consumed_text, "period", missing_time=True)
 
-        if not date_text and match.group("day") is None and remind_at <= now:
+        # 像「今晚」這類沒有明確日期的片語，預設時間已過就往下一天滾。
+        if not date_text and remind_at <= now:
             remind_at += timedelta(days=1)
 
         return TimeParse(remind_at, consumed_text, "period", is_past=remind_at <= now)
@@ -375,9 +376,10 @@ def parse_relative_amount(value: str, unit: str) -> float:
 
 
 def days_until_weekday(current_weekday: int, target_weekday: int, prefix: str | None) -> int:
+    """計算目標星期距離今天幾天；未寫「下週」時允許指向今天。"""
     days = (target_weekday - current_weekday) % 7
-    if prefix in {"下"} or days == 0:
-        return days + 7
+    if prefix in {"下"}:
+        return days + 7 if days else 7
     return days
 
 

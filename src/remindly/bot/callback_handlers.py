@@ -201,6 +201,9 @@ class CallbackHandlers:
             return
 
         self._client.answer_callback_query(context.callback.id, "已套用時間")
+        # 使用者已選完快捷時間，原本的追問按鈕訊息就不需要留在聊天室。
+        if context.message_id is not None:
+            self._responses.delete_message_quietly(context.chat_id, context.message_id)
         self._responses.send_draft_result(context.chat_id, result)
 
     def _snooze(self, context: CallbackContext) -> None:
