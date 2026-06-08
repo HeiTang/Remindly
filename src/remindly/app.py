@@ -24,6 +24,7 @@ COMMANDS = [
     BotCommand("list", "列出提醒"),
     BotCommand("cancel", "取消提醒"),
     BotCommand("timezone", "設定時區"),
+    BotCommand("groupmode", "群組自然語言模式"),
 ]
 
 

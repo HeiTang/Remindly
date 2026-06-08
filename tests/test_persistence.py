@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -8,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from remindly.reminders.drafts import EditSession
 from remindly.reminders.models import MentionKind, Participant, ReminderDraft
+from remindly.storage.migrations import INITIAL_SCHEMA_SQL
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
 
@@ -71,6 +73,31 @@ class PersistenceTest(unittest.TestCase):
         self.repository.upsert_chat(100, "group", "Test Group", None, self.now)
 
         self.assertEqual("@orange", self.repository.get_user_display_name(7))
+
+    def test_existing_v1_database_migrates_chat_settings(self) -> None:
+        database_path = Path(self.temp_dir.name) / "v1.db"
+        with sqlite3.connect(database_path) as connection:
+            connection.executescript(INITIAL_SCHEMA_SQL)
+            connection.execute(
+                """
+                create table schema_migrations (
+                    version integer primary key,
+                    name text not null,
+                    applied_at text not null
+                )
+                """
+            )
+            connection.execute(
+                "insert into schema_migrations (version, name, applied_at) values (?, ?, ?)",
+                (1, "initial_schema", self.now.isoformat()),
+            )
+
+        repository = ReminderRepository(database_path)
+        repository.migrate()
+
+        self.assertFalse(repository.is_chat_natural_language_enabled(100))
+        repository.set_chat_natural_language_enabled(100, True, 7, self.now)
+        self.assertTrue(repository.is_chat_natural_language_enabled(100))
 
 
 if __name__ == "__main__":

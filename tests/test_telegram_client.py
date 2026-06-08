@@ -100,6 +100,16 @@ class TelegramClientRetryTest(unittest.TestCase):
         self.assertEqual([], sleeps)
         self.assertEqual(400, ctx.exception.error_code)
 
+    def test_get_chat_member_returns_status(self) -> None:
+        sleeps: list[float] = []
+        opener = FakeOpener([FakeResponse({"ok": True, "result": {"status": "administrator"}})])
+        client = self._client(opener, sleeps)
+
+        status = client.get_chat_member(-100, 7)
+
+        self.assertEqual("administrator", status)
+        self.assertEqual(1, opener.calls)
+
     def test_network_error_retries_without_leaking_token(self) -> None:
         sleeps: list[float] = []
         opener = FakeOpener(

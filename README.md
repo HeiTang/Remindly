@@ -33,6 +33,8 @@
 
 - 👥 **群組與多人提醒**：支援私聊與群組，到期時可 mention 相關使用者。
 
+- 🧭 **群組自然語言模式**：群組預設需用指令或 @bot；管理員可選擇開啟一般文字觸發。
+
 - ⏰ **到期延後提醒**：提醒送出後可一鍵延後 10 分鐘、1 小時或明天同時間。
 
 
@@ -70,6 +72,7 @@ Telegram Update
 | `/list` | 列出未到期提醒。 |
 | `/cancel R-8F3K` | 取消提醒。 |
 | `/timezone Asia/Taipei` | 設定時區。 |
+| `/groupmode on\|off\|status` | 查看或切換群組自然語言模式。 |
 
 ### 自然語言範例
 
@@ -87,9 +90,28 @@ Telegram Update
 
 ### 群組使用
 
-群組請用 `/remind@你的BotUsername 明天下午三點提醒我倒垃圾` 或 `@你的BotUsername 提醒我明天倒垃圾` 建立提醒；bot 追問時直接輸入下一句即可。
+群組預設請用 `/remind@你的BotUsername 明天下午三點提醒我倒垃圾` 或 `@你的BotUsername 提醒我明天倒垃圾` 建立提醒；bot 追問時直接輸入下一句即可。
 
-一般群組聊天不會被當成提醒，避免「提醒我...」這類對話誤觸 bot。
+一般群組聊天預設不會被當成提醒，避免「提醒我...」這類對話誤觸 bot。
+
+管理員可在群組開啟自然語言模式：
+
+```text
+/groupmode status
+/groupmode on
+/groupmode off
+```
+
+開啟後，群組才會接受較明確的提醒句型，例如：
+
+```text
+提醒我明天倒垃圾
+明天提醒我倒垃圾
+週五下午提醒我開會
+明天下午三點提醒 @alice 倒垃圾
+```
+
+若 BotFather 的 Group Privacy 沒關，bot 仍收不到一般群組訊息。請到 `@BotFather` 執行 `/setprivacy`，選擇 bot 後設為 `Disable`；若原本已在群組，必要時把 bot 移除後重新加入。
 
 ## 部署
 

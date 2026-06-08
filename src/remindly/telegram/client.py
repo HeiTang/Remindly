@@ -131,6 +131,13 @@ class TelegramClient:
             if isinstance(update, dict)
         ]
 
+    def get_chat_member(self, chat_id: int, user_id: int) -> str:
+        body = self.call("getChatMember", {"chat_id": chat_id, "user_id": user_id})
+        result = body.get("result")
+        if not isinstance(result, dict) or not isinstance(result.get("status"), str):
+            raise TelegramApiError("getChatMember", "Telegram API returned invalid chat member")
+        return str(result["status"])
+
     def send_message(
         self,
         chat_id: int,
