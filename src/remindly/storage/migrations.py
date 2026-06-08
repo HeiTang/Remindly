@@ -107,8 +107,19 @@ create index if not exists idx_edit_sessions_expires
     on edit_sessions(expires_at);
 """
 
+CHAT_SETTINGS_SQL = """
+create table if not exists chat_settings (
+    chat_id integer primary key,
+    natural_language_enabled integer not null default 0,
+    updated_by_user_id integer,
+    created_at text not null,
+    updated_at text not null
+);
+"""
+
 MIGRATIONS = (
     Migration(version=1, name="initial_schema", sql=INITIAL_SCHEMA_SQL),
+    Migration(version=2, name="chat_settings", sql=CHAT_SETTINGS_SQL),
 )
 
 

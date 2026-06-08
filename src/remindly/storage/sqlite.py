@@ -83,6 +83,36 @@ class ReminderRepository:
                 (chat_id, chat_type, title, username, now.isoformat()),
             )
 
+    def is_chat_natural_language_enabled(self, chat_id: int) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                "select natural_language_enabled from chat_settings where chat_id = ?",
+                (chat_id,),
+            ).fetchone()
+        return bool(row and int(row["natural_language_enabled"]) == 1)
+
+    def set_chat_natural_language_enabled(
+        self,
+        chat_id: int,
+        enabled: bool,
+        updated_by_user_id: int,
+        now: datetime,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                insert into chat_settings (
+                    chat_id, natural_language_enabled, updated_by_user_id, created_at, updated_at
+                )
+                values (?, ?, ?, ?, ?)
+                on conflict(chat_id) do update set
+                    natural_language_enabled = excluded.natural_language_enabled,
+                    updated_by_user_id = excluded.updated_by_user_id,
+                    updated_at = excluded.updated_at
+                """,
+                (chat_id, int(enabled), updated_by_user_id, now.isoformat(), now.isoformat()),
+            )
+
     def get_user_display_name(self, user_id: int) -> str | None:
         with self.connect() as connection:
             row = connection.execute(

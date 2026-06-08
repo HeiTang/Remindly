@@ -123,6 +123,25 @@ class ReminderService:
         if callback.message:
             self.record_message_context(callback.message, now)
 
+    def is_group_natural_language_enabled(self, chat_id: int) -> bool:
+        """確認群組是否允許一般文字直接觸發自然語言提醒。"""
+        return self._repository.is_chat_natural_language_enabled(chat_id)
+
+    def set_group_natural_language_enabled(
+        self,
+        chat_id: int,
+        enabled: bool,
+        updated_by_user_id: int,
+        now: datetime,
+    ) -> None:
+        """更新群組自然語言模式，由 command layer 先完成權限檢查。"""
+        self._repository.set_chat_natural_language_enabled(
+            chat_id,
+            enabled,
+            updated_by_user_id,
+            now,
+        )
+
     def begin_create(
         self,
         text: str,

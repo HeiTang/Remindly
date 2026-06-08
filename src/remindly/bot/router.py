@@ -8,7 +8,7 @@ from remindly.bot.command_handlers import CommandHandlers
 from remindly.bot.response_sender import ResponseSender
 from remindly.reminders.renderer import ReminderRenderer
 from remindly.reminders.service import ReminderService
-from remindly.reminders.text import strip_bot_mention
+from remindly.reminders.text import looks_like_reminder_request, strip_bot_mention
 from remindly.telegram.client import TelegramClient
 from remindly.telegram.models import TelegramMessage, TelegramUpdate
 
@@ -72,6 +72,16 @@ class BotRouter:
         if message.chat.type == "private":
             return "提醒" in text
 
+        if self._is_bot_mentioned(message):
+            return True
+
+        if not self._reminder_service.is_group_natural_language_enabled(message.chat.id):
+            return False
+
+        return looks_like_reminder_request(text)
+
+    def _is_bot_mentioned(self, message: TelegramMessage) -> bool:
+        """判斷群組訊息是否明確以 @bot 開頭呼叫 Remindly。"""
         return bool(
             self._bot_username
             and message.text.strip().lower().startswith(f"@{self._bot_username.lower()}")

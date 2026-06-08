@@ -46,6 +46,20 @@ class ReminderRepository(ReminderDeliveryRepository, Protocol):
         """保存或更新 Telegram chat context，讓提醒能回到原 chat。"""
         ...
 
+    def is_chat_natural_language_enabled(self, chat_id: int) -> bool:
+        """讀取群組自然語言模式；沒有設定時預設關閉。"""
+        ...
+
+    def set_chat_natural_language_enabled(
+        self,
+        chat_id: int,
+        enabled: bool,
+        updated_by_user_id: int,
+        now: datetime,
+    ) -> None:
+        """更新群組是否允許一般文字觸發自然語言提醒。"""
+        ...
+
     def get_user_display_name(self, user_id: int) -> str | None:
         """取得建立者顯示名稱，用於 /list 依建立者分組。"""
         ...
