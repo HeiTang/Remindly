@@ -12,6 +12,7 @@
 </p>
 
 <p align="center">
+  <img alt="CI" src="https://github.com/HeiTang/Remindly/actions/workflows/ci.yml/badge.svg" />
   <img alt="Python" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&logo=python&logoColor=white" />
   <img alt="uv" src="https://img.shields.io/badge/uv-ready-111827?style=flat-square" />
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-persistent-003B57?style=flat-square&logo=sqlite&logoColor=white" />
@@ -117,6 +118,16 @@ Telegram 的指令選單點選 `/groupmode` 時可能會直接送出，這是正
 
 ## 部署
 
+### 部署檢查清單
+
+1. 在 BotFather 建立 bot 並取得 `TELEGRAM_BOT_TOKEN`。
+2. 設定 `BOT_USERNAME`，群組中的 `/command@bot` 與 `@bot` 觸發會用到。
+3. 建立 `.env` 或在部署平台設定必要環境變數。
+4. 執行 `docker compose up -d --build`。
+5. 用 `docker compose logs -f remindly` 確認 long polling 和 scheduler 正常啟動。
+6. 群組若要免 `/remind` / `@bot`，到 BotFather 將 Group Privacy 設為 `Disable`，再於群組使用 `/groupmode` 開啟。
+7. 部署後先在私聊和目標群組各建立一筆測試提醒。
+
 ### 環境變數
 
 ```sh
@@ -150,6 +161,16 @@ docker compose up -d --build
 | 重新 build | `docker compose up -d --build` |
 
 SQLite 會存在 named volume `remindly-data`，container 內 DB 路徑固定為 `/app/data/reminders.db`。
+
+### SQLite 備份
+
+執行備份：
+
+```sh
+make backup-db
+```
+
+備份檔會寫到同一個 volume：`/app/data/reminders.backup.db`。這個 target 使用 Python 標準函式庫的 SQLite backup API，不需要在 image 裡額外安裝 `sqlite3` CLI。
 
 ## 開發
 
@@ -213,6 +234,14 @@ main -> dev -> feature/<name> -> PR -> dev -> PR -> main
 ```
 
 Feature branch 合併到 `dev` 必須開 PR；`dev` 驗證通過後再以 release PR 合併回 `main`。
+
+### Release Flow
+
+1. 更新 `pyproject.toml`、`src/remindly/__init__.py`、`uv.lock` 的版本號。
+2. 將 `CHANGELOG.md` 的 `Unreleased` 內容移到新版本區段。
+3. 跑 `make check`，確認 lint、unit tests、smoke flow 都通過。
+4. 依 GitOps 流程合併到 `main`。
+5. 在 `main` 建立 tag，例如 `v0.3.0`，再建立 GitHub Release。
 
 ## 版本紀錄
 
