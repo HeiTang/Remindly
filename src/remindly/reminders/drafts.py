@@ -70,9 +70,9 @@ class DraftStore:
 
     def save(self, draft: ReminderDraft, now: datetime) -> ReminderDraft:
         self.delete_for_context(draft.chat_id, draft.creator_user_id)
-        if draft.expires_at is None:
-            ttl = self._confirming_ttl if draft.is_complete else self._asking_ttl
-            draft.expires_at = now + ttl
+        # 每次 save 都刷新 TTL，同時支援 asking → confirming 的 TTL 升級。
+        ttl = self._confirming_ttl if draft.is_complete else self._asking_ttl
+        draft.expires_at = now + ttl
         self._drafts_by_id[draft.id] = draft
         self._draft_ids_by_context[(draft.chat_id, draft.creator_user_id)] = draft.id
         return draft
@@ -121,8 +121,8 @@ class EditSessionStore:
         self._sessions_by_context: dict[tuple[int, int], EditSession] = {}
 
     def save(self, session: EditSession, now: datetime) -> EditSession:
-        if session.expires_at is None:
-            session.expires_at = now + self._ttl
+        # 每次 save 刷新 TTL。
+        session.expires_at = now + self._ttl
         self._sessions_by_context[(session.chat_id, session.user_id)] = session
         return session
 

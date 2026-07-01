@@ -349,6 +349,25 @@ class BotRouterTest(unittest.TestCase):
             self.assertIn("已取消上一個未完成的提醒", b_message.text)
             self.assertIn("確認建立提醒？", b_message.text)
 
+    def test_message_without_from_user_is_ignored(self) -> None:
+        """匿名管理員 / sender_chat 沒有 from_user，session-based 流程應直接跳過而非 crash。"""
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            message = TelegramMessage(
+                id=42,
+                chat=CHAT,
+                from_user=None,
+                text="提醒我明天倒垃圾",
+                entities=(),
+            )
+            # 不應拋例外
+            router.handle_update(TelegramUpdate(id=42, message=message))
+
+            self.assertEqual([], client.messages)
+
     def test_answering_pending_draft_does_not_trigger_notice(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FakeTelegramClient()

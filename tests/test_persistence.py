@@ -109,6 +109,80 @@ class PersistenceTest(unittest.TestCase):
         self.assertIsNotNone(session)
         self.assertEqual(999, session.prompt_message_id)
 
+    def test_draft_save_refreshes_ttl_on_every_call(self) -> None:
+        store = SqliteDraftStore(ttl_minutes=10, repository=self.repository)
+        draft = ReminderDraft(
+            id="draft_refresh",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我",
+            title=None,
+            remind_at=None,
+            participants=[],
+            missing_fields=["title", "time"],
+            parse_result={},
+        )
+        store.save(draft, self.now)
+        first_expiry = draft.expires_at
+
+        later = self.now + timedelta(minutes=3)
+        store.save(draft, later)
+
+        self.assertEqual(later + timedelta(minutes=10), draft.expires_at)
+        self.assertNotEqual(first_expiry, draft.expires_at)
+
+    def test_draft_save_upgrades_ttl_when_transitioning_to_confirming(self) -> None:
+        store = SqliteDraftStore(
+            ttl_minutes=5,
+            repository=self.repository,
+            confirming_ttl_minutes=30,
+        )
+        draft = ReminderDraft(
+            id="draft_upgrade",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我",
+            title=None,
+            remind_at=None,
+            participants=[],
+            missing_fields=["title", "time"],
+            parse_result={},
+        )
+        store.save(draft, self.now)
+        self.assertEqual(self.now + timedelta(minutes=5), draft.expires_at)
+
+        # 使用者回完追問，draft 進入 confirming 狀態
+        draft.title = "倒垃圾"
+        draft.remind_at = self.now + timedelta(days=1)
+        draft.participants = [
+            Participant(
+                user_id=7,
+                username="orange",
+                display_name="@orange",
+                mention_kind=MentionKind.USERNAME,
+            )
+        ]
+        draft.missing_fields = []
+        store.save(draft, self.now)
+
+        self.assertEqual(self.now + timedelta(minutes=30), draft.expires_at)
+
+    def test_edit_session_save_refreshes_ttl_on_every_call(self) -> None:
+        store = SqliteEditSessionStore(ttl_minutes=10, repository=self.repository)
+        session = EditSession(chat_id=100, user_id=7, short_id="R-1", field="time")
+        store.save(session, self.now)
+        first_expiry = session.expires_at
+
+        later = self.now + timedelta(minutes=4)
+        store.save(session, later)
+
+        self.assertEqual(later + timedelta(minutes=10), session.expires_at)
+        self.assertNotEqual(first_expiry, session.expires_at)
+
     def test_draft_confirming_state_uses_longer_ttl(self) -> None:
         store = SqliteDraftStore(
             ttl_minutes=5,
@@ -170,22 +244,17 @@ class PersistenceTest(unittest.TestCase):
             participants=[],
             missing_fields=["title", "time"],
             parse_result={},
-            expires_at=self.now - timedelta(minutes=1),
         )
         draft_store.save(draft, self.now)
         edit_store.save(
-            EditSession(
-                chat_id=100,
-                user_id=7,
-                short_id="R-EXP",
-                field="time",
-                expires_at=self.now - timedelta(minutes=1),
-            ),
+            EditSession(chat_id=100, user_id=7, short_id="R-EXP", field="time"),
             self.now,
         )
 
-        expired_drafts = draft_store.list_expired(self.now)
-        expired_sessions = edit_store.list_expired(self.now)
+        # 快轉超過 TTL；save() 一律以當下 now 計算 expires_at。
+        later = self.now + timedelta(minutes=11)
+        expired_drafts = draft_store.list_expired(later)
+        expired_sessions = edit_store.list_expired(later)
 
         self.assertEqual(1, len(expired_drafts))
         self.assertEqual("draft_expired", expired_drafts[0].id)

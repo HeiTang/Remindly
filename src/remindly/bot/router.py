@@ -56,8 +56,13 @@ class BotRouter:
         if self._command_handlers.handle(message, text, now):
             return
 
+        # 匿名管理員 / sender_chat 沒有 from_user，session-based 流程無從綁定，直接跳過。
+        # Commands 已在上一步各自處理，這裡只影響 continue_edit / continue_draft / begin_create。
+        if message.from_user is None:
+            return
+
+        actor_id = message.from_user.id
         starts_new_reminder = self._should_treat_as_reminder(message, text)
-        actor_id = message.from_user.id if message.from_user else None
 
         if not starts_new_reminder:
             edit_result = self._reminder_service.continue_edit(message, now)
@@ -72,7 +77,7 @@ class BotRouter:
                 self._responses.send_draft_result(message.chat.id, draft_result)
                 return
 
-        if starts_new_reminder and actor_id is not None:
+        if starts_new_reminder:
             cancelled = self._reminder_service.clear_pending_conversation(
                 message.chat.id, actor_id
             )

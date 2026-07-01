@@ -24,8 +24,9 @@ class SqliteDraftStore:
 
     def save(self, draft: ReminderDraft, now: datetime) -> ReminderDraft:
         self.delete_for_context(draft.chat_id, draft.creator_user_id)
-        if draft.expires_at is None:
-            draft.expires_at = now + self._default_ttl(draft)
+        # 每次 save 都以當下時間重算 TTL，讓活躍對話不會因初始時戳而過期；
+        # 也讓 draft 從 asking 進入 confirming 時能升級到較長的 TTL。
+        draft.expires_at = now + self._default_ttl(draft)
         with self._repository.connect() as connection:
             connection.execute(
                 """
@@ -125,8 +126,8 @@ class SqliteEditSessionStore:
         self._repository = repository
 
     def save(self, session: EditSession, now: datetime) -> EditSession:
-        if session.expires_at is None:
-            session.expires_at = now + self._ttl
+        # 每次 save 刷新 TTL，避免修改流程中途因初始時戳而過期。
+        session.expires_at = now + self._ttl
         with self._repository.connect() as connection:
             connection.execute(
                 """
