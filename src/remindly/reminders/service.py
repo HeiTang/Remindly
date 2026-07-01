@@ -80,11 +80,24 @@ class SnoozeResult:
     reminder: Reminder
 
 
+@dataclass(frozen=True)
+class ExpiredPrompt:
+    """Sweep 掃出來的過期互動訊息，交給 scheduler 用 editMessageText 標記。"""
+    chat_id: int
+    message_id: int
+    text: str
+
+
 SNOOZE_DELAYS = {
     "10m": timedelta(minutes=10),
     "1h": timedelta(hours=1),
     "1d": timedelta(days=1),
 }
+
+EXPIRED_DRAFT_TEXT = "（已過期）未完成的提醒建立流程已取消。"
+EXPIRED_EDIT_TEXT = "（已過期）未完成的修改流程已取消。"
+CANCELLED_BY_NEW_DRAFT_TEXT = "（已取消）此提醒建立流程已被新的提醒取代。"
+CANCELLED_BY_NEW_EDIT_TEXT = "（已取消）此修改流程已被新的提醒取代。"
 
 
 class ReminderService:
@@ -251,6 +264,88 @@ class ReminderService:
             return False
         self._draft_store.delete(draft_id)
         return True
+
+    def peek_draft(
+        self, chat_id: int, user_id: int, now: datetime
+    ) -> ReminderDraft | None:
+        """純讀當前未完成 draft，不做任何合併或狀態改變。"""
+        return self._draft_store.get_for_context(chat_id, user_id, now)
+
+    def peek_edit_session(
+        self, chat_id: int, user_id: int, now: datetime
+    ) -> EditSession | None:
+        """純讀當前未完成 edit session，不做狀態改變。"""
+        return self._edit_store.get_for_context(chat_id, user_id, now)
+
+    def clear_pending_conversation(
+        self, chat_id: int, user_id: int
+    ) -> list[ExpiredPrompt]:
+        """建立新提醒前呼叫：清掉舊 draft/edit session。
+        回傳每個仍需 editMessage 標記的舊 prompt（含 prompt_message_id 的才會回傳）。"""
+        cancelled: list[ExpiredPrompt] = []
+        draft = self._draft_store.get_for_context(chat_id, user_id, self._min_datetime())
+        if draft:
+            if draft.prompt_message_id is not None:
+                cancelled.append(
+                    ExpiredPrompt(
+                        chat_id=draft.chat_id,
+                        message_id=draft.prompt_message_id,
+                        text=CANCELLED_BY_NEW_DRAFT_TEXT,
+                    )
+                )
+            self._draft_store.delete(draft.id)
+        # peek EditSession 是否存在 — 用 min 時間避開過期檢查
+        existing_edit = self._edit_store.get_for_context(chat_id, user_id, self._min_datetime())
+        if existing_edit:
+            if existing_edit.prompt_message_id is not None:
+                cancelled.append(
+                    ExpiredPrompt(
+                        chat_id=existing_edit.chat_id,
+                        message_id=existing_edit.prompt_message_id,
+                        text=CANCELLED_BY_NEW_EDIT_TEXT,
+                    )
+                )
+            self._edit_store.delete(chat_id, user_id)
+        return cancelled
+
+    def set_draft_prompt_message_id(self, draft_id: str, message_id: int) -> None:
+        """在 Telegram 送出追問/確認訊息後綁定 message_id，供 sweep 時 editMessage 用。"""
+        self._draft_store.set_prompt_message_id(draft_id, message_id)
+
+    def set_edit_prompt_message_id(
+        self, chat_id: int, user_id: int, message_id: int
+    ) -> None:
+        self._edit_store.set_prompt_message_id(chat_id, user_id, message_id)
+
+    def sweep_expired_prompts(self, now: datetime) -> list[ExpiredPrompt]:
+        """撈出所有過期的 draft/edit session，回傳給 scheduler 標記。
+        回傳後 store 內對應資料會被刪除。"""
+        expired: list[ExpiredPrompt] = []
+        for draft in self._draft_store.list_expired(now):
+            if draft.prompt_message_id is not None:
+                expired.append(
+                    ExpiredPrompt(
+                        chat_id=draft.chat_id,
+                        message_id=draft.prompt_message_id,
+                        text=EXPIRED_DRAFT_TEXT,
+                    )
+                )
+            self._draft_store.delete(draft.id)
+        for session in self._edit_store.list_expired(now):
+            if session.prompt_message_id is not None:
+                expired.append(
+                    ExpiredPrompt(
+                        chat_id=session.chat_id,
+                        message_id=session.prompt_message_id,
+                        text=EXPIRED_EDIT_TEXT,
+                    )
+                )
+            self._edit_store.delete(session.chat_id, session.user_id)
+        return expired
+
+    def _min_datetime(self) -> datetime:
+        """給 store 用的極小 datetime，避免因 TTL 過期而讀不到 pending 資料。"""
+        return datetime.min.replace(tzinfo=ZoneInfo(self._default_timezone))
 
     def get_details(self, chat_id: int, short_id: str) -> ReminderDetails | None:
         reminder = self._repository.get_by_short_id(chat_id, short_id)

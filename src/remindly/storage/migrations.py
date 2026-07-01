@@ -117,9 +117,15 @@ create table if not exists chat_settings (
 );
 """
 
+PROMPT_MESSAGE_ID_SQL = """
+alter table reminder_drafts add column prompt_message_id integer;
+alter table edit_sessions add column prompt_message_id integer;
+"""
+
 MIGRATIONS = (
     Migration(version=1, name="initial_schema", sql=INITIAL_SCHEMA_SQL),
     Migration(version=2, name="chat_settings", sql=CHAT_SETTINGS_SQL),
+    Migration(version=3, name="prompt_message_id", sql=PROMPT_MESSAGE_ID_SQL),
 )
 
 

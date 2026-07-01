@@ -21,6 +21,7 @@ from remindly.reminders.service import (
     DraftPrompt,
     EditPrompt,
     EditResult,
+    ExpiredPrompt,
     ReminderListFilter,
     ReminderService,
     SnoozeResult,
@@ -129,19 +130,24 @@ class ResponseSender:
         chat_id: int,
         message_id: int | None,
         prompt: EditPrompt,
+        *,
+        user_id: int | None = None,
     ) -> None:
-        """提示使用者輸入新值，並保留取消修改的 inline button。"""
+        """提示使用者輸入新值，並保留取消修改的 inline button。
+        送出後把 message_id 綁回 edit session，供 sweep 時 editMessage 用。"""
         text = (
             f"{prompt.question}\n\n"
             f"提醒：{html_escape(prompt.reminder.short_id)}｜{html_escape(prompt.reminder.title)}"
         )
-        self.edit_or_send(
+        sent_id = self.edit_or_send(
             chat_id,
             message_id,
             text,
             parse_mode="HTML",
             reply_markup=edit_cancel_keyboard(prompt.reminder.short_id),
         )
+        if sent_id is not None and user_id is not None:
+            self._reminder_service.set_edit_prompt_message_id(chat_id, user_id, sent_id)
 
     def show_groupmode_panel(
         self,
@@ -158,31 +164,51 @@ class ResponseSender:
             reply_markup=groupmode_keyboard(enabled),
         )
 
-    def send_draft_result(self, chat_id: int, result: DraftPrompt | Confirmation) -> None:
-        """依草稿狀態回覆追問問題，或送出建立前的確認卡。"""
+    def send_draft_result(
+        self,
+        chat_id: int,
+        result: DraftPrompt | Confirmation,
+        *,
+        notice: str | None = None,
+    ) -> None:
+        """依草稿狀態回覆追問問題，或送出建立前的確認卡。
+        `notice` 用來附加訊息前綴（例如覆蓋舊 draft 時的取消提示）。
+        送出後把 message_id 綁回 draft，供 sweep 過期時 editMessage 用。"""
         if isinstance(result, Confirmation):
-            self._client.send_message(
+            message_id = self._client.send_message(
                 chat_id,
-                self._renderer.render_confirmation(result.draft),
+                _prepend_notice(self._renderer.render_confirmation(result.draft), notice),
                 parse_mode="HTML",
                 reply_markup=confirmation_keyboard(result.draft.id),
             )
-            return
+        else:
+            message_id = self._client.send_message(
+                chat_id,
+                _prepend_notice(result.question, notice),
+                reply_markup=(
+                    quick_time_keyboard(result.draft.id) if result.wants_quick_time else None
+                ),
+            )
+        if message_id is not None:
+            self._reminder_service.set_draft_prompt_message_id(result.draft.id, message_id)
 
-        self._client.send_message(
-            chat_id,
-            result.question,
-            reply_markup=quick_time_keyboard(result.draft.id) if result.wants_quick_time else None,
-        )
-
-    def send_edit_result(self, chat_id: int, result: EditPrompt | EditResult) -> None:
-        """依修改流程狀態回覆下一次追問，或顯示更新後的提醒詳情。"""
+    def send_edit_result(
+        self,
+        chat_id: int,
+        result: EditPrompt | EditResult,
+        *,
+        user_id: int | None = None,
+    ) -> None:
+        """依修改流程狀態回覆下一次追問，或顯示更新後的提醒詳情。
+        當 result 為 EditPrompt 且已知 user_id 時，把 message_id 綁回 edit session。"""
         if isinstance(result, EditPrompt):
-            self._client.send_message(
+            message_id = self._client.send_message(
                 chat_id,
                 result.question,
                 reply_markup=edit_cancel_keyboard(result.reminder.short_id),
             )
+            if message_id is not None and user_id is not None:
+                self._reminder_service.set_edit_prompt_message_id(chat_id, user_id, message_id)
             return
 
         self._client.send_message(
@@ -252,16 +278,16 @@ class ResponseSender:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, object] | None = None,
-    ) -> None:
-        """優先編輯 callback 原訊息；編輯失敗時改送新訊息避免流程中斷。"""
+    ) -> int | None:
+        """優先編輯 callback 原訊息；編輯失敗時改送新訊息避免流程中斷。
+        回傳最終訊息的 message_id（新送或已編輯的），供 caller 綁定 session。"""
         if message_id is None:
-            self._client.send_message(
+            return self._client.send_message(
                 chat_id,
                 text,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
-            return
 
         try:
             self._client.edit_message_text(
@@ -271,14 +297,36 @@ class ResponseSender:
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
+            return message_id
         except TelegramApiError:
             LOGGER.exception("Failed to edit Telegram message; falling back to sendMessage")
-            self._client.send_message(
+            return self._client.send_message(
                 chat_id,
                 text,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
+
+    def dismiss_prompts(self, prompts: list[ExpiredPrompt]) -> int:
+        """把過期或被覆蓋的追問訊息 editMessage 標為已取消並清掉 inline 按鈕。
+        回傳成功 edit 的數量，讓 caller 決定是否需要 inline notice 作為後備。"""
+        succeeded = 0
+        for prompt in prompts:
+            try:
+                self._client.edit_message_text(
+                    prompt.chat_id,
+                    prompt.message_id,
+                    prompt.text,
+                    reply_markup={"inline_keyboard": []},
+                )
+                succeeded += 1
+            except TelegramApiError:
+                LOGGER.exception(
+                    "Failed to dismiss prompt %s in chat %s",
+                    prompt.message_id,
+                    prompt.chat_id,
+                )
+        return succeeded
 
     def delete_message_quietly(self, chat_id: int, message_id: int) -> None:
         """盡力刪除流程中的暫時訊息；失敗只記錄 log，不阻斷主流程。"""
@@ -286,3 +334,9 @@ class ResponseSender:
             self._client.delete_message(chat_id, message_id)
         except TelegramApiError:
             LOGGER.exception("Failed to delete Telegram message %s in chat %s", message_id, chat_id)
+
+
+def _prepend_notice(text: str, notice: str | None) -> str:
+    if not notice:
+        return text
+    return f"{notice}{text}"

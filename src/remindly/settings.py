@@ -15,6 +15,7 @@ class Settings:
     poll_timeout_seconds: int
     scheduler_interval_seconds: int
     draft_ttl_minutes: int
+    confirming_ttl_minutes: int
     log_level: str
 
     @property
@@ -52,5 +53,6 @@ def load_settings() -> Settings:
         poll_timeout_seconds=int(os.getenv("POLL_TIMEOUT_SECONDS", "25")),
         scheduler_interval_seconds=int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "10")),
         draft_ttl_minutes=int(os.getenv("DRAFT_TTL_MINUTES", "10")),
+        confirming_ttl_minutes=int(os.getenv("CONFIRMING_TTL_MINUTES", "15")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )

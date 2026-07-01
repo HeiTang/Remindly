@@ -24,7 +24,7 @@ class MigrationTest(unittest.TestCase):
                 tables = table_names(connection)
 
         self.assertEqual(expected_migration_rows(), rows)
-        self.assertEqual(2, latest_schema_version())
+        self.assertEqual(3, latest_schema_version())
         self.assertIn("reminders", tables)
         self.assertIn("reminder_drafts", tables)
         self.assertIn("edit_sessions", tables)
@@ -43,7 +43,11 @@ class MigrationTest(unittest.TestCase):
 
 
 def expected_migration_rows() -> list[tuple[int, str]]:
-    return [(1, "initial_schema"), (2, "chat_settings")]
+    return [
+        (1, "initial_schema"),
+        (2, "chat_settings"),
+        (3, "prompt_message_id"),
+    ]
 
 
 def connect(database_path: Path) -> sqlite3.Connection:

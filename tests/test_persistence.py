@@ -74,6 +74,124 @@ class PersistenceTest(unittest.TestCase):
 
         self.assertEqual("@orange", self.repository.get_user_display_name(7))
 
+    def test_draft_persists_prompt_message_id(self) -> None:
+        store = SqliteDraftStore(ttl_minutes=10, repository=self.repository)
+        draft = ReminderDraft(
+            id="draft_prompt",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我明天倒垃圾",
+            title="倒垃圾",
+            remind_at=self.now + timedelta(days=1),
+            participants=[],
+            missing_fields=["time"],
+            parse_result={},
+        )
+
+        store.save(draft, self.now)
+        store.set_prompt_message_id("draft_prompt", 4242)
+        reloaded_store = SqliteDraftStore(ttl_minutes=10, repository=self.repository)
+        reloaded = reloaded_store.get_by_id("draft_prompt", self.now)
+
+        self.assertIsNotNone(reloaded)
+        self.assertEqual(4242, reloaded.prompt_message_id)
+
+    def test_edit_session_persists_prompt_message_id(self) -> None:
+        store = SqliteEditSessionStore(ttl_minutes=10, repository=self.repository)
+        store.save(EditSession(chat_id=100, user_id=7, short_id="R-1", field="time"), self.now)
+        store.set_prompt_message_id(100, 7, 999)
+
+        reloaded_store = SqliteEditSessionStore(ttl_minutes=10, repository=self.repository)
+        session = reloaded_store.get_for_context(100, 7, self.now)
+
+        self.assertIsNotNone(session)
+        self.assertEqual(999, session.prompt_message_id)
+
+    def test_draft_confirming_state_uses_longer_ttl(self) -> None:
+        store = SqliteDraftStore(
+            ttl_minutes=5,
+            repository=self.repository,
+            confirming_ttl_minutes=30,
+        )
+        asking_draft = ReminderDraft(
+            id="draft_asking",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我",
+            title=None,
+            remind_at=None,
+            participants=[],
+            missing_fields=["title", "time"],
+            parse_result={},
+        )
+        confirming_draft = ReminderDraft(
+            id="draft_confirming",
+            chat_id=200,
+            chat_type="private",
+            creator_user_id=8,
+            timezone="Asia/Taipei",
+            source_text="提醒我明天下午三點倒垃圾",
+            title="倒垃圾",
+            remind_at=self.now + timedelta(days=1),
+            participants=[
+                Participant(
+                    user_id=8,
+                    username="orange2",
+                    display_name="@orange2",
+                    mention_kind=MentionKind.USERNAME,
+                )
+            ],
+            missing_fields=[],
+            parse_result={},
+        )
+
+        store.save(asking_draft, self.now)
+        store.save(confirming_draft, self.now)
+
+        self.assertEqual(self.now + timedelta(minutes=5), asking_draft.expires_at)
+        self.assertEqual(self.now + timedelta(minutes=30), confirming_draft.expires_at)
+
+    def test_list_expired_draft_and_session(self) -> None:
+        draft_store = SqliteDraftStore(ttl_minutes=10, repository=self.repository)
+        edit_store = SqliteEditSessionStore(ttl_minutes=10, repository=self.repository)
+        draft = ReminderDraft(
+            id="draft_expired",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我",
+            title=None,
+            remind_at=None,
+            participants=[],
+            missing_fields=["title", "time"],
+            parse_result={},
+            expires_at=self.now - timedelta(minutes=1),
+        )
+        draft_store.save(draft, self.now)
+        edit_store.save(
+            EditSession(
+                chat_id=100,
+                user_id=7,
+                short_id="R-EXP",
+                field="time",
+                expires_at=self.now - timedelta(minutes=1),
+            ),
+            self.now,
+        )
+
+        expired_drafts = draft_store.list_expired(self.now)
+        expired_sessions = edit_store.list_expired(self.now)
+
+        self.assertEqual(1, len(expired_drafts))
+        self.assertEqual("draft_expired", expired_drafts[0].id)
+        self.assertEqual(1, len(expired_sessions))
+        self.assertEqual("R-EXP", expired_sessions[0].short_id)
+
     def test_existing_v1_database_migrates_chat_settings(self) -> None:
         database_path = Path(self.temp_dir.name) / "v1.db"
         with sqlite3.connect(database_path) as connection:
