@@ -54,11 +54,16 @@ class ReminderScheduler:
         for reminder in due_reminders:
             try:
                 participants = self._repository.list_participants(reminder.id)
+                next_day_time_label = reminder.remind_at.astimezone(
+                    ZoneInfo(reminder.timezone)
+                ).strftime("%H:%M")
                 self._client.send_message(
                     reminder.chat_id,
                     self._renderer.render_delivery(reminder, participants),
                     parse_mode="HTML",
-                    reply_markup=delivery_snooze_keyboard(reminder.short_id),
+                    reply_markup=delivery_snooze_keyboard(
+                        reminder.short_id, next_day_time_label
+                    ),
                 )
                 self._repository.mark_fired(reminder.id, now)
             except Exception:

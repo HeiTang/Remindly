@@ -483,7 +483,12 @@ class ReminderService:
         delay_key: str,
         now: datetime,
     ) -> SnoozeResult | None:
-        """依固定延後選項重新排程已送出的提醒。"""
+        """依固定延後選項重新排程已送出的提醒。
+
+        `1d`（按鈕文字「明天 HH:MM」）：以『點的當下』為基準取隔天日期，
+        配上原提醒的 hour:minute。使用者無論何時點都會得到按鈕上寫的時間。
+        `10m` / `1h`：從 now 起算固定延遲。
+        """
         delay = SNOOZE_DELAYS.get(delay_key)
         if delay is None:
             return None
@@ -492,10 +497,14 @@ class ReminderService:
         if not current:
             return None
 
+        zone = ZoneInfo(current.timezone)
         if delay_key == "1d":
-            remind_at = current.remind_at + delay
+            reference = now.astimezone(zone)
+            original_time = current.remind_at.astimezone(zone).time()
+            tomorrow = reference.date() + timedelta(days=1)
+            remind_at = datetime.combine(tomorrow, original_time, tzinfo=zone)
         else:
-            remind_at = now.astimezone(ZoneInfo(current.timezone)) + delay
+            remind_at = now.astimezone(zone) + delay
 
         reminder = self._repository.snooze(chat_id, short_id, actor_user_id, remind_at, now)
         return SnoozeResult(reminder) if reminder else None

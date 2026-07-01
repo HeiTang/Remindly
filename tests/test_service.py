@@ -162,6 +162,123 @@ def reminders_by_group(groups):
     return [[reminder.short_id for reminder in group.reminders] for group in groups]
 
 
+class ReminderServiceSnoozeTest(unittest.TestCase):
+    """驗證 snooze 按鈕的三種延後語意。
+
+    `1d` 對應按鈕文字「明天 HH:MM」— 保留原提醒時段、日期用 now 的隔天，
+    避免「明天同時間」對『同時間』誰為基準的歧義。
+    """
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = ReminderRepository(Path(self.temp_dir.name) / "test.db")
+        self.repository.migrate()
+        self.zone = ZoneInfo("Asia/Taipei")
+        self.service = ReminderService(
+            repository=self.repository,
+            parser=ReminderParser("Asia/Taipei"),
+            draft_store=DraftStore(ttl_minutes=10),
+            edit_store=EditSessionStore(ttl_minutes=10),
+            default_timezone="Asia/Taipei",
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _persist_reminder(self, remind_at: datetime) -> Reminder:
+        reminder = Reminder(
+            id="rmd_snz",
+            short_id="R-SNZ1",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="吃藥",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.FIRED,
+            source_text="",
+            parse_result={},
+            created_at=remind_at - timedelta(minutes=5),
+            updated_at=remind_at,
+        )
+        self.repository.create_reminder(reminder, [])
+        return reminder
+
+    def test_snooze_1d_uses_tomorrow_date_and_original_time(self) -> None:
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 9, 5, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        self.assertIsNotNone(result)
+        # 明天 (6/4) 09:00 — 保留原時段
+        self.assertEqual(
+            datetime(2026, 6, 4, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1d_uses_click_date_when_reading_late_same_day(self) -> None:
+        """9:00 提醒，下午 3pm 才點『明天 09:00』→ 明天 09:00（不是今天下午）"""
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 15, 0, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        self.assertEqual(
+            datetime(2026, 6, 4, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1d_uses_click_date_when_reading_days_late(self) -> None:
+        """週日 9:00 錯過，週三下午才點『明天 09:00』→ 週四 09:00（不是週一）"""
+        self._persist_reminder(datetime(2026, 6, 7, 9, 0, tzinfo=self.zone))  # 週日
+        click_at = datetime(2026, 6, 10, 14, 0, tzinfo=self.zone)  # 週三下午
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        self.assertEqual(
+            datetime(2026, 6, 11, 9, 0, tzinfo=self.zone),  # 週四 09:00
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1d_uses_click_date_when_reading_before_original_time_of_day(
+        self,
+    ) -> None:
+        """週日 9:00 錯過，週三**上午 8am**（早於 9:00）才點『明天 09:00』→ 週四 09:00"""
+        self._persist_reminder(datetime(2026, 6, 7, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 10, 8, 0, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        # 不是週三 09:00（1 小時後那個選項才對），而是週四 09:00
+        self.assertEqual(
+            datetime(2026, 6, 11, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_10m_is_now_plus_delay(self) -> None:
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 9, 5, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "10m", click_at)
+
+        self.assertEqual(
+            click_at + timedelta(minutes=10),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1h_is_now_plus_delay(self) -> None:
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 9, 5, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1h", click_at)
+
+        self.assertEqual(
+            click_at + timedelta(hours=1),
+            result.reminder.remind_at,
+        )
+
+
 class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):
     """對 sweep_expired_prompts 做 service + SQLite store 的整合測試，
     scheduler 那邊用的 FakePromptSweeper 抓不到這條路徑上的 regression。"""

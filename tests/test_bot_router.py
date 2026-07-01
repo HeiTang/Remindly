@@ -274,7 +274,7 @@ class BotRouterTest(unittest.TestCase):
                 id=2000,
                 chat_id=CHAT.id,
                 text="提醒：洗衣服",
-                reply_markup=delivery_snooze_keyboard("R-SNZ1"),
+                reply_markup=delivery_snooze_keyboard("R-SNZ1", "23:59"),
             )
             client.messages.append(delivery_message)
 
@@ -282,6 +282,11 @@ class BotRouterTest(unittest.TestCase):
 
             self.assertEqual("已延後", client.callback_answers[-1])
             self.assertIn("已延後提醒 R-SNZ1", client.messages[-1].text)
+            # 延後後原按鈕組應被清空，避免使用者重複按累積延後
+            self.assertEqual(
+                {"inline_keyboard": []},
+                client.messages[-1].reply_markup,
+            )
             pending = repository.list_pending(CHAT.id)
             self.assertEqual(1, len(pending))
             self.assertGreater(pending[0].remind_at, now)
