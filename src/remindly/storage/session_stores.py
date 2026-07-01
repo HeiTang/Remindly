@@ -9,21 +9,33 @@ from remindly.storage.sqlite import ReminderRepository
 
 
 class SqliteDraftStore:
-    def __init__(self, ttl_minutes: int, repository: ReminderRepository) -> None:
-        self._ttl = timedelta(minutes=ttl_minutes)
+    def __init__(
+        self,
+        ttl_minutes: int,
+        repository: ReminderRepository,
+        *,
+        confirming_ttl_minutes: int | None = None,
+    ) -> None:
+        self._asking_ttl = timedelta(minutes=ttl_minutes)
+        self._confirming_ttl = timedelta(
+            minutes=confirming_ttl_minutes if confirming_ttl_minutes is not None else ttl_minutes
+        )
         self._repository = repository
 
     def save(self, draft: ReminderDraft, now: datetime) -> ReminderDraft:
         self.delete_for_context(draft.chat_id, draft.creator_user_id)
-        draft.expires_at = now + self._ttl
+        # 每次 save 都以當下時間重算 TTL，讓活躍對話不會因初始時戳而過期；
+        # 也讓 draft 從 asking 進入 confirming 時能升級到較長的 TTL。
+        draft.expires_at = now + self._default_ttl(draft)
         with self._repository.connect() as connection:
             connection.execute(
                 """
                 insert into reminder_drafts (
                     id, chat_id, chat_type, creator_user_id, timezone, source_text, title,
-                    remind_at, participants, missing_fields, parse_result, expires_at
+                    remind_at, participants, missing_fields, parse_result, expires_at,
+                    prompt_message_id
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     draft.id,
@@ -41,6 +53,7 @@ class SqliteDraftStore:
                     json.dumps(draft.missing_fields, ensure_ascii=False),
                     json.dumps(draft.parse_result, ensure_ascii=False),
                     draft.expires_at.isoformat() if draft.expires_at else None,
+                    draft.prompt_message_id,
                 ),
             )
         return draft
@@ -86,6 +99,26 @@ class SqliteDraftStore:
                 (chat_id, user_id),
             )
 
+    def set_prompt_message_id(self, draft_id: str, message_id: int) -> None:
+        with self._repository.connect() as connection:
+            connection.execute(
+                "update reminder_drafts set prompt_message_id = ? where id = ?",
+                (message_id, draft_id),
+            )
+
+    def list_expired(self, now: datetime) -> list[ReminderDraft]:
+        """撈出所有已過期但仍留在表裡的 draft，用於 scheduler sweep。"""
+        with self._repository.connect() as connection:
+            rows = connection.execute(
+                "select * from reminder_drafts where expires_at <= ?",
+                (now.isoformat(),),
+            ).fetchall()
+        return [row_to_draft(row) for row in rows]
+
+    def _default_ttl(self, draft: ReminderDraft) -> timedelta:
+        """依 draft 狀態決定 TTL：等使用者按按鈕的『確認』狀態給比較長時間。"""
+        return self._confirming_ttl if draft.is_complete else self._asking_ttl
+
 
 class SqliteEditSessionStore:
     def __init__(self, ttl_minutes: int, repository: ReminderRepository) -> None:
@@ -93,16 +126,20 @@ class SqliteEditSessionStore:
         self._repository = repository
 
     def save(self, session: EditSession, now: datetime) -> EditSession:
+        # 每次 save 刷新 TTL，避免修改流程中途因初始時戳而過期。
         session.expires_at = now + self._ttl
         with self._repository.connect() as connection:
             connection.execute(
                 """
-                insert into edit_sessions (chat_id, user_id, short_id, field, expires_at)
-                values (?, ?, ?, ?, ?)
+                insert into edit_sessions (
+                    chat_id, user_id, short_id, field, expires_at, prompt_message_id
+                )
+                values (?, ?, ?, ?, ?, ?)
                 on conflict(chat_id, user_id) do update set
                     short_id = excluded.short_id,
                     field = excluded.field,
-                    expires_at = excluded.expires_at
+                    expires_at = excluded.expires_at,
+                    prompt_message_id = excluded.prompt_message_id
                 """,
                 (
                     session.chat_id,
@@ -110,6 +147,7 @@ class SqliteEditSessionStore:
                     session.short_id,
                     session.field,
                     session.expires_at.isoformat() if session.expires_at else None,
+                    session.prompt_message_id,
                 ),
             )
         return session
@@ -138,6 +176,27 @@ class SqliteEditSessionStore:
                 "delete from edit_sessions where chat_id = ? and user_id = ?",
                 (chat_id, user_id),
             )
+
+    def set_prompt_message_id(
+        self, chat_id: int, user_id: int, message_id: int
+    ) -> None:
+        with self._repository.connect() as connection:
+            connection.execute(
+                """
+                update edit_sessions
+                set prompt_message_id = ?
+                where chat_id = ? and user_id = ?
+                """,
+                (message_id, chat_id, user_id),
+            )
+
+    def list_expired(self, now: datetime) -> list[EditSession]:
+        with self._repository.connect() as connection:
+            rows = connection.execute(
+                "select * from edit_sessions where expires_at <= ?",
+                (now.isoformat(),),
+            ).fetchall()
+        return [row_to_edit_session(row) for row in rows]
 
 
 def participant_to_dict(participant: Participant) -> dict[str, object]:
@@ -172,6 +231,7 @@ def row_to_draft(row) -> ReminderDraft:
         missing_fields=list(json.loads(str(row["missing_fields"]))),
         parse_result=dict(json.loads(str(row["parse_result"]))),
         expires_at=datetime.fromisoformat(str(row["expires_at"])) if row["expires_at"] else None,
+        prompt_message_id=_optional_int(row, "prompt_message_id"),
     )
 
 
@@ -182,4 +242,13 @@ def row_to_edit_session(row) -> EditSession:
         short_id=str(row["short_id"]),
         field=str(row["field"]),
         expires_at=datetime.fromisoformat(str(row["expires_at"])) if row["expires_at"] else None,
+        prompt_message_id=_optional_int(row, "prompt_message_id"),
     )
+
+
+def _optional_int(row, column: str) -> int | None:
+    keys = row.keys() if hasattr(row, "keys") else ()
+    if column not in keys:
+        return None
+    value = row[column]
+    return int(value) if value is not None else None

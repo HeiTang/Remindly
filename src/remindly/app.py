@@ -41,7 +41,11 @@ def main() -> None:
     client = TelegramClient(settings.token)
     renderer = ReminderRenderer()
     parser = ReminderParser(settings.default_timezone)
-    draft_store = SqliteDraftStore(settings.draft_ttl_minutes, repository)
+    draft_store = SqliteDraftStore(
+        settings.draft_ttl_minutes,
+        repository,
+        confirming_ttl_minutes=settings.confirming_ttl_minutes,
+    )
     edit_store = SqliteEditSessionStore(settings.draft_ttl_minutes, repository)
     reminder_service = ReminderService(
         repository=repository,
@@ -63,6 +67,7 @@ def main() -> None:
         renderer=renderer,
         timezone=settings.default_timezone,
         interval_seconds=settings.scheduler_interval_seconds,
+        prompt_sweeper=reminder_service,
     )
 
     client.delete_webhook()

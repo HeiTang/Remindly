@@ -46,26 +46,50 @@ class BotRouter:
             self._handle_message(update.message, now)
 
     def _handle_message(self, message: TelegramMessage, now: datetime) -> None:
-        """處理一般文字訊息：指令、修改流程、草稿追問、自然語言提醒。"""
+        """處理一般文字訊息：指令、修改流程、草稿追問、自然語言提醒。
+
+        使用者意圖比 session state 更權威：若新訊息本身像新的提醒，優先斬斷舊 draft/edit。
+        """
         text = strip_bot_mention(message.text, self._bot_username)
         self._reminder_service.record_message_context(message, now)
 
         if self._command_handlers.handle(message, text, now):
             return
 
-        edit_result = self._reminder_service.continue_edit(message, now)
-        if edit_result:
-            self._responses.send_edit_result(message.chat.id, edit_result)
+        # 匿名管理員 / sender_chat 沒有 from_user，session-based 流程無從綁定，直接跳過。
+        # Commands 已在上一步各自處理，這裡只影響 continue_edit / continue_draft / begin_create。
+        if message.from_user is None:
             return
 
-        draft_result = self._reminder_service.continue_draft(message, now)
-        if draft_result:
-            self._responses.send_draft_result(message.chat.id, draft_result)
-            return
+        actor_id = message.from_user.id
+        starts_new_reminder = self._should_treat_as_reminder(message, text)
 
-        if self._should_treat_as_reminder(message, text):
+        if not starts_new_reminder:
+            edit_result = self._reminder_service.continue_edit(message, now)
+            if edit_result:
+                self._responses.send_edit_result(
+                    message.chat.id, edit_result, user_id=actor_id
+                )
+                return
+
+            draft_result = self._reminder_service.continue_draft(message, now)
+            if draft_result:
+                self._responses.send_draft_result(message.chat.id, draft_result)
+                return
+
+        if starts_new_reminder:
+            cancelled = self._reminder_service.clear_pending_conversation(
+                message.chat.id, actor_id
+            )
+            edited = self._responses.dismiss_prompts(cancelled)
+            # 若清了但 editMessage 沒全部成功（例如原訊息已刪或超過 48h），退回附上 inline notice。
+            notice = (
+                "（已取消上一個未完成的提醒）\n"
+                if cancelled and edited < len(cancelled)
+                else None
+            )
             result = self._reminder_service.begin_create(text, message, now)
-            self._responses.send_draft_result(message.chat.id, result)
+            self._responses.send_draft_result(message.chat.id, result, notice=notice)
 
     def _should_treat_as_reminder(self, message: TelegramMessage, text: str) -> bool:
         """判斷非指令文字是否應進入建立提醒流程。"""
