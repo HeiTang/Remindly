@@ -196,6 +196,90 @@ class ReminderParserCarrefourVariantsTest(unittest.TestCase):
         self.assertIn("家樂福", result.title or "")
         self.assertEqual((), result.missing_fields)
 
+    def test_partial_minute_uses_current_hour(self) -> None:
+        """『19 分要起立』在 08:02 → 08:19。"""
+        result = self.parser.parse(
+            "提醒我 19 分要起立",
+            self.message,
+            datetime(2026, 7, 3, 8, 2, tzinfo=self.zone),
+        )
+        self.assertEqual(
+            datetime(2026, 7, 3, 8, 19, tzinfo=self.zone),
+            result.remind_at,
+        )
+        self.assertIn("起立", result.title or "")
+        self.assertEqual((), result.missing_fields)
+
+    def test_partial_minute_rolls_to_next_hour_when_past(self) -> None:
+        """『19 分』在 08:25 → 09:19（分鐘已過就滾到下一小時）。"""
+        result = self.parser.parse(
+            "提醒我 19 分要起立",
+            self.message,
+            datetime(2026, 7, 3, 8, 25, tzinfo=self.zone),
+        )
+        self.assertEqual(
+            datetime(2026, 7, 3, 9, 19, tzinfo=self.zone),
+            result.remind_at,
+        )
+
+    def test_partial_minute_does_not_match_full_minute_unit(self) -> None:
+        """『19 分鐘後』應走 RELATIVE 而非 PARTIAL_MINUTE（09:02 - 19 min 應為 09:21）。"""
+        result = self.parser.parse(
+            "提醒我 19 分鐘後要起立",
+            self.message,
+            datetime(2026, 7, 3, 8, 2, tzinfo=self.zone),
+        )
+        self.assertEqual(
+            datetime(2026, 7, 3, 8, 21, tzinfo=self.zone),
+            result.remind_at,
+        )
+
+    def test_relative_weeks(self) -> None:
+        result = self.parser.parse(
+            "提醒我 3 週後要起立",
+            self.message,
+            datetime(2026, 7, 3, 8, 2, tzinfo=self.zone),
+        )
+        self.assertEqual(
+            datetime(2026, 7, 24, 8, 2, tzinfo=self.zone),
+            result.remind_at,
+        )
+
+    def test_relative_star_qi_full_form(self) -> None:
+        result = self.parser.parse(
+            "提醒我 3 個星期後要起立",
+            self.message,
+            datetime(2026, 7, 3, 8, 2, tzinfo=self.zone),
+        )
+        self.assertEqual(
+            datetime(2026, 7, 24, 8, 2, tzinfo=self.zone),
+            result.remind_at,
+        )
+
+    def test_relative_months_uses_calendar_arithmetic(self) -> None:
+        """3 個月後：走 calendar 加減，不是 30 天近似。"""
+        result = self.parser.parse(
+            "提醒我 3 個月後要起立",
+            self.message,
+            datetime(2026, 7, 3, 8, 2, tzinfo=self.zone),
+        )
+        self.assertEqual(
+            datetime(2026, 10, 3, 8, 2, tzinfo=self.zone),
+            result.remind_at,
+        )
+
+    def test_relative_months_clamps_end_of_month(self) -> None:
+        """1/31 + 1 個月 → 2/28（clamp 到當月最後一天）。"""
+        result = self.parser.parse(
+            "提醒我 1 個月後要起立",
+            self.message,
+            datetime(2026, 1, 31, 8, 0, tzinfo=self.zone),
+        )
+        self.assertEqual(
+            datetime(2026, 2, 28, 8, 0, tzinfo=self.zone),
+            result.remind_at,
+        )
+
     def test_variant_9_multi_xia_weekday_needs_time(self) -> None:
         """今天 2026-07-01 週三，下下下下禮拜四 = 4 週後的週四 = 2026-07-30"""
         result = self.parser.parse("提醒我 下下下下禮拜四要去家樂福", self.message, self.now)

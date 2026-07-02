@@ -354,6 +354,36 @@ class BotRouterTest(unittest.TestCase):
             self.assertIn("已取消上一個未完成的提醒", b_message.text)
             self.assertIn("確認建立提醒？", b_message.text)
 
+    def test_sequential_new_reminders_get_distinct_confirmations(self) -> None:
+        """回歸測試 Q1：連續三次「提醒我 20:20 要 TESTn」，每則新確認卡應顯示對應的 TESTn，
+        且前一則的追問訊息應被 editMessage 標為已取消，避免舊行為（continue_draft 吃掉新訊息）。"""
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我 20:20 要 TEST1")
+            first_id = client.messages[-1].id
+            self.assertIn("要 TEST1", client.messages[-1].text)
+            self.assertIn("確認建立提醒？", client.messages[-1].text)
+
+            send_text(router, 2, "提醒我 20:20 要 TEST2")
+            second_id = client.messages[-1].id
+            self.assertNotEqual(first_id, second_id)
+            # 第一則應被就地標為已取消 + 清按鈕
+            first_msg = next(m for m in client.messages if m.id == first_id)
+            self.assertIn("已取消", first_msg.text)
+            self.assertEqual({"inline_keyboard": []}, first_msg.reply_markup)
+            # 第二則應顯示 TEST2，不是 TEST1
+            self.assertIn("要 TEST2", client.messages[-1].text)
+            self.assertNotIn("TEST1", client.messages[-1].text)
+
+            send_text(router, 3, "提醒我 20:20 要 TEST3")
+            second_msg = next(m for m in client.messages if m.id == second_id)
+            self.assertIn("已取消", second_msg.text)
+            self.assertIn("要 TEST3", client.messages[-1].text)
+            self.assertNotIn("TEST2", client.messages[-1].text)
+
     def test_message_without_from_user_is_ignored(self) -> None:
         """匿名管理員 / sender_chat 沒有 from_user，session-based 流程應直接跳過而非 crash。"""
         with tempfile.TemporaryDirectory() as directory:
