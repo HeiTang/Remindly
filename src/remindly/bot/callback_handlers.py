@@ -281,7 +281,12 @@ class CallbackHandlers:
             return
 
         self._client.answer_callback_query(context.callback.id, "請輸入新值")
-        self._responses.show_edit_prompt(context.chat_id, context.message_id, prompt)
+        self._responses.show_edit_prompt(
+            context.chat_id,
+            context.message_id,
+            prompt,
+            user_id=context.callback.from_user.id,
+        )
 
 
 def parse_list_filter(value: str | None) -> ReminderListFilter:

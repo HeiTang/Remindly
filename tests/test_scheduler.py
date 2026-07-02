@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from remindly.reminders.models import Participant, Reminder, ReminderStatus
 from remindly.reminders.renderer import ReminderRenderer
 from remindly.reminders.scheduler import ReminderScheduler
+from remindly.reminders.service import ExpiredPrompt
 
 
 @dataclass
@@ -19,8 +20,17 @@ class SentMessage:
 
 
 @dataclass
+class EditedMessage:
+    chat_id: int
+    message_id: int
+    text: str
+    reply_markup: dict[str, Any] | None
+
+
+@dataclass
 class FakeTelegramClient:
     messages: list[SentMessage] = field(default_factory=list)
+    edits: list[EditedMessage] = field(default_factory=list)
 
     def send_message(
         self,
@@ -29,9 +39,33 @@ class FakeTelegramClient:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         del parse_mode
         self.messages.append(SentMessage(chat_id, text, reply_markup))
+        return len(self.messages)
+
+    def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> int:
+        del parse_mode
+        self.edits.append(EditedMessage(chat_id, message_id, text, reply_markup))
+        return message_id
+
+
+class FakePromptSweeper:
+    def __init__(self, prompts: list[ExpiredPrompt]) -> None:
+        self._prompts = prompts
+        self.calls: list[datetime] = []
+
+    def sweep_expired_prompts(self, now: datetime) -> list[ExpiredPrompt]:
+        self.calls.append(now)
+        return list(self._prompts)
 
 
 class FakeDeliveryRepository:
@@ -57,7 +91,10 @@ class FakeDeliveryRepository:
 
 class ReminderSchedulerTest(unittest.TestCase):
     def test_delivery_message_contains_snooze_buttons(self) -> None:
-        now = datetime.now(ZoneInfo("Asia/Taipei"))
+        zone = ZoneInfo("Asia/Taipei")
+        # 用固定原提醒時間，讓「明天 HH:MM」按鈕文字可以精確斷言
+        remind_at = datetime(2026, 6, 3, 9, 0, tzinfo=zone)
+        now = remind_at - timedelta(minutes=1)
         reminder = Reminder(
             id="rmd_due",
             short_id="R-DUE1",
@@ -65,7 +102,7 @@ class ReminderSchedulerTest(unittest.TestCase):
             chat_type="private",
             creator_user_id=7,
             title="洗衣服",
-            remind_at=now - timedelta(minutes=1),
+            remind_at=remind_at,
             timezone="Asia/Taipei",
             status=ReminderStatus.FIRING,
             source_text="提醒我要洗衣服",
@@ -92,7 +129,56 @@ class ReminderSchedulerTest(unittest.TestCase):
             for row in client.messages[0].reply_markup["inline_keyboard"]
             for button in row
         ]
-        self.assertEqual(["10 分鐘後", "1 小時後", "明天同時間"], labels)
+        self.assertEqual(["10 分鐘後", "1 小時後", "明天 09:00"], labels)
+
+
+    def test_tick_marks_expired_prompts_with_empty_keyboard(self) -> None:
+        now = datetime.now(ZoneInfo("Asia/Taipei"))
+        reminder = Reminder(
+            id="rmd_none",
+            short_id="R-NONE",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="洗衣服",
+            remind_at=now + timedelta(hours=1),
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=now,
+            updated_at=now,
+        )
+
+        class NoDueRepo(FakeDeliveryRepository):
+            def claim_due(self, now: datetime, limit: int = 20) -> list[Reminder]:
+                del now, limit
+                return []
+
+        repository = NoDueRepo(reminder)
+        client = FakeTelegramClient()
+        sweeper = FakePromptSweeper(
+            [
+                ExpiredPrompt(chat_id=100, message_id=555, text="（已過期）流程取消"),
+                ExpiredPrompt(chat_id=200, message_id=777, text="（已過期）edit 取消"),
+            ]
+        )
+        scheduler = ReminderScheduler(
+            repository=repository,  # type: ignore[arg-type]
+            client=client,  # type: ignore[arg-type]
+            renderer=ReminderRenderer(),
+            timezone="Asia/Taipei",
+            interval_seconds=10,
+            prompt_sweeper=sweeper,
+        )
+
+        scheduler.tick()
+
+        self.assertEqual(1, len(sweeper.calls))
+        self.assertEqual(2, len(client.edits))
+        self.assertEqual(555, client.edits[0].message_id)
+        self.assertIn("已過期", client.edits[0].text)
+        self.assertEqual({"inline_keyboard": []}, client.edits[0].reply_markup)
 
 
 if __name__ == "__main__":

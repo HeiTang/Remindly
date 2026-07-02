@@ -48,10 +48,12 @@ class FakeTelegramClient:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         del parse_mode
-        self.messages.append(SentMessage(self.next_message_id, chat_id, text, reply_markup))
+        message_id = self.next_message_id
+        self.messages.append(SentMessage(message_id, chat_id, text, reply_markup))
         self.next_message_id += 1
+        return message_id
 
     def edit_message_text(
         self,
@@ -61,13 +63,13 @@ class FakeTelegramClient:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         del parse_mode
         for index, message in enumerate(self.messages):
             if message.id == message_id:
                 self.messages[index] = SentMessage(message_id, message.chat_id, text, reply_markup)
-                return
-        self.send_message(chat_id, text, reply_markup=reply_markup)
+                return message_id
+        return self.send_message(chat_id, text, reply_markup=reply_markup)
 
     def delete_message(self, chat_id: int, message_id: int) -> None:
         del chat_id

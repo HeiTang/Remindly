@@ -46,12 +46,29 @@ TIME_RE = re.compile(
 
 RELATIVE_RE = re.compile(
     r"(?P<amount>半|\d+|[零〇一二兩两三四五六七八九十]{1,3})\s*"
-    r"(?P<unit>分鐘|分|小時|小时|個小時|个小时|天|日)\s*後"
+    r"(?P<unit>分鐘|分|小時|小时|個小時|个小时"
+    r"|個星期|个星期|星期|週|周"
+    r"|個月|个月|天|日)\s*後"
 )
+
+# 「N 分」（不含 分鐘），用於「19 分要...」= 當前小時 + N 分。
+# 若當前分鐘已過就滾到下一個整點。
+PARTIAL_MINUTE_RE = re.compile(r"(?P<minute>\d{1,2})\s*分(?![鐘钟])")
 
 ABSOLUTE_RE = re.compile(
     r"(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})"
     r"(?:\s+(?P<hour>\d{1,2})[:：](?P<minute>\d{1,2}))?"
+)
+
+# 短日期 M/D 或 MM/DD，前後不接數字或 /，避免吃到 21:00 或年份的一部份
+SHORT_DATE_RE = re.compile(
+    r"(?<![\d/])(?P<month>\d{1,2})/(?P<day>\d{1,2})(?![\d/])"
+)
+
+# 中文日期 M月D號 或 M月D日
+CHINESE_DATE_RE = re.compile(
+    r"(?P<month>\d{1,2}|[一二三四五六七八九十]+)月"
+    r"(?P<day>\d{1,2}|[一二三四五六七八九十]+)[號号日]"
 )
 
 
@@ -61,10 +78,21 @@ PART_OF_DAY_RE = re.compile(
 )
 
 WEEKDAY_RE = re.compile(
-    r"(?P<prefix>這|本|下)?"
+    r"(?P<prefix>(?:下)+|這|本)?"
     r"(?:週|周|禮拜|礼拜|星期)"
     r"(?P<weekday>[一二三四五六日天])"
 )
+
+REL_DAY_RE = re.compile(r"(?P<kw>後天|明天|明日|今天|今日)")
+
+# 切割 '提醒我/我們/大家' 的錨點；用於「以動詞切段」策略
+PROMPT_SPLIT_RE = re.compile(r"提醒(?:我們|我|大家)?")
+
+# 內容區前綴清理：連接詞 / 主詞代名詞
+LEADING_CONNECTOR_RE = re.compile(r"^\s*(?:和|跟|與|我們|我|大家)\s*")
+
+# 時間區前綴：允許 '在' 開頭
+LEADING_ZAI_RE = re.compile(r"^\s*(?:在\s*)?")
 
 DEFAULT_PERIOD_TIME = {
     "早上": (8, 0),
@@ -105,8 +133,13 @@ class ReminderParser:
 
         cleaned = normalize_spaces(text)
         participants = self._extract_participants(cleaned, message)
-        time_parse = self._parse_time(cleaned, reference, zone)
-        title = self._extract_title(cleaned, time_parse.consumed_text, participants)
+
+        split = self._try_split_parse(cleaned, reference, zone, participants)
+        if split is not None:
+            time_parse, title = split
+        else:
+            time_parse = self._parse_time(cleaned, reference, zone)
+            title = self._extract_title(cleaned, time_parse.consumed_text, participants)
 
         missing_fields: list[str] = []
         if time_parse.remind_at is None or time_parse.missing_time or time_parse.is_past:
@@ -154,6 +187,250 @@ class ReminderParser:
             )
         return parsed
 
+    def _try_split_parse(
+        self,
+        cleaned: str,
+        now: datetime,
+        zone: ZoneInfo,
+        participants: list[Participant],
+    ) -> tuple[TimeParse, str | None] | None:
+        """以『提醒(我/我們/大家)』為錨點切段。左邊當時間區，右邊當內容區。
+        優先左邊完整時間；否則右邊前緣時間；否則左邊部分時間。"""
+        match = PROMPT_SPLIT_RE.search(cleaned)
+        if not match:
+            return None
+
+        time_zone_raw = cleaned[: match.start()]
+        content_zone = cleaned[match.end() :]
+
+        left_stripped = LEADING_ZAI_RE.sub("", time_zone_raw).strip()
+        left_result = (
+            self._extract_leading_datetime(left_stripped, now, zone)
+            if left_stripped
+            else None
+        )
+        right_result = self._extract_leading_datetime(content_zone, now, zone)
+
+        # 1. 左邊有完整時間（含時鐘或明確 period+day 標記）
+        if left_result and left_result[0].remind_at and not left_result[0].missing_time:
+            time_parse = left_result[0]
+            title = self._clean_content_title(content_zone, participants)
+            return time_parse, title
+
+        # 2. 右邊前緣有完整或部分時間
+        if right_result and right_result[0].remind_at:
+            time_parse, consumed_len = right_result
+            remaining = content_zone[consumed_len:]
+            title = self._clean_content_title(remaining, participants)
+            return time_parse, title
+
+        # 3. 左邊只有部分時間（date-only）
+        if left_result and left_result[0].remind_at:
+            time_parse = left_result[0]
+            title = self._clean_content_title(content_zone, participants)
+            return time_parse, title
+
+        # 4. 都沒時間資訊
+        if content_zone.strip():
+            title = self._clean_content_title(content_zone, participants)
+            return TimeParse(None, "", "unknown"), title
+
+        return None
+
+    def _extract_leading_datetime(
+        self,
+        text: str,
+        now: datetime,
+        zone: ZoneInfo,
+    ) -> tuple[TimeParse, int] | None:
+        """從 text 前緣（可選 '在' 前綴）解析出一段時間。回傳 (TimeParse, 消耗長度)。"""
+        if not text:
+            return None
+
+        anchor = LEADING_ZAI_RE.match(text)
+        start = anchor.end() if anchor else 0
+
+        rel = RELATIVE_RE.match(text, start)
+        if rel:
+            amount = parse_relative_amount(rel.group("amount"), rel.group("unit"))
+            unit = rel.group("unit")
+            end = rel.end()
+            remind_at = apply_relative_offset(now, amount, unit)
+            return (
+                TimeParse(remind_at, text[:end], "minute", is_past=remind_at <= now),
+                end,
+            )
+
+        date_dt: datetime | None = None
+        date_end = start
+
+        absolute = ABSOLUTE_RE.match(text, start)
+        if absolute:
+            year = int(absolute.group("year"))
+            month = int(absolute.group("month"))
+            day = int(absolute.group("day"))
+            hour = absolute.group("hour")
+            minute = absolute.group("minute")
+            if hour is not None:
+                remind_at = datetime(year, month, day, int(hour), int(minute), tzinfo=zone)
+                return (
+                    TimeParse(
+                        remind_at,
+                        text[: absolute.end()],
+                        "minute",
+                        is_past=remind_at <= now,
+                    ),
+                    absolute.end(),
+                )
+            date_dt = datetime(year, month, day, tzinfo=zone)
+            date_end = absolute.end()
+
+        if date_dt is None:
+            short = SHORT_DATE_RE.match(text, start)
+            if short:
+                candidate = _short_date_to_datetime(short, now, zone)
+                if candidate is not None:
+                    date_dt = candidate
+                    date_end = short.end()
+
+        if date_dt is None:
+            chinese = CHINESE_DATE_RE.match(text, start)
+            if chinese:
+                candidate = _chinese_date_to_datetime(chinese, now, zone)
+                if candidate is not None:
+                    date_dt = candidate
+                    date_end = chinese.end()
+
+        if date_dt is None:
+            weekday = WEEKDAY_RE.match(text, start)
+            if weekday:
+                target = WEEKDAY_MAP[weekday.group("weekday")]
+                days = days_until_weekday(now.weekday(), target, weekday.group("prefix"))
+                date_dt = now + timedelta(days=days)
+                date_end = weekday.end()
+
+        if date_dt is None:
+            rel_day = REL_DAY_RE.match(text, start)
+            if rel_day:
+                kw = rel_day.group("kw")
+                if kw == "後天":
+                    date_dt = now + timedelta(days=2)
+                elif kw in ("明天", "明日"):
+                    date_dt = now + timedelta(days=1)
+                else:
+                    date_dt = now
+                date_end = rel_day.end()
+
+        # 找完日期，接著找時鐘或 part_of_day
+        tcursor = date_end
+        ws = re.match(r"\s*", text[tcursor:])
+        if ws:
+            tcursor += ws.end()
+
+        time_match = TIME_RE.match(text, tcursor)
+        if time_match:
+            hour, minute = self._parse_clock(time_match)
+            base = date_dt if date_dt is not None else now
+            remind_at = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if date_dt is None and remind_at <= now:
+                remind_at += timedelta(days=1)
+            return (
+                TimeParse(
+                    remind_at,
+                    text[: time_match.end()],
+                    "minute",
+                    is_past=remind_at <= now,
+                ),
+                time_match.end(),
+            )
+
+        pod_match = PART_OF_DAY_RE.match(text, tcursor)
+        if pod_match:
+            period = pod_match.group("period")
+            pod_day = pod_match.group("day")
+            target_date = date_dt if date_dt is not None else now
+            if date_dt is None:
+                if pod_day == "明":
+                    target_date = now + timedelta(days=1)
+                elif pod_day == "後":
+                    target_date = now + timedelta(days=2)
+
+            if period == "今晚":
+                period = "晚上"
+            hour, minute = DEFAULT_PERIOD_TIME[period]
+            remind_at = target_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            if date_dt is not None and not pod_day:
+                # 例如 '週五下午'：日期明確但時段不精確
+                return (
+                    TimeParse(
+                        remind_at,
+                        text[: pod_match.end()],
+                        "period",
+                        missing_time=True,
+                    ),
+                    pod_match.end(),
+                )
+
+            if (
+                date_dt is None
+                and pod_day not in ("明", "後")
+                and remind_at <= now
+            ):
+                remind_at += timedelta(days=1)
+
+            return (
+                TimeParse(
+                    remind_at,
+                    text[: pod_match.end()],
+                    "period",
+                    is_past=remind_at <= now,
+                ),
+                pod_match.end(),
+            )
+
+        # 「N 分」— 沒指定小時，就用 now 的小時 + N 分；若已過就滾到下一小時。
+        # 只在沒日期時觸發，避免 '明天 19 分' 這種歧義輸入被誤解。
+        if date_dt is None:
+            partial_minute = PARTIAL_MINUTE_RE.match(text, tcursor)
+            if partial_minute:
+                minute = int(partial_minute.group("minute"))
+                if 0 <= minute <= 59:
+                    target = now.replace(minute=minute, second=0, microsecond=0)
+                    if target <= now:
+                        target += timedelta(hours=1)
+                    return (
+                        TimeParse(
+                            target,
+                            text[: partial_minute.end()],
+                            "minute",
+                            is_past=target <= now,
+                        ),
+                        partial_minute.end(),
+                    )
+
+        if date_dt is not None:
+            return (
+                TimeParse(date_dt, text[:date_end], "day", missing_time=True),
+                date_end,
+            )
+
+        return None
+
+    def _clean_content_title(
+        self,
+        content_zone: str,
+        participants: list[Participant],
+    ) -> str | None:
+        title = content_zone
+        for participant in participants:
+            title = title.replace(participant.display_name, " ")
+        title = re.sub(r"@\w+", " ", title)
+        title = LEADING_CONNECTOR_RE.sub("", title)
+        title = re.sub(r"(?:^|\s)(?:和|跟|與)(?=\s|$)", " ", title)
+        title = normalize_spaces(title)
+        return title or None
+
     def _parse_time(
         self,
         text: str,
@@ -166,12 +443,8 @@ class ReminderParser:
         if relative:
             amount = parse_relative_amount(relative.group("amount"), relative.group("unit"))
             unit = relative.group("unit")
-            delta = timedelta(minutes=amount)
-            if "小時" in unit or "小时" in unit:
-                delta = timedelta(hours=amount)
-            elif unit in {"天", "日"}:
-                delta = timedelta(days=amount)
-            return TimeParse(now + delta, relative.group(0), "minute")
+            remind_at = apply_relative_offset(now, amount, unit)
+            return TimeParse(remind_at, relative.group(0), "minute")
 
         absolute = ABSOLUTE_RE.search(text)
         if absolute:
@@ -375,11 +648,38 @@ def parse_relative_amount(value: str, unit: str) -> float:
     return parse_number(value)
 
 
+def apply_relative_offset(now: datetime, amount: float, unit: str) -> datetime:
+    """RELATIVE_RE 命中的單位轉換為 delta 並套用。
+    月份使用 calendar 加減，避免用 30 天近似造成的月底漂移。"""
+    if unit in {"分鐘", "分"}:
+        return now + timedelta(minutes=amount)
+    if "小時" in unit or "小时" in unit:
+        return now + timedelta(hours=amount)
+    if unit in {"天", "日"}:
+        return now + timedelta(days=amount)
+    if unit in {"週", "周"} or "星期" in unit:
+        return now + timedelta(days=amount * 7)
+    if "個月" in unit or "个月" in unit:
+        return _add_months(now, int(amount))
+    raise ValueError(f"unknown relative unit: {unit!r}")
+
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    """在 calendar 月刻度上加 N 個月，日期溢位時 clamp 到當月最後一天。"""
+    import calendar
+    total = dt.month - 1 + months
+    year = dt.year + total // 12
+    month = total % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
 def days_until_weekday(current_weekday: int, target_weekday: int, prefix: str | None) -> int:
-    """計算目標星期距離今天幾天；未寫「下週」時允許指向今天。"""
+    """計算目標星期距離今天幾天；`下`前綴按個數往後推 N 週。"""
     days = (target_weekday - current_weekday) % 7
-    if prefix in {"下"}:
-        return days + 7 if days else 7
+    if prefix and "下" in prefix:
+        n = prefix.count("下")
+        return days + n * 7 if days else n * 7
     return days
 
 
@@ -399,3 +699,40 @@ def parse_number(value: str) -> int:
     for char in value:
         total = total * 10 + CHINESE_DIGITS[char]
     return total
+
+
+def _short_date_to_datetime(
+    match: re.Match[str], now: datetime, zone: ZoneInfo
+) -> datetime | None:
+    month = int(match.group("month"))
+    day = int(match.group("day"))
+    try:
+        candidate = datetime(now.year, month, day, tzinfo=zone)
+    except ValueError:
+        return None
+    if candidate.date() < now.date():
+        try:
+            candidate = candidate.replace(year=now.year + 1)
+        except ValueError:
+            return None
+    return candidate
+
+
+def _chinese_date_to_datetime(
+    match: re.Match[str], now: datetime, zone: ZoneInfo
+) -> datetime | None:
+    try:
+        month = parse_number(match.group("month"))
+        day = parse_number(match.group("day"))
+    except KeyError:
+        return None
+    try:
+        candidate = datetime(now.year, month, day, tzinfo=zone)
+    except ValueError:
+        return None
+    if candidate.date() < now.date():
+        try:
+            candidate = candidate.replace(year=now.year + 1)
+        except ValueError:
+            return None
+    return candidate

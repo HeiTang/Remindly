@@ -66,6 +66,7 @@ class ReminderDraft:
     missing_fields: list[str] = field(default_factory=list)
     parse_result: dict[str, object] = field(default_factory=dict)
     expires_at: datetime | None = None
+    prompt_message_id: int | None = None
 
     @property
     def is_complete(self) -> bool:

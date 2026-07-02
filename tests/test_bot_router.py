@@ -44,6 +44,7 @@ class FakeTelegramClient:
     deleted_messages: list[int] = field(default_factory=list)
     chat_member_statuses: dict[int, str] = field(default_factory=dict)
     fail_chat_member_lookup: bool = False
+    fail_edit_message: bool = False
     next_message_id: int = 1000
 
     def send_message(
@@ -53,10 +54,12 @@ class FakeTelegramClient:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         del parse_mode
-        self.messages.append(SentMessage(self.next_message_id, chat_id, text, reply_markup))
+        message_id = self.next_message_id
+        self.messages.append(SentMessage(message_id, chat_id, text, reply_markup))
         self.next_message_id += 1
+        return message_id
 
     def edit_message_text(
         self,
@@ -66,13 +69,15 @@ class FakeTelegramClient:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         del parse_mode
+        if self.fail_edit_message:
+            raise TelegramApiError("editMessageText", "forced failure")
         for index, message in enumerate(self.messages):
             if message.id == message_id:
                 self.messages[index] = SentMessage(message_id, chat_id, text, reply_markup)
-                return
-        self.send_message(chat_id, text, reply_markup=reply_markup)
+                return message_id
+        return self.send_message(chat_id, text, reply_markup=reply_markup)
 
     def delete_message(self, chat_id: int, message_id: int) -> None:
         del chat_id
@@ -269,7 +274,7 @@ class BotRouterTest(unittest.TestCase):
                 id=2000,
                 chat_id=CHAT.id,
                 text="提醒：洗衣服",
-                reply_markup=delivery_snooze_keyboard("R-SNZ1"),
+                reply_markup=delivery_snooze_keyboard("R-SNZ1", "23:59"),
             )
             client.messages.append(delivery_message)
 
@@ -277,9 +282,142 @@ class BotRouterTest(unittest.TestCase):
 
             self.assertEqual("已延後", client.callback_answers[-1])
             self.assertIn("已延後提醒 R-SNZ1", client.messages[-1].text)
+            # 延後後原按鈕組應被清空，避免使用者重複按累積延後
+            self.assertEqual(
+                {"inline_keyboard": []},
+                client.messages[-1].reply_markup,
+            )
             pending = repository.list_pending(CHAT.id)
             self.assertEqual(1, len(pending))
             self.assertGreater(pending[0].remind_at, now)
+
+    def test_new_reminder_overwrites_pending_draft_edits_old_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我要洗衣服")
+            a_prompt = client.messages[-1]
+            self.assertIn("什麼時候提醒？", a_prompt.text)
+
+            send_text(router, 2, "提醒我明天下午三點倒垃圾")
+
+            # 舊的 A 提示應該被 editMessage 成已取消狀態，按鈕清空
+            updated_a = next(m for m in client.messages if m.id == a_prompt.id)
+            self.assertIn("已取消", updated_a.text)
+            self.assertNotIn("什麼時候提醒？", updated_a.text)
+            self.assertEqual({"inline_keyboard": []}, updated_a.reply_markup)
+
+            # B 的確認卡不應該再帶「已取消上一個未完成的提醒」前綴
+            b_message = client.messages[-1]
+            self.assertNotIn("已取消上一個未完成的提醒", b_message.text)
+            self.assertIn("確認建立提醒？", b_message.text)
+            self.assertIn("倒垃圾", b_message.text)
+
+    def test_new_reminder_overwrites_pending_edit_session_edits_old_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我明天倒垃圾")
+            click_button(router, 2, client.messages[-1], "09:00")
+            click_button(router, 3, client.messages[-1], "確認")
+            send_text(router, 4, "/list")
+            click_button(router, 5, client.messages[-1], "R-")
+            click_button(router, 6, client.messages[-1], "修改內容")
+            edit_prompt = client.messages[-1]
+            self.assertIn("請輸入新的提醒內容", edit_prompt.text)
+
+            send_text(router, 7, "提醒我後天下午三點吃藥")
+
+            updated_edit_prompt = next(m for m in client.messages if m.id == edit_prompt.id)
+            self.assertIn("已取消", updated_edit_prompt.text)
+            self.assertEqual({"inline_keyboard": []}, updated_edit_prompt.reply_markup)
+
+            b_message = client.messages[-1]
+            self.assertNotIn("已取消上一個未完成的提醒", b_message.text)
+            self.assertIn("確認建立提醒？", b_message.text)
+            self.assertIn("吃藥", b_message.text)
+
+    def test_overwrite_fallback_to_inline_notice_when_edit_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient(fail_edit_message=True)
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我要洗衣服")
+            send_text(router, 2, "提醒我明天下午三點倒垃圾")
+
+            b_message = client.messages[-1]
+            self.assertIn("已取消上一個未完成的提醒", b_message.text)
+            self.assertIn("確認建立提醒？", b_message.text)
+
+    def test_sequential_new_reminders_get_distinct_confirmations(self) -> None:
+        """回歸測試 Q1：連續三次「提醒我 20:20 要 TESTn」，每則新確認卡應顯示對應的 TESTn，
+        且前一則的追問訊息應被 editMessage 標為已取消，避免舊行為（continue_draft 吃掉新訊息）。"""
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我 20:20 要 TEST1")
+            first_id = client.messages[-1].id
+            self.assertIn("要 TEST1", client.messages[-1].text)
+            self.assertIn("確認建立提醒？", client.messages[-1].text)
+
+            send_text(router, 2, "提醒我 20:20 要 TEST2")
+            second_id = client.messages[-1].id
+            self.assertNotEqual(first_id, second_id)
+            # 第一則應被就地標為已取消 + 清按鈕
+            first_msg = next(m for m in client.messages if m.id == first_id)
+            self.assertIn("已取消", first_msg.text)
+            self.assertEqual({"inline_keyboard": []}, first_msg.reply_markup)
+            # 第二則應顯示 TEST2，不是 TEST1
+            self.assertIn("要 TEST2", client.messages[-1].text)
+            self.assertNotIn("TEST1", client.messages[-1].text)
+
+            send_text(router, 3, "提醒我 20:20 要 TEST3")
+            second_msg = next(m for m in client.messages if m.id == second_id)
+            self.assertIn("已取消", second_msg.text)
+            self.assertIn("要 TEST3", client.messages[-1].text)
+            self.assertNotIn("TEST2", client.messages[-1].text)
+
+    def test_message_without_from_user_is_ignored(self) -> None:
+        """匿名管理員 / sender_chat 沒有 from_user，session-based 流程應直接跳過而非 crash。"""
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            message = TelegramMessage(
+                id=42,
+                chat=CHAT,
+                from_user=None,
+                text="提醒我明天倒垃圾",
+                entities=(),
+            )
+            # 不應拋例外
+            router.handle_update(TelegramUpdate(id=42, message=message))
+
+            self.assertEqual([], client.messages)
+
+    def test_answering_pending_draft_does_not_trigger_notice(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我要洗衣服")
+            self.assertIn("什麼時候提醒？", client.messages[-1].text)
+
+            send_text(router, 2, "明天下午三點")
+
+            last = client.messages[-1].text
+            self.assertNotIn("已取消上一個未完成的提醒", last)
+            self.assertIn("確認建立提醒？", last)
+            self.assertIn("洗衣服", last)
 
     def test_create_list_edit_and_delete_flow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

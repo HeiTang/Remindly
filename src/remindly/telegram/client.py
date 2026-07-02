@@ -145,7 +145,7 @@ class TelegramClient:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int | None:
         payload: dict[str, Any] = {
             "chat_id": chat_id,
             "text": text,
@@ -156,7 +156,8 @@ class TelegramClient:
         if reply_markup:
             payload["reply_markup"] = reply_markup
 
-        self.call("sendMessage", payload)
+        body = self.call("sendMessage", payload)
+        return _extract_message_id(body)
 
     def edit_message_text(
         self,
@@ -166,7 +167,7 @@ class TelegramClient:
         *,
         parse_mode: str | None = None,
         reply_markup: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int | None:
         payload: dict[str, Any] = {
             "chat_id": chat_id,
             "message_id": message_id,
@@ -175,10 +176,11 @@ class TelegramClient:
         }
         if parse_mode:
             payload["parse_mode"] = parse_mode
-        if reply_markup:
+        if reply_markup is not None:
             payload["reply_markup"] = reply_markup
 
-        self.call("editMessageText", payload)
+        body = self.call("editMessageText", payload)
+        return _extract_message_id(body)
 
     def delete_message(self, chat_id: int, message_id: int) -> None:
         self.call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
@@ -258,6 +260,15 @@ def extract_error_code(body: dict[str, Any]) -> int | None:
 def extract_description(body: dict[str, Any]) -> str | None:
     value = body.get("description")
     return str(value) if isinstance(value, str) else None
+
+
+def _extract_message_id(body: dict[str, Any]) -> int | None:
+    result = body.get("result")
+    if isinstance(result, dict):
+        raw = result.get("message_id")
+        if isinstance(raw, int):
+            return raw
+    return None
 
 
 def extract_retry_after(body: dict[str, Any]) -> int | None:

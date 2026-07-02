@@ -6,15 +6,22 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from remindly.reminders.drafts import DraftStore, EditSessionStore
+from remindly.reminders.drafts import DraftStore, EditSession, EditSessionStore
 from remindly.reminders.models import (
     MentionKind,
     Participant,
     Reminder,
+    ReminderDraft,
     ReminderStatus,
 )
 from remindly.reminders.parser import ReminderParser
-from remindly.reminders.service import ReminderListFilter, ReminderService
+from remindly.reminders.service import (
+    EXPIRED_DRAFT_TEXT,
+    EXPIRED_EDIT_TEXT,
+    ReminderListFilter,
+    ReminderService,
+)
+from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
 
 
@@ -153,6 +160,243 @@ class ReminderServiceListGroupingTest(unittest.TestCase):
 
 def reminders_by_group(groups):
     return [[reminder.short_id for reminder in group.reminders] for group in groups]
+
+
+class ReminderServiceSnoozeTest(unittest.TestCase):
+    """驗證 snooze 按鈕的三種延後語意。
+
+    `1d` 對應按鈕文字「明天 HH:MM」— 保留原提醒時段、日期用 now 的隔天，
+    避免「明天同時間」對『同時間』誰為基準的歧義。
+    """
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = ReminderRepository(Path(self.temp_dir.name) / "test.db")
+        self.repository.migrate()
+        self.zone = ZoneInfo("Asia/Taipei")
+        self.service = ReminderService(
+            repository=self.repository,
+            parser=ReminderParser("Asia/Taipei"),
+            draft_store=DraftStore(ttl_minutes=10),
+            edit_store=EditSessionStore(ttl_minutes=10),
+            default_timezone="Asia/Taipei",
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _persist_reminder(self, remind_at: datetime) -> Reminder:
+        reminder = Reminder(
+            id="rmd_snz",
+            short_id="R-SNZ1",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="吃藥",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.FIRED,
+            source_text="",
+            parse_result={},
+            created_at=remind_at - timedelta(minutes=5),
+            updated_at=remind_at,
+        )
+        self.repository.create_reminder(reminder, [])
+        return reminder
+
+    def test_snooze_1d_uses_tomorrow_date_and_original_time(self) -> None:
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 9, 5, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        self.assertIsNotNone(result)
+        # 明天 (6/4) 09:00 — 保留原時段
+        self.assertEqual(
+            datetime(2026, 6, 4, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1d_uses_click_date_when_reading_late_same_day(self) -> None:
+        """9:00 提醒，下午 3pm 才點『明天 09:00』→ 明天 09:00（不是今天下午）"""
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 15, 0, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        self.assertEqual(
+            datetime(2026, 6, 4, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1d_uses_click_date_when_reading_days_late(self) -> None:
+        """週日 9:00 錯過，週三下午才點『明天 09:00』→ 週四 09:00（不是週一）"""
+        self._persist_reminder(datetime(2026, 6, 7, 9, 0, tzinfo=self.zone))  # 週日
+        click_at = datetime(2026, 6, 10, 14, 0, tzinfo=self.zone)  # 週三下午
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        self.assertEqual(
+            datetime(2026, 6, 11, 9, 0, tzinfo=self.zone),  # 週四 09:00
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1d_uses_click_date_when_reading_before_original_time_of_day(
+        self,
+    ) -> None:
+        """週日 9:00 錯過，週三**上午 8am**（早於 9:00）才點『明天 09:00』→ 週四 09:00"""
+        self._persist_reminder(datetime(2026, 6, 7, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 10, 8, 0, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1d", click_at)
+
+        # 不是週三 09:00（1 小時後那個選項才對），而是週四 09:00
+        self.assertEqual(
+            datetime(2026, 6, 11, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_10m_is_now_plus_delay(self) -> None:
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 9, 5, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "10m", click_at)
+
+        self.assertEqual(
+            click_at + timedelta(minutes=10),
+            result.reminder.remind_at,
+        )
+
+    def test_snooze_1h_is_now_plus_delay(self) -> None:
+        self._persist_reminder(datetime(2026, 6, 3, 9, 0, tzinfo=self.zone))
+        click_at = datetime(2026, 6, 3, 9, 5, tzinfo=self.zone)
+
+        result = self.service.snooze(100, "R-SNZ1", 7, "1h", click_at)
+
+        self.assertEqual(
+            click_at + timedelta(hours=1),
+            result.reminder.remind_at,
+        )
+
+
+class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):
+    """對 sweep_expired_prompts 做 service + SQLite store 的整合測試，
+    scheduler 那邊用的 FakePromptSweeper 抓不到這條路徑上的 regression。"""
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = ReminderRepository(Path(self.temp_dir.name) / "test.db")
+        self.repository.migrate()
+        self.zone = ZoneInfo("Asia/Taipei")
+        self.now = datetime(2026, 6, 3, 12, 0, tzinfo=self.zone)
+        self.draft_store = SqliteDraftStore(ttl_minutes=10, repository=self.repository)
+        self.edit_store = SqliteEditSessionStore(ttl_minutes=10, repository=self.repository)
+        self.service = ReminderService(
+            repository=self.repository,
+            parser=ReminderParser("Asia/Taipei"),
+            draft_store=self.draft_store,
+            edit_store=self.edit_store,
+            default_timezone="Asia/Taipei",
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _draft(self, draft_id: str, *, creator_user_id: int = 7) -> ReminderDraft:
+        return ReminderDraft(
+            id=draft_id,
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=creator_user_id,
+            timezone="Asia/Taipei",
+            source_text="提醒我",
+            title=None,
+            remind_at=None,
+            participants=[],
+            missing_fields=["title", "time"],
+            parse_result={},
+        )
+
+    def test_sweep_returns_only_prompts_with_message_id(self) -> None:
+        with_msg = self._draft("draft_with_msg", creator_user_id=7)
+        self.draft_store.save(with_msg, self.now)
+        self.draft_store.set_prompt_message_id("draft_with_msg", 555)
+
+        without_msg = self._draft("draft_without_msg", creator_user_id=8)
+        self.draft_store.save(without_msg, self.now)
+        # 故意不呼叫 set_prompt_message_id
+
+        later = self.now + timedelta(minutes=11)
+        expired = self.service.sweep_expired_prompts(later)
+
+        # 只有帶 prompt_message_id 的 draft 會被回傳
+        self.assertEqual(1, len(expired))
+        self.assertEqual(555, expired[0].message_id)
+        self.assertEqual(100, expired[0].chat_id)
+        self.assertEqual(EXPIRED_DRAFT_TEXT, expired[0].text)
+
+    def test_sweep_deletes_all_expired_rows(self) -> None:
+        with_msg = self._draft("draft_with_msg", creator_user_id=7)
+        self.draft_store.save(with_msg, self.now)
+        self.draft_store.set_prompt_message_id("draft_with_msg", 555)
+
+        without_msg = self._draft("draft_without_msg", creator_user_id=8)
+        self.draft_store.save(without_msg, self.now)
+
+        later = self.now + timedelta(minutes=11)
+        self.service.sweep_expired_prompts(later)
+
+        # 兩筆 row 都應該被刪掉（即使 without_msg 沒被回傳給 caller）
+        self.assertIsNone(self.draft_store.get_by_id("draft_with_msg", later))
+        self.assertIsNone(self.draft_store.get_by_id("draft_without_msg", later))
+        self.assertEqual([], self.draft_store.list_expired(later))
+
+    def test_sweep_preserves_unexpired_drafts(self) -> None:
+        fresh = self._draft("draft_fresh")
+        self.draft_store.save(fresh, self.now)
+        self.draft_store.set_prompt_message_id("draft_fresh", 999)
+
+        still_alive = self.now + timedelta(minutes=5)
+        expired = self.service.sweep_expired_prompts(still_alive)
+
+        self.assertEqual([], expired)
+        self.assertIsNotNone(self.draft_store.get_by_id("draft_fresh", still_alive))
+
+    def test_sweep_handles_edit_sessions(self) -> None:
+        with_msg = EditSession(chat_id=200, user_id=7, short_id="R-M", field="time")
+        self.edit_store.save(with_msg, self.now)
+        self.edit_store.set_prompt_message_id(200, 7, 777)
+
+        without_msg = EditSession(chat_id=200, user_id=8, short_id="R-N", field="title")
+        self.edit_store.save(without_msg, self.now)
+
+        later = self.now + timedelta(minutes=11)
+        expired = self.service.sweep_expired_prompts(later)
+
+        self.assertEqual(1, len(expired))
+        self.assertEqual(777, expired[0].message_id)
+        self.assertEqual(200, expired[0].chat_id)
+        self.assertEqual(EXPIRED_EDIT_TEXT, expired[0].text)
+        # 兩筆 edit session 都應該被刪掉
+        self.assertIsNone(self.edit_store.get_for_context(200, 7, later))
+        self.assertIsNone(self.edit_store.get_for_context(200, 8, later))
+
+    def test_sweep_returns_mixed_draft_and_edit_prompts(self) -> None:
+        draft = self._draft("draft_mixed", creator_user_id=7)
+        self.draft_store.save(draft, self.now)
+        self.draft_store.set_prompt_message_id("draft_mixed", 111)
+
+        session = EditSession(chat_id=300, user_id=9, short_id="R-X", field="title")
+        self.edit_store.save(session, self.now)
+        self.edit_store.set_prompt_message_id(300, 9, 222)
+
+        later = self.now + timedelta(minutes=11)
+        expired = self.service.sweep_expired_prompts(later)
+
+        by_text = {prompt.text: prompt for prompt in expired}
+        self.assertEqual(2, len(expired))
+        self.assertEqual(111, by_text[EXPIRED_DRAFT_TEXT].message_id)
+        self.assertEqual(222, by_text[EXPIRED_EDIT_TEXT].message_id)
 
 
 if __name__ == "__main__":
