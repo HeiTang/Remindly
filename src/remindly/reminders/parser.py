@@ -46,8 +46,14 @@ TIME_RE = re.compile(
 
 RELATIVE_RE = re.compile(
     r"(?P<amount>半|\d+|[零〇一二兩两三四五六七八九十]{1,3})\s*"
-    r"(?P<unit>分鐘|分|小時|小时|個小時|个小时|天|日)\s*後"
+    r"(?P<unit>分鐘|分|小時|小时|個小時|个小时"
+    r"|個星期|个星期|星期|週|周"
+    r"|個月|个月|天|日)\s*後"
 )
+
+# 「N 分」（不含 分鐘），用於「19 分要...」= 當前小時 + N 分。
+# 若當前分鐘已過就滾到下一個整點。
+PARTIAL_MINUTE_RE = re.compile(r"(?P<minute>\d{1,2})\s*分(?![鐘钟])")
 
 ABSOLUTE_RE = re.compile(
     r"(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})"
@@ -248,13 +254,8 @@ class ReminderParser:
         if rel:
             amount = parse_relative_amount(rel.group("amount"), rel.group("unit"))
             unit = rel.group("unit")
-            delta = timedelta(minutes=amount)
-            if "小時" in unit or "小时" in unit:
-                delta = timedelta(hours=amount)
-            elif unit in {"天", "日"}:
-                delta = timedelta(days=amount)
             end = rel.end()
-            remind_at = now + delta
+            remind_at = apply_relative_offset(now, amount, unit)
             return (
                 TimeParse(remind_at, text[:end], "minute", is_past=remind_at <= now),
                 end,
@@ -388,6 +389,26 @@ class ReminderParser:
                 pod_match.end(),
             )
 
+        # 「N 分」— 沒指定小時，就用 now 的小時 + N 分；若已過就滾到下一小時。
+        # 只在沒日期時觸發，避免 '明天 19 分' 這種歧義輸入被誤解。
+        if date_dt is None:
+            partial_minute = PARTIAL_MINUTE_RE.match(text, tcursor)
+            if partial_minute:
+                minute = int(partial_minute.group("minute"))
+                if 0 <= minute <= 59:
+                    target = now.replace(minute=minute, second=0, microsecond=0)
+                    if target <= now:
+                        target += timedelta(hours=1)
+                    return (
+                        TimeParse(
+                            target,
+                            text[: partial_minute.end()],
+                            "minute",
+                            is_past=target <= now,
+                        ),
+                        partial_minute.end(),
+                    )
+
         if date_dt is not None:
             return (
                 TimeParse(date_dt, text[:date_end], "day", missing_time=True),
@@ -422,12 +443,8 @@ class ReminderParser:
         if relative:
             amount = parse_relative_amount(relative.group("amount"), relative.group("unit"))
             unit = relative.group("unit")
-            delta = timedelta(minutes=amount)
-            if "小時" in unit or "小时" in unit:
-                delta = timedelta(hours=amount)
-            elif unit in {"天", "日"}:
-                delta = timedelta(days=amount)
-            return TimeParse(now + delta, relative.group(0), "minute")
+            remind_at = apply_relative_offset(now, amount, unit)
+            return TimeParse(remind_at, relative.group(0), "minute")
 
         absolute = ABSOLUTE_RE.search(text)
         if absolute:
@@ -629,6 +646,32 @@ def parse_relative_amount(value: str, unit: str) -> float:
     if value == "半":
         return 30 if unit in {"分鐘", "分"} else 0.5
     return parse_number(value)
+
+
+def apply_relative_offset(now: datetime, amount: float, unit: str) -> datetime:
+    """RELATIVE_RE 命中的單位轉換為 delta 並套用。
+    月份使用 calendar 加減，避免用 30 天近似造成的月底漂移。"""
+    if unit in {"分鐘", "分"}:
+        return now + timedelta(minutes=amount)
+    if "小時" in unit or "小时" in unit:
+        return now + timedelta(hours=amount)
+    if unit in {"天", "日"}:
+        return now + timedelta(days=amount)
+    if unit in {"週", "周"} or "星期" in unit:
+        return now + timedelta(days=amount * 7)
+    if "個月" in unit or "个月" in unit:
+        return _add_months(now, int(amount))
+    raise ValueError(f"unknown relative unit: {unit!r}")
+
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    """在 calendar 月刻度上加 N 個月，日期溢位時 clamp 到當月最後一天。"""
+    import calendar
+    total = dt.month - 1 + months
+    year = dt.year + total // 12
+    month = total % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
 
 
 def days_until_weekday(current_weekday: int, target_weekday: int, prefix: str | None) -> int:
