@@ -91,7 +91,10 @@ class FakeDeliveryRepository:
 
 class ReminderSchedulerTest(unittest.TestCase):
     def test_delivery_message_contains_snooze_buttons(self) -> None:
-        now = datetime.now(ZoneInfo("Asia/Taipei"))
+        zone = ZoneInfo("Asia/Taipei")
+        # 用固定原提醒時間，讓「明天 HH:MM」按鈕文字可以精確斷言
+        remind_at = datetime(2026, 6, 3, 9, 0, tzinfo=zone)
+        now = remind_at - timedelta(minutes=1)
         reminder = Reminder(
             id="rmd_due",
             short_id="R-DUE1",
@@ -99,7 +102,7 @@ class ReminderSchedulerTest(unittest.TestCase):
             chat_type="private",
             creator_user_id=7,
             title="洗衣服",
-            remind_at=now - timedelta(minutes=1),
+            remind_at=remind_at,
             timezone="Asia/Taipei",
             status=ReminderStatus.FIRING,
             source_text="提醒我要洗衣服",
@@ -126,7 +129,7 @@ class ReminderSchedulerTest(unittest.TestCase):
             for row in client.messages[0].reply_markup["inline_keyboard"]
             for button in row
         ]
-        self.assertEqual(["10 分鐘後", "1 小時後", "明天同時間"], labels)
+        self.assertEqual(["10 分鐘後", "1 小時後", "明天 09:00"], labels)
 
 
     def test_tick_marks_expired_prompts_with_empty_keyboard(self) -> None:

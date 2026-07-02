@@ -213,7 +213,8 @@ def groupmode_keyboard(enabled: bool) -> dict[str, object]:
     }
 
 
-def delivery_snooze_keyboard(short_id: str) -> dict[str, object]:
+def delivery_snooze_keyboard(short_id: str, next_day_time_label: str) -> dict[str, object]:
+    """到期提醒的延後按鈕。第三顆帶入原提醒的 HH:MM，避免「明天同時間」的語意歧義。"""
     return {
         "inline_keyboard": [
             [
@@ -228,7 +229,7 @@ def delivery_snooze_keyboard(short_id: str) -> dict[str, object]:
             ],
             [
                 {
-                    "text": "明天同時間",
+                    "text": f"明天 {next_day_time_label}",
                     "callback_data": reminder_callback("snooze", short_id, "1d"),
                 }
             ],

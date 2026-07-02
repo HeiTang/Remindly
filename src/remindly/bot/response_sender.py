@@ -241,12 +241,13 @@ class ResponseSender:
         message_id: int | None,
         result: SnoozeResult,
     ) -> None:
-        """把到期提醒訊息更新成已延後狀態，避免同一組按鈕重複觸發。"""
+        """把到期提醒訊息更新成已延後狀態，並清空延後按鈕避免重複觸發。"""
         self.edit_or_send(
             chat_id,
             message_id,
             self._renderer.render_snoozed(result.reminder),
             parse_mode="HTML",
+            reply_markup={"inline_keyboard": []},
         )
 
     def show_delete_result(
