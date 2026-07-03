@@ -68,7 +68,11 @@ class ReminderScheduler:
                 )
                 if reminder.recurrence is not None:
                     # 週期性提醒：計算下次觸發並轉回 PENDING，不標 FIRED。
-                    next_at = next_fire(reminder.recurrence, now)
+                    # `next_fire` 用 `after.tzinfo` 為基準構造 HH:MM，因此必須先把 `now`
+                    # 轉到 reminder 自己的時區，否則使用者設定「每天 09:00」在 scheduler
+                    # 主機時區跟 reminder 時區不同時會漂到 scheduler 時區的 09:00。
+                    reminder_now = now.astimezone(ZoneInfo(reminder.timezone))
+                    next_at = next_fire(reminder.recurrence, reminder_now)
                     self._repository.reschedule(reminder.id, next_at, now)
                 else:
                     self._repository.mark_fired(reminder.id, now)
