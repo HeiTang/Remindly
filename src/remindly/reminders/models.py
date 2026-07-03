@@ -19,6 +19,32 @@ class MentionKind(StrEnum):
     PLAIN = "plain"
 
 
+class RecurrencePeriod(StrEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+
+
+@dataclass(frozen=True)
+class RecurrenceRule:
+    """描述週期性提醒的觸發規則。
+
+    各 period 用到的欄位：
+    - `daily`：只用 `hour` / `minute`
+    - `weekly`：`weekdays`（0=Mon, 6=Sun，可多選）+ `hour` / `minute`
+    - `monthly`：`month_days`（1-31，可多選；超出當月天數自動跳過）+ `hour` / `minute`
+    - `yearly`：`year_month` + `year_day` + `hour` / `minute`
+    """
+    period: RecurrencePeriod
+    hour: int
+    minute: int
+    weekdays: tuple[int, ...] = ()
+    month_days: tuple[int, ...] = ()
+    year_month: int | None = None
+    year_day: int | None = None
+
+
 @dataclass(frozen=True)
 class Participant:
     display_name: str
@@ -50,6 +76,7 @@ class Reminder:
     parse_result: dict[str, object]
     created_at: datetime
     updated_at: datetime
+    recurrence: RecurrenceRule | None = None
 
 
 @dataclass

@@ -14,6 +14,7 @@ from remindly.reminders.models import (
     Reminder,
     ReminderStatus,
 )
+from remindly.reminders.recurrence import deserialize_rule, serialize_rule
 from remindly.storage.migrations import migrate_sqlite_database
 
 
@@ -133,9 +134,10 @@ class ReminderRepository:
                 """
                 insert into reminders (
                     id, short_id, chat_id, chat_type, creator_user_id, title, remind_at,
-                    timezone, status, source_text, parse_result, created_at, updated_at
+                    timezone, status, source_text, parse_result, created_at, updated_at,
+                    recurrence
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     reminder.id,
@@ -151,6 +153,7 @@ class ReminderRepository:
                     json.dumps(reminder.parse_result, ensure_ascii=False),
                     reminder.created_at.isoformat(),
                     reminder.updated_at.isoformat(),
+                    serialize_rule(reminder.recurrence) if reminder.recurrence else None,
                 ),
             )
 
@@ -180,7 +183,7 @@ class ReminderRepository:
                 """
                 select * from reminders
                 where chat_id = ? and status = ?
-                order by remind_at asc
+                order by julianday(remind_at) asc
                 limit ?
                 """,
                 (chat_id, ReminderStatus.PENDING.value, limit),
@@ -251,11 +254,14 @@ class ReminderRepository:
         claimed: list[Reminder] = []
         now_text = now.isoformat()
         with self.connect() as connection:
+            # `julianday()` 把 ISO 字串轉成絕對時間（Julian Day 浮點），
+            # 讓不同 tz offset（例如 `+08:00` vs `+00:00`）的相同瞬間能正確比對。
+            # 只靠字典序比對 ISO 字串在跨時區部署時會漏掉 reminders。
             rows = connection.execute(
                 """
                 select * from reminders
-                where status = ? and remind_at <= ?
-                order by remind_at asc
+                where status = ? and julianday(remind_at) <= julianday(?)
+                order by julianday(remind_at) asc
                 limit ?
                 """,
                 (ReminderStatus.PENDING.value, now_text, limit),
@@ -285,6 +291,25 @@ class ReminderRepository:
 
     def mark_failed(self, reminder_id: str, now: datetime) -> None:
         self._mark(reminder_id, ReminderStatus.FAILED, now)
+
+    def reschedule(self, reminder_id: str, next_at: datetime, now: datetime) -> None:
+        """把已送出的週期性提醒轉回 PENDING 並更新到下一次觸發時間。
+        只有處於 FIRING 狀態才會被更新，避免競爭條件重複重排。"""
+        with self.connect() as connection:
+            connection.execute(
+                """
+                update reminders
+                set status = ?, remind_at = ?, fired_at = null, updated_at = ?
+                where id = ? and status = ?
+                """,
+                (
+                    ReminderStatus.PENDING.value,
+                    next_at.isoformat(),
+                    now.isoformat(),
+                    reminder_id,
+                    ReminderStatus.FIRING.value,
+                ),
+            )
 
     def _mark(
         self,
@@ -451,6 +476,8 @@ class ReminderRepository:
 
 
 def row_to_reminder(row: sqlite3.Row) -> Reminder:
+    # sqlite3.Row 的 `in` 迭代 values 而非 keys，所以必須顯式取 .keys()。
+    recurrence_raw = row["recurrence"] if "recurrence" in row.keys() else None  # noqa: SIM118
     return Reminder(
         id=str(row["id"]),
         short_id=str(row["short_id"]),
@@ -465,6 +492,7 @@ def row_to_reminder(row: sqlite3.Row) -> Reminder:
         parse_result=json.loads(str(row["parse_result"])),
         created_at=datetime.fromisoformat(str(row["created_at"])),
         updated_at=datetime.fromisoformat(str(row["updated_at"])),
+        recurrence=deserialize_rule(str(recurrence_raw)) if recurrence_raw else None,
     )
 
 

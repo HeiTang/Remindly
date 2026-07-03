@@ -23,6 +23,10 @@ class ReminderDeliveryRepository(Protocol):
         """將送出失敗的提醒標記為 failed，方便後續追蹤或重試。"""
         ...
 
+    def reschedule(self, reminder_id: str, next_at: datetime, now: datetime) -> None:
+        """把週期性提醒送出後轉回 PENDING 並更新到下一次觸發時間。"""
+        ...
+
 
 class ReminderRepository(ReminderDeliveryRepository, Protocol):
     def upsert_user(

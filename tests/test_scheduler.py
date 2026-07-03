@@ -72,6 +72,7 @@ class FakeDeliveryRepository:
     def __init__(self, reminder: Reminder) -> None:
         self.reminder = reminder
         self.marked_fired: list[str] = []
+        self.rescheduled: list[tuple[str, datetime]] = []
 
     def claim_due(self, now: datetime, limit: int = 20) -> list[Reminder]:
         del now, limit
@@ -87,6 +88,10 @@ class FakeDeliveryRepository:
 
     def mark_failed(self, reminder_id: str, now: datetime) -> None:
         raise AssertionError(f"Unexpected failure for {reminder_id} at {now}")
+
+    def reschedule(self, reminder_id: str, next_at: datetime, now: datetime) -> None:
+        del now
+        self.rescheduled.append((reminder_id, next_at))
 
 
 class ReminderSchedulerTest(unittest.TestCase):
@@ -179,6 +184,106 @@ class ReminderSchedulerTest(unittest.TestCase):
         self.assertEqual(555, client.edits[0].message_id)
         self.assertIn("已過期", client.edits[0].text)
         self.assertEqual({"inline_keyboard": []}, client.edits[0].reply_markup)
+
+    def test_tick_uses_reminder_timezone_for_next_fire(self) -> None:
+        """回歸：scheduler tz 若與 reminder tz 不同，`next_fire` 必須以 reminder tz 為準
+        算 HH:MM，否則「每天 09:00」會漂到 scheduler tz 的 09:00。"""
+        from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
+
+        scheduler_zone = ZoneInfo("UTC")
+        reminder_zone = ZoneInfo("Asia/Taipei")
+        # UTC 剛好觸發時：使用者設每天 09:00 TP → 應算出明天 09:00 TP
+        remind_at = datetime(2026, 7, 3, 9, 0, tzinfo=reminder_zone)
+        reminder = Reminder(
+            id="rmd_tz",
+            short_id="R-TZ",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="吃藥",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.FIRING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at,
+            updated_at=remind_at,
+            recurrence=RecurrenceRule(period=RecurrencePeriod.DAILY, hour=9, minute=0),
+        )
+        repository = FakeDeliveryRepository(reminder)
+        client = FakeTelegramClient()
+        scheduler = ReminderScheduler(
+            repository=repository,  # type: ignore[arg-type]
+            client=client,  # type: ignore[arg-type]
+            renderer=ReminderRenderer(),
+            timezone="UTC",  # 刻意跟 reminder tz 不同
+            interval_seconds=10,
+        )
+
+        # Mock `datetime.now` 讓 tick 時的 now 剛好是 2026-07-03 09:00 TP (= 01:00 UTC)
+        import unittest.mock
+
+        with unittest.mock.patch(
+            "remindly.reminders.scheduler.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 7, 3, 1, 0, tzinfo=scheduler_zone)
+            scheduler.tick()
+
+        self.assertEqual(1, len(repository.rescheduled))
+        _, next_at = repository.rescheduled[0]
+        # 明天 09:00 TP，不是明天 09:00 UTC (= 17:00 TP)
+        expected = datetime(2026, 7, 4, 9, 0, tzinfo=reminder_zone)
+        self.assertEqual(expected, next_at)
+
+    def test_tick_reschedules_recurring_reminder_instead_of_marking_fired(self) -> None:
+        from remindly.reminders.models import (
+            RecurrencePeriod,
+            RecurrenceRule,
+        )
+
+        zone = ZoneInfo("Asia/Taipei")
+        # 使用者例子：每月 1, 18, 25 號 09:00。tick 剛好碰到 7/1 09:00 → 下次 7/18 09:00
+        remind_at = datetime(2026, 7, 1, 9, 0, tzinfo=zone)
+        reminder = Reminder(
+            id="rmd_rec",
+            short_id="R-REC",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="繳信用卡",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.FIRING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at,
+            updated_at=remind_at,
+            recurrence=RecurrenceRule(
+                period=RecurrencePeriod.MONTHLY,
+                hour=9,
+                minute=0,
+                month_days=(1, 18, 25),
+            ),
+        )
+        repository = FakeDeliveryRepository(reminder)
+        client = FakeTelegramClient()
+        scheduler = ReminderScheduler(
+            repository=repository,  # type: ignore[arg-type]
+            client=client,  # type: ignore[arg-type]
+            renderer=ReminderRenderer(),
+            timezone="Asia/Taipei",
+            interval_seconds=10,
+        )
+
+        scheduler.tick()
+
+        self.assertEqual([], repository.marked_fired)  # 不標 FIRED
+        self.assertEqual(1, len(repository.rescheduled))
+        rmd_id, next_at = repository.rescheduled[0]
+        self.assertEqual("rmd_rec", rmd_id)
+        self.assertEqual(datetime(2026, 7, 18, 9, 0, tzinfo=zone), next_at)
+        # 訊息仍然照送
+        self.assertIn("ID：R-REC", client.messages[0].text)
 
 
 if __name__ == "__main__":
