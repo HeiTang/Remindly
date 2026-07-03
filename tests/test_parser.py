@@ -218,6 +218,38 @@ class ReminderParserRecurrenceTest(unittest.TestCase):
         self.assertIsNone(r.recurrence)
         self.assertEqual(datetime(2026, 7, 5, 15, 0, tzinfo=self.zone), r.remind_at)
 
+    def test_monthly_rejects_zero_and_out_of_range_days(self) -> None:
+        """『每個月 0 號』、『每個月 45 號』會讓 next_fire 崩掉；應該 fall through。"""
+        for text in [
+            "每個月 0 號 09:00 提醒我吃藥",
+            "每個月 45 號 09:00 提醒我吃藥",
+        ]:
+            r = self._parse(text)
+            self.assertIsNone(r.recurrence, f"should not build rule for: {text!r}")
+
+    def test_monthly_partial_valid_days_are_kept(self) -> None:
+        """『每個月 15, 45 號』只保留合法的 15，過濾掉 45。"""
+        r = self._parse("每個月 15, 45 號 09:00 提醒我發薪")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual((15,), r.recurrence.month_days)
+
+    def test_yearly_rejects_invalid_month(self) -> None:
+        """『每年 13/25』月份超出 1-12；不建立規則。"""
+        r = self._parse("每年 13/25 08:00 提醒我")
+        self.assertIsNone(r.recurrence)
+
+    def test_yearly_rejects_impossible_date(self) -> None:
+        """『每年 2/30』日期不存在；不建立規則（會讓 next_fire 崩掉）。"""
+        r = self._parse("每年 2/30 08:00 提醒我")
+        self.assertIsNone(r.recurrence)
+
+    def test_yearly_allows_leap_day(self) -> None:
+        """『每年 2/29』是合法規則（閏年才觸發）；`_is_valid_month_day` 用閏年當試探。"""
+        r = self._parse("每年 2/29 08:00 提醒我生日")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual(2, r.recurrence.year_month)
+        self.assertEqual(29, r.recurrence.year_day)
+
 
 class ReminderParserCarrefourVariantsTest(unittest.TestCase):
     """九個表達同一件事的變體，全部應解析為 2026-07-30 21:00 的提醒，

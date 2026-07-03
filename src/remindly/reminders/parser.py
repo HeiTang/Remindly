@@ -332,23 +332,27 @@ class ReminderParser:
     def _detect_recurrence_marker(
         self, cleaned: str
     ) -> tuple[str, RecurrencePeriod, dict[str, object]] | None:
-        """依序試 monthly / yearly / weekly / daily。回傳 (匹配字串, period, 額外欄位 dict)。"""
+        """依序試 monthly / yearly / weekly / daily。回傳 (匹配字串, period, 額外欄位 dict)。
+        非法輸入（月/日超出範圍、日期組合不存在）會直接 fall through 給一次性 parser，
+        避免 next_fire 拋 ValueError / RuntimeError 讓整條 parse 崩掉。"""
         monthly = RECURRENCE_MONTHLY_RE.search(cleaned)
         if monthly:
-            days = tuple(
-                sorted({int(d) for d in re.split(r"[、,，\s]+", monthly.group("days")) if d})
-            )
-            return monthly.group(0), RecurrencePeriod.MONTHLY, {"month_days": days}
+            raw_days = {int(d) for d in re.split(r"[、,，\s]+", monthly.group("days")) if d}
+            # 過濾出 1..31 的合法日期。像「每個月 0 號」或「每個月 45 號」會被跳過。
+            days = tuple(sorted(d for d in raw_days if 1 <= d <= 31))
+            if days:
+                return monthly.group(0), RecurrencePeriod.MONTHLY, {"month_days": days}
 
         yearly = RECURRENCE_YEARLY_RE.search(cleaned)
         if yearly:
             month = int(yearly.group("cn_month") or yearly.group("slash_month"))
             day = int(yearly.group("cn_day") or yearly.group("slash_day"))
-            return (
-                yearly.group(0),
-                RecurrencePeriod.YEARLY,
-                {"year_month": month, "year_day": day},
-            )
+            if _is_valid_month_day(month, day):
+                return (
+                    yearly.group(0),
+                    RecurrencePeriod.YEARLY,
+                    {"year_month": month, "year_day": day},
+                )
 
         weekly = RECURRENCE_WEEKLY_RE.search(cleaned)
         if weekly:
@@ -361,7 +365,8 @@ class ReminderParser:
                     }
                 )
             )
-            return weekly.group(0), RecurrencePeriod.WEEKLY, {"weekdays": weekdays}
+            if weekdays:
+                return weekly.group(0), RecurrencePeriod.WEEKLY, {"weekdays": weekdays}
 
         daily = RECURRENCE_DAILY_RE.search(cleaned)
         if daily:
@@ -772,6 +777,16 @@ def dedupe_participants(participants: list[Participant]) -> list[Participant]:
         seen.add(key)
         deduped.append(participant)
     return deduped
+
+
+def _is_valid_month_day(month: int, day: int) -> bool:
+    """檢查 (month, day) 是否為存在的日期。用 2028（閏年）當試探年，
+    這樣 2/29 會被視為合法（yearly recurrence 允許），但 2/30、4/31、13/1 都拒絕。"""
+    try:
+        datetime(2028, month, day)
+    except ValueError:
+        return False
+    return True
 
 
 def parse_relative_amount(value: str, unit: str) -> float:
