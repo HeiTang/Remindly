@@ -243,6 +243,12 @@ class ReminderParserRecurrenceTest(unittest.TestCase):
         r = self._parse("每年 2/30 08:00 提醒我")
         self.assertIsNone(r.recurrence)
 
+    def test_recurrence_title_preserves_yao_like_one_off_path(self) -> None:
+        """一次性路徑刻意保留 `要`（例：`1號要去家樂福` → title 保留 要）。
+        週期路徑應該一致，不再 strip leading 要。"""
+        r = self._parse("每天 09:00 提醒我要運動")
+        self.assertEqual("要運動", r.title)
+
     def test_yearly_allows_leap_day(self) -> None:
         """『每年 2/29』是合法規則（閏年才觸發）；`_is_valid_month_day` 用閏年當試探。"""
         r = self._parse("每年 2/29 08:00 提醒我生日")

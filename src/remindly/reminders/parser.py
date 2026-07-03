@@ -318,17 +318,15 @@ class ReminderParser:
         rule = RecurrenceRule(period=period, hour=hour, minute=minute, **extras)
         remind_at = next_fire(rule, now)
 
-        # 標題：把 marker、時間片段、提醒(我/我們/大家)? 全部從 cleaned 挖掉，剩下就是內容。
-        title = cleaned
-        title = title.replace(marker_text, " ", 1)
-        title = title.replace(time_match.group(0), " ", 1)
-        title = re.sub(r"提醒(?:我們|我|大家)?", " ", title)
-        for participant in participants:
-            title = title.replace(participant.display_name, " ")
-        title = re.sub(r"@\w+", " ", title)
-        title = re.sub(r"^\s*(?:和|跟|與|要|在)\s*", "", title)
-        title = normalize_spaces(title)
-        return rule, remind_at, title or None
+        # 標題：把 marker、時間片段、提醒(我/我們/大家)? 從 cleaned 挖掉，
+        # 剩下的 participant / mention / 連接詞清理交給 `_clean_content_title`，
+        # 讓週期與一次性路徑的 title 產出方式一致（例如都保留 `要`）。
+        remaining = cleaned
+        remaining = remaining.replace(marker_text, " ", 1)
+        remaining = remaining.replace(time_match.group(0), " ", 1)
+        remaining = re.sub(r"提醒(?:我們|我|大家)?", " ", remaining)
+        title = self._clean_content_title(remaining, participants)
+        return rule, remind_at, title
 
     def _detect_recurrence_marker(
         self, cleaned: str
