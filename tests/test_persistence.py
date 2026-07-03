@@ -161,6 +161,69 @@ class PersistenceTest(unittest.TestCase):
         self.assertEqual(RS.PENDING, got.status)
         self.assertEqual(next_at, got.remind_at)
 
+    def test_claim_due_matches_cross_timezone_reminders(self) -> None:
+        """回歸：使用者 tz 是 Asia/Taipei、scheduler tick now 是 UTC 同一瞬間，
+        `remind_at` 儲存為 `+08:00` ISO 字串。用 julianday() 做比對才會正確 claim。"""
+        from remindly.reminders.models import Reminder, ReminderStatus
+
+        tp = ZoneInfo("Asia/Taipei")
+        utc = ZoneInfo("UTC")
+        remind_at_tp = datetime(2026, 7, 3, 9, 0, tzinfo=tp)  # 01:00 UTC
+        reminder = Reminder(
+            id="rmd_tz_claim",
+            short_id="R-TZC",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="跨 tz",
+            remind_at=remind_at_tp,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at_tp,
+            updated_at=remind_at_tp,
+        )
+        self.repository.create_reminder(reminder, [])
+
+        # scheduler now = 同一瞬間，但表示為 UTC
+        now_utc = datetime(2026, 7, 3, 1, 0, tzinfo=utc)
+        claimed = self.repository.claim_due(now_utc)
+
+        self.assertEqual(1, len(claimed))
+        self.assertEqual("rmd_tz_claim", claimed[0].id)
+
+    def test_claim_due_ignores_future_reminders_across_timezone(self) -> None:
+        """回歸另一側：使用者 tz 的 08:00 TP（=00:00 UTC）尚未到，
+        scheduler tick 在 07:59:59 TP（=23:59:59 UTC 前一天）不應 claim。"""
+        from remindly.reminders.models import Reminder, ReminderStatus
+
+        tp = ZoneInfo("Asia/Taipei")
+        utc = ZoneInfo("UTC")
+        remind_at_tp = datetime(2026, 7, 3, 8, 0, tzinfo=tp)  # 00:00 UTC
+        reminder = Reminder(
+            id="rmd_future",
+            short_id="R-FUT",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="還沒到",
+            remind_at=remind_at_tp,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at_tp,
+            updated_at=remind_at_tp,
+        )
+        self.repository.create_reminder(reminder, [])
+
+        # scheduler now = 前一秒 UTC，尚未到 remind_at
+        now_utc = datetime(2026, 7, 2, 23, 59, 59, tzinfo=utc)
+        claimed = self.repository.claim_due(now_utc)
+
+        self.assertEqual([], claimed)
+
     def test_reschedule_ignores_non_firing_reminder(self) -> None:
         """對已 FIRED / CANCELLED 的提醒呼叫 reschedule 不會誤改。"""
         from remindly.reminders.models import Reminder, ReminderStatus

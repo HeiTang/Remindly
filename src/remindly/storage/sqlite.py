@@ -183,7 +183,7 @@ class ReminderRepository:
                 """
                 select * from reminders
                 where chat_id = ? and status = ?
-                order by remind_at asc
+                order by julianday(remind_at) asc
                 limit ?
                 """,
                 (chat_id, ReminderStatus.PENDING.value, limit),
@@ -254,11 +254,14 @@ class ReminderRepository:
         claimed: list[Reminder] = []
         now_text = now.isoformat()
         with self.connect() as connection:
+            # `julianday()` 把 ISO 字串轉成絕對時間（Julian Day 浮點），
+            # 讓不同 tz offset（例如 `+08:00` vs `+00:00`）的相同瞬間能正確比對。
+            # 只靠字典序比對 ISO 字串在跨時區部署時會漏掉 reminders。
             rows = connection.execute(
                 """
                 select * from reminders
-                where status = ? and remind_at <= ?
-                order by remind_at asc
+                where status = ? and julianday(remind_at) <= julianday(?)
+                order by julianday(remind_at) asc
                 limit ?
                 """,
                 (ReminderStatus.PENDING.value, now_text, limit),

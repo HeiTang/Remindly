@@ -85,8 +85,10 @@ def next_fire(rule: RecurrenceRule, after: datetime) -> datetime:
     if rule.period == RecurrencePeriod.YEARLY:
         if rule.year_month is None or rule.year_day is None:
             raise ValueError("yearly recurrence requires year_month and year_day")
-        # 掃今年、明年；閏日 2/29 在非閏年會 ValueError，跳過往下試。
-        for year in range(after.year, after.year + 5):
+        # 往後掃 9 年：閏日 2/29 在非閏年會 ValueError 被跳過；橫跨世紀時
+        # 閏年 gap 可能達 8 年（2096 leap → 2100 non-leap → 2104 leap），
+        # 9 年給留一年餘裕確保命中。其他日期最多在 1 年內就命中。
+        for year in range(after.year, after.year + 9):
             try:
                 candidate = datetime(
                     year, rule.year_month, rule.year_day, rule.hour, rule.minute, tzinfo=zone
@@ -95,7 +97,7 @@ def next_fire(rule: RecurrenceRule, after: datetime) -> datetime:
                 continue
             if candidate > after:
                 return candidate
-        raise RuntimeError("unreachable: 5-year scan must find a yearly slot")
+        raise RuntimeError("unreachable: 9-year scan must find a yearly slot")
 
     raise ValueError(f"unknown recurrence period: {rule.period!r}")
 

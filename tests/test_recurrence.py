@@ -180,6 +180,19 @@ class NextFireYearlyTest(unittest.TestCase):
         after = datetime(2026, 3, 1, 10, 0, tzinfo=ZONE)
         self.assertEqual(datetime(2028, 2, 29, 8, 0, tzinfo=ZONE), next_fire(rule, after))
 
+    def test_leap_day_across_century_gap_2096_to_2104(self) -> None:
+        """世紀邊界的閏年 gap：2096 leap → 2100 非閏 → 2104 leap（gap 8 年）。
+        從 2097 起算，需要 9 年 lookahead 才能命中 2104/2/29。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=2,
+            year_day=29,
+        )
+        after = datetime(2097, 3, 1, 10, 0, tzinfo=ZONE)
+        self.assertEqual(datetime(2104, 2, 29, 8, 0, tzinfo=ZONE), next_fire(rule, after))
+
 
 if __name__ == "__main__":
     unittest.main()
