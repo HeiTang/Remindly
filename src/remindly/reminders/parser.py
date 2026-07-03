@@ -167,7 +167,7 @@ class ReminderParser:
         participants = self._extract_participants(cleaned, message)
 
         # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。
-        recurrence = self._try_recurrence_parse(cleaned, reference, zone, participants)
+        recurrence = self._try_recurrence_parse(cleaned, reference, participants)
         if recurrence is not None:
             rule, remind_at, title = recurrence
             missing_fields: list[str] = []
@@ -299,11 +299,12 @@ class ReminderParser:
         self,
         cleaned: str,
         now: datetime,
-        zone: ZoneInfo,
         participants: list[Participant],
     ) -> tuple[RecurrenceRule, datetime, str | None] | None:
         """認出「每天 / 每週X / 每個月 X 號 / 每年 M/D」這類 marker，產出 RecurrenceRule。
-        時間必須在同一句出現（TIME_RE 命中）；不到就 fall through 給一次性 parser。"""
+        時間必須在同一句出現（TIME_RE 命中）；不到就 fall through 給一次性 parser。
+        時區資訊由 `now.tzinfo` 帶著（`next_fire` 也用 `after.tzinfo`），
+        不需要額外的 zone 參數。"""
         marker = self._detect_recurrence_marker(cleaned)
         if marker is None:
             return None
