@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
+from remindly.reminders.recurrence import next_fire
 from remindly.reminders.renderer import ReminderRenderer, delivery_snooze_keyboard
 from remindly.reminders.repositories import ReminderDeliveryRepository
 from remindly.reminders.service import ExpiredPrompt
@@ -65,7 +66,12 @@ class ReminderScheduler:
                         reminder.short_id, next_day_time_label
                     ),
                 )
-                self._repository.mark_fired(reminder.id, now)
+                if reminder.recurrence is not None:
+                    # 週期性提醒：計算下次觸發並轉回 PENDING，不標 FIRED。
+                    next_at = next_fire(reminder.recurrence, now)
+                    self._repository.reschedule(reminder.id, next_at, now)
+                else:
+                    self._repository.mark_fired(reminder.id, now)
             except Exception:
                 LOGGER.exception("Failed to send reminder %s", reminder.short_id)
                 self._repository.mark_failed(reminder.id, datetime.now(ZoneInfo(self._timezone)))

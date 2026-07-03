@@ -68,6 +68,130 @@ class PersistenceTest(unittest.TestCase):
         self.assertEqual("R-0001", session.short_id)
         self.assertEqual("time", session.field)
 
+    def test_reminder_persists_recurrence_roundtrip(self) -> None:
+        from remindly.reminders.models import (
+            RecurrencePeriod,
+            RecurrenceRule,
+            Reminder,
+            ReminderStatus,
+        )
+
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(1, 18, 25),
+        )
+        reminder = Reminder(
+            id="rmd_r1",
+            short_id="R-REC1",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="繳信用卡",
+            remind_at=self.now,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="每月 1, 18, 25 提醒我繳信用卡",
+            parse_result={},
+            created_at=self.now,
+            updated_at=self.now,
+            recurrence=rule,
+        )
+        self.repository.create_reminder(reminder, [])
+
+        got = self.repository.get_by_short_id(100, "R-REC1")
+        self.assertIsNotNone(got)
+        self.assertEqual(rule, got.recurrence)
+
+    def test_reminder_without_recurrence_reads_none(self) -> None:
+        from remindly.reminders.models import Reminder, ReminderStatus
+
+        reminder = Reminder(
+            id="rmd_r2",
+            short_id="R-REC2",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="一次性",
+            remind_at=self.now,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=self.now,
+            updated_at=self.now,
+        )
+        self.repository.create_reminder(reminder, [])
+
+        got = self.repository.get_by_short_id(100, "R-REC2")
+        self.assertIsNone(got.recurrence)
+
+    def test_reschedule_transitions_firing_to_pending(self) -> None:
+        from remindly.reminders.models import Reminder, ReminderStatus
+
+        reminder = Reminder(
+            id="rmd_r3",
+            short_id="R-REC3",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="每天洗澡",
+            remind_at=self.now,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=self.now,
+            updated_at=self.now,
+        )
+        self.repository.create_reminder(reminder, [])
+        # 手動把 status 推到 FIRING（模擬 claim_due 的效果）
+        with self.repository.connect() as connection:
+            connection.execute(
+                "update reminders set status = ? where id = ?",
+                ("firing", "rmd_r3"),
+            )
+
+        next_at = self.now + timedelta(days=1)
+        self.repository.reschedule("rmd_r3", next_at, self.now)
+
+        got = self.repository.get_by_short_id(100, "R-REC3")
+        from remindly.reminders.models import ReminderStatus as RS
+        self.assertEqual(RS.PENDING, got.status)
+        self.assertEqual(next_at, got.remind_at)
+
+    def test_reschedule_ignores_non_firing_reminder(self) -> None:
+        """對已 FIRED / CANCELLED 的提醒呼叫 reschedule 不會誤改。"""
+        from remindly.reminders.models import Reminder, ReminderStatus
+
+        reminder = Reminder(
+            id="rmd_r4",
+            short_id="R-REC4",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="已 fired",
+            remind_at=self.now,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=self.now,
+            updated_at=self.now,
+        )
+        self.repository.create_reminder(reminder, [])
+        with self.repository.connect() as connection:
+            connection.execute(
+                "update reminders set status = ? where id = ?",
+                ("fired", "rmd_r4"),
+            )
+
+        self.repository.reschedule("rmd_r4", self.now + timedelta(days=1), self.now)
+        got = self.repository.get_by_short_id(100, "R-REC4")
+        self.assertEqual(ReminderStatus.FIRED, got.status)
+        self.assertEqual(self.now, got.remind_at)
+
     def test_upsert_user_and_chat(self) -> None:
         self.repository.upsert_user(7, "orange", "Orange", self.now)
         self.repository.upsert_chat(100, "group", "Test Group", None, self.now)
