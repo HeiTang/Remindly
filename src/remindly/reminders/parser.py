@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from remindly.reminders.models import MentionKind, ParseResult, Participant
+from remindly.reminders.models import (
+    MentionKind,
+    ParseResult,
+    Participant,
+    RecurrencePeriod,
+    RecurrenceRule,
+)
+from remindly.reminders.recurrence import next_fire
 from remindly.reminders.text import normalize_spaces
 from remindly.telegram.models import TelegramMessage, TelegramUser
 
@@ -85,6 +92,31 @@ WEEKDAY_RE = re.compile(
 
 REL_DAY_RE = re.compile(r"(?P<kw>後天|明天|明日|今天|今日)")
 
+# 週期性提醒 marker：以 "每" 開頭。
+# 每天 / 每日 — daily
+RECURRENCE_DAILY_RE = re.compile(r"每(?:天|日)")
+
+# 每週一 / 每禮拜一二三 / 每星期一、三、五 — weekly
+# 群組 chars 允許用 、 , ，或空白分隔
+RECURRENCE_WEEKLY_RE = re.compile(
+    r"每(?:週|周|禮拜|礼拜|星期)\s*"
+    r"(?P<weekdays>[一二三四五六日天](?:[、,，\s]*[一二三四五六日天])*)"
+)
+
+# 每個月 1 號 / 每月 1, 18, 25 號 — monthly
+RECURRENCE_MONTHLY_RE = re.compile(
+    r"每(?:個)?月\s*"
+    r"(?P<days>\d{1,2}(?:\s*[、,，]\s*\d{1,2})*)"
+    r"\s*[號号日]"
+)
+
+# 每年 12月25號 / 每年 12/25 — yearly
+RECURRENCE_YEARLY_RE = re.compile(
+    r"每年\s*"
+    r"(?:(?P<cn_month>\d{1,2})月\s*(?P<cn_day>\d{1,2})\s*[號号日]?"
+    r"|(?P<slash_month>\d{1,2})/(?P<slash_day>\d{1,2}))"
+)
+
 # 切割 '提醒我/我們/大家' 的錨點；用於「以動詞切段」策略
 PROMPT_SPLIT_RE = re.compile(r"提醒(?:我們|我|大家)?")
 
@@ -134,6 +166,32 @@ class ReminderParser:
         cleaned = normalize_spaces(text)
         participants = self._extract_participants(cleaned, message)
 
+        # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。
+        recurrence = self._try_recurrence_parse(cleaned, reference, zone, participants)
+        if recurrence is not None:
+            rule, remind_at, title = recurrence
+            missing_fields: list[str] = []
+            if not title:
+                missing_fields.append("title")
+            if not participants:
+                missing_fields.append("participants")
+            confidence = 0.95 if not missing_fields else 0.55
+            raw = {
+                "source_text": text,
+                "grain": "recurrence",
+                "missing_fields": missing_fields,
+                "confidence": confidence,
+            }
+            return ParseResult(
+                title=title,
+                remind_at=remind_at,
+                participants=tuple(participants),
+                missing_fields=tuple(missing_fields),
+                confidence=confidence,
+                raw=raw,
+                recurrence=rule,
+            )
+
         split = self._try_split_parse(cleaned, reference, zone, participants)
         if split is not None:
             time_parse, title = split
@@ -141,7 +199,7 @@ class ReminderParser:
             time_parse = self._parse_time(cleaned, reference, zone)
             title = self._extract_title(cleaned, time_parse.consumed_text, participants)
 
-        missing_fields: list[str] = []
+        missing_fields = []
         if time_parse.remind_at is None or time_parse.missing_time or time_parse.is_past:
             missing_fields.append("time")
 
@@ -234,6 +292,80 @@ class ReminderParser:
         if content_zone.strip():
             title = self._clean_content_title(content_zone, participants)
             return TimeParse(None, "", "unknown"), title
+
+        return None
+
+    def _try_recurrence_parse(
+        self,
+        cleaned: str,
+        now: datetime,
+        zone: ZoneInfo,
+        participants: list[Participant],
+    ) -> tuple[RecurrenceRule, datetime, str | None] | None:
+        """認出「每天 / 每週X / 每個月 X 號 / 每年 M/D」這類 marker，產出 RecurrenceRule。
+        時間必須在同一句出現（TIME_RE 命中）；不到就 fall through 給一次性 parser。"""
+        marker = self._detect_recurrence_marker(cleaned)
+        if marker is None:
+            return None
+        marker_text, period, extras = marker
+
+        time_match = TIME_RE.search(cleaned)
+        if not time_match:
+            return None
+        hour, minute = self._parse_clock(time_match)
+
+        rule = RecurrenceRule(period=period, hour=hour, minute=minute, **extras)
+        remind_at = next_fire(rule, now)
+
+        # 標題：把 marker、時間片段、提醒(我/我們/大家)? 全部從 cleaned 挖掉，剩下就是內容。
+        title = cleaned
+        title = title.replace(marker_text, " ", 1)
+        title = title.replace(time_match.group(0), " ", 1)
+        title = re.sub(r"提醒(?:我們|我|大家)?", " ", title)
+        for participant in participants:
+            title = title.replace(participant.display_name, " ")
+        title = re.sub(r"@\w+", " ", title)
+        title = re.sub(r"^\s*(?:和|跟|與|要|在)\s*", "", title)
+        title = normalize_spaces(title)
+        return rule, remind_at, title or None
+
+    def _detect_recurrence_marker(
+        self, cleaned: str
+    ) -> tuple[str, RecurrencePeriod, dict[str, object]] | None:
+        """依序試 monthly / yearly / weekly / daily。回傳 (匹配字串, period, 額外欄位 dict)。"""
+        monthly = RECURRENCE_MONTHLY_RE.search(cleaned)
+        if monthly:
+            days = tuple(
+                sorted({int(d) for d in re.split(r"[、,，\s]+", monthly.group("days")) if d})
+            )
+            return monthly.group(0), RecurrencePeriod.MONTHLY, {"month_days": days}
+
+        yearly = RECURRENCE_YEARLY_RE.search(cleaned)
+        if yearly:
+            month = int(yearly.group("cn_month") or yearly.group("slash_month"))
+            day = int(yearly.group("cn_day") or yearly.group("slash_day"))
+            return (
+                yearly.group(0),
+                RecurrencePeriod.YEARLY,
+                {"year_month": month, "year_day": day},
+            )
+
+        weekly = RECURRENCE_WEEKLY_RE.search(cleaned)
+        if weekly:
+            weekdays = tuple(
+                sorted(
+                    {
+                        WEEKDAY_MAP[c]
+                        for c in weekly.group("weekdays")
+                        if c in WEEKDAY_MAP
+                    }
+                )
+            )
+            return weekly.group(0), RecurrencePeriod.WEEKLY, {"weekdays": weekdays}
+
+        daily = RECURRENCE_DAILY_RE.search(cleaned)
+        if daily:
+            return daily.group(0), RecurrencePeriod.DAILY, {}
 
         return None
 

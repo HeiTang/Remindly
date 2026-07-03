@@ -104,6 +104,48 @@ class PersistenceTest(unittest.TestCase):
         self.assertIsNotNone(got)
         self.assertEqual(rule, got.recurrence)
 
+    def test_draft_persists_recurrence_roundtrip(self) -> None:
+        """Phase 2：draft 也要能存 RecurrenceRule 供 confirm 時帶到 Reminder。"""
+        from remindly.reminders.models import (
+            RecurrencePeriod,
+            RecurrenceRule,
+        )
+
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(1, 18, 25),
+        )
+        draft = ReminderDraft(
+            id="draft_rec",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="每個月 1, 18, 25 號 09:00 提醒我繳信用卡",
+            title="繳信用卡",
+            remind_at=self.now + timedelta(days=14),
+            participants=[
+                Participant(
+                    user_id=7,
+                    username="orange",
+                    display_name="@orange",
+                    mention_kind=MentionKind.USERNAME,
+                )
+            ],
+            missing_fields=[],
+            parse_result={},
+            recurrence=rule,
+        )
+        store = SqliteDraftStore(ttl_minutes=10, repository=self.repository)
+        store.save(draft, self.now)
+        reloaded_store = SqliteDraftStore(ttl_minutes=10, repository=self.repository)
+        reloaded = reloaded_store.get_by_id("draft_rec", self.now)
+
+        self.assertIsNotNone(reloaded)
+        self.assertEqual(rule, reloaded.recurrence)
+
     def test_reminder_without_recurrence_reads_none(self) -> None:
         from remindly.reminders.models import Reminder, ReminderStatus
 

@@ -24,7 +24,7 @@ class MigrationTest(unittest.TestCase):
                 tables = table_names(connection)
 
         self.assertEqual(expected_migration_rows(), rows)
-        self.assertEqual(4, latest_schema_version())
+        self.assertEqual(5, latest_schema_version())
         self.assertIn("reminders", tables)
         self.assertIn("reminder_drafts", tables)
         self.assertIn("edit_sessions", tables)
@@ -48,6 +48,7 @@ def expected_migration_rows() -> list[tuple[int, str]]:
         (2, "chat_settings"),
         (3, "prompt_message_id"),
         (4, "recurrence"),
+        (5, "draft_recurrence"),
     ]
 
 
