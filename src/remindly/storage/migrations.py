@@ -126,11 +126,16 @@ RECURRENCE_SQL = """
 alter table reminders add column recurrence text;
 """
 
+DRAFT_RECURRENCE_SQL = """
+alter table reminder_drafts add column recurrence text;
+"""
+
 MIGRATIONS = (
     Migration(version=1, name="initial_schema", sql=INITIAL_SCHEMA_SQL),
     Migration(version=2, name="chat_settings", sql=CHAT_SETTINGS_SQL),
     Migration(version=3, name="prompt_message_id", sql=PROMPT_MESSAGE_ID_SQL),
     Migration(version=4, name="recurrence", sql=RECURRENCE_SQL),
+    Migration(version=5, name="draft_recurrence", sql=DRAFT_RECURRENCE_SQL),
 )
 
 

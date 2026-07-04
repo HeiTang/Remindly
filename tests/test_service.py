@@ -23,6 +23,7 @@ from remindly.reminders.service import (
 )
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
+from remindly.telegram.models import TelegramChat, TelegramMessage, TelegramUser
 
 
 class ReminderServiceListGroupingTest(unittest.TestCase):
@@ -277,6 +278,70 @@ class ReminderServiceSnoozeTest(unittest.TestCase):
             click_at + timedelta(hours=1),
             result.reminder.remind_at,
         )
+
+
+class ReminderServiceRecurringCreateTest(unittest.TestCase):
+    """Phase 2 端到端：一句「每個月 1, 18, 25 號 09:00 提醒我繳信用卡」→
+    begin_create 應該產生帶 recurrence 的 draft、confirm 應該把 recurrence 帶進 Reminder。"""
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = ReminderRepository(Path(self.temp_dir.name) / "test.db")
+        self.repository.migrate()
+        self.zone = ZoneInfo("Asia/Taipei")
+        self.now = datetime(2026, 7, 4, 8, 0, tzinfo=self.zone)
+        self.service = ReminderService(
+            repository=self.repository,
+            parser=ReminderParser("Asia/Taipei"),
+            draft_store=DraftStore(ttl_minutes=10),
+            edit_store=EditSessionStore(ttl_minutes=10),
+            default_timezone="Asia/Taipei",
+        )
+        self.message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="",
+            entities=(),
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_begin_create_populates_draft_recurrence(self) -> None:
+        from remindly.reminders.models import RecurrencePeriod
+        from remindly.reminders.service import Confirmation
+
+        result = self.service.begin_create(
+            "每個月 1, 18, 25 號 09:00 提醒我繳信用卡",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, Confirmation)
+        self.assertIsNotNone(result.draft.recurrence)
+        self.assertEqual(RecurrencePeriod.MONTHLY, result.draft.recurrence.period)
+        self.assertEqual((1, 18, 25), result.draft.recurrence.month_days)
+        self.assertEqual("繳信用卡", result.draft.title)
+
+    def test_confirm_transfers_recurrence_to_reminder(self) -> None:
+        from remindly.reminders.service import Confirmation
+
+        result = self.service.begin_create(
+            "每天 09:00 提醒我吃藥",
+            self.message,
+            self.now,
+        )
+        assert isinstance(result, Confirmation)
+        draft_id = result.draft.id
+
+        create_result = self.service.confirm(draft_id, 7, self.now)
+        self.assertIsNotNone(create_result)
+        self.assertIsNotNone(create_result.reminder.recurrence)
+        self.assertEqual(result.draft.recurrence, create_result.reminder.recurrence)
+
+        # 從 DB 讀回時也帶著 recurrence
+        stored = self.repository.get_by_short_id(100, create_result.reminder.short_id)
+        self.assertEqual(create_result.reminder.recurrence, stored.recurrence)
 
 
 class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):

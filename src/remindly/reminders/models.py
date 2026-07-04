@@ -94,6 +94,7 @@ class ReminderDraft:
     parse_result: dict[str, object] = field(default_factory=dict)
     expires_at: datetime | None = None
     prompt_message_id: int | None = None
+    recurrence: RecurrenceRule | None = None
 
     @property
     def is_complete(self) -> bool:
@@ -108,3 +109,4 @@ class ParseResult:
     missing_fields: tuple[str, ...]
     confidence: float
     raw: dict[str, object]
+    recurrence: RecurrenceRule | None = None

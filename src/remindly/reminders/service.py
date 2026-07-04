@@ -176,6 +176,7 @@ class ReminderService:
             participants=list(parse_result.participants),
             missing_fields=list(parse_result.missing_fields),
             parse_result=parse_result.raw,
+            recurrence=parse_result.recurrence,
         )
 
         if draft.is_complete:
@@ -253,6 +254,7 @@ class ReminderService:
             parse_result=draft.parse_result,
             created_at=now,
             updated_at=now,
+            recurrence=draft.recurrence,
         )
         self._repository.create_reminder(reminder, draft.participants)
         self._draft_store.delete(draft_id)

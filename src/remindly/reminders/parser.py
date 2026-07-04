@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from remindly.reminders.models import MentionKind, ParseResult, Participant
+from remindly.reminders.models import (
+    MentionKind,
+    ParseResult,
+    Participant,
+    RecurrencePeriod,
+    RecurrenceRule,
+)
+from remindly.reminders.recurrence import next_fire
 from remindly.reminders.text import normalize_spaces
 from remindly.telegram.models import TelegramMessage, TelegramUser
 
@@ -85,6 +92,31 @@ WEEKDAY_RE = re.compile(
 
 REL_DAY_RE = re.compile(r"(?P<kw>後天|明天|明日|今天|今日)")
 
+# 週期性提醒 marker：以 "每" 開頭。
+# 每天 / 每日 — daily
+RECURRENCE_DAILY_RE = re.compile(r"每(?:天|日)")
+
+# 每週一 / 每禮拜一二三 / 每星期一、三、五 — weekly
+# 群組 chars 允許用 、 , ，或空白分隔
+RECURRENCE_WEEKLY_RE = re.compile(
+    r"每(?:週|周|禮拜|礼拜|星期)\s*"
+    r"(?P<weekdays>[一二三四五六日天](?:[、,，\s]*[一二三四五六日天])*)"
+)
+
+# 每個月 1 號 / 每月 1, 18, 25 號 — monthly
+RECURRENCE_MONTHLY_RE = re.compile(
+    r"每(?:個)?月\s*"
+    r"(?P<days>\d{1,2}(?:\s*[、,，]\s*\d{1,2})*)"
+    r"\s*[號号日]"
+)
+
+# 每年 12月25號 / 每年 12/25 — yearly
+RECURRENCE_YEARLY_RE = re.compile(
+    r"每年\s*"
+    r"(?:(?P<cn_month>\d{1,2})月\s*(?P<cn_day>\d{1,2})\s*[號号日]?"
+    r"|(?P<slash_month>\d{1,2})/(?P<slash_day>\d{1,2}))"
+)
+
 # 切割 '提醒我/我們/大家' 的錨點；用於「以動詞切段」策略
 PROMPT_SPLIT_RE = re.compile(r"提醒(?:我們|我|大家)?")
 
@@ -134,6 +166,32 @@ class ReminderParser:
         cleaned = normalize_spaces(text)
         participants = self._extract_participants(cleaned, message)
 
+        # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。
+        recurrence = self._try_recurrence_parse(cleaned, reference, participants)
+        if recurrence is not None:
+            rule, remind_at, title = recurrence
+            missing_fields: list[str] = []
+            if not title:
+                missing_fields.append("title")
+            if not participants:
+                missing_fields.append("participants")
+            confidence = 0.95 if not missing_fields else 0.55
+            raw = {
+                "source_text": text,
+                "grain": "recurrence",
+                "missing_fields": missing_fields,
+                "confidence": confidence,
+            }
+            return ParseResult(
+                title=title,
+                remind_at=remind_at,
+                participants=tuple(participants),
+                missing_fields=tuple(missing_fields),
+                confidence=confidence,
+                raw=raw,
+                recurrence=rule,
+            )
+
         split = self._try_split_parse(cleaned, reference, zone, participants)
         if split is not None:
             time_parse, title = split
@@ -141,7 +199,7 @@ class ReminderParser:
             time_parse = self._parse_time(cleaned, reference, zone)
             title = self._extract_title(cleaned, time_parse.consumed_text, participants)
 
-        missing_fields: list[str] = []
+        missing_fields = []
         if time_parse.remind_at is None or time_parse.missing_time or time_parse.is_past:
             missing_fields.append("time")
 
@@ -234,6 +292,84 @@ class ReminderParser:
         if content_zone.strip():
             title = self._clean_content_title(content_zone, participants)
             return TimeParse(None, "", "unknown"), title
+
+        return None
+
+    def _try_recurrence_parse(
+        self,
+        cleaned: str,
+        now: datetime,
+        participants: list[Participant],
+    ) -> tuple[RecurrenceRule, datetime, str | None] | None:
+        """認出「每天 / 每週X / 每個月 X 號 / 每年 M/D」這類 marker，產出 RecurrenceRule。
+        時間必須在同一句出現（TIME_RE 命中）；不到就 fall through 給一次性 parser。
+        時區資訊由 `now.tzinfo` 帶著（`next_fire` 也用 `after.tzinfo`），
+        不需要額外的 zone 參數。"""
+        marker = self._detect_recurrence_marker(cleaned)
+        if marker is None:
+            return None
+        marker_text, period, extras = marker
+
+        time_match = TIME_RE.search(cleaned)
+        if not time_match:
+            return None
+        hour, minute = self._parse_clock(time_match)
+
+        rule = RecurrenceRule(period=period, hour=hour, minute=minute, **extras)
+        remind_at = next_fire(rule, now)
+
+        # 標題：把 marker、時間片段、提醒(我/我們/大家)? 從 cleaned 挖掉，
+        # 剩下的 participant / mention / 連接詞清理交給 `_clean_content_title`，
+        # 讓週期與一次性路徑的 title 產出方式一致（例如都保留 `要`）。
+        remaining = cleaned
+        remaining = remaining.replace(marker_text, " ", 1)
+        remaining = remaining.replace(time_match.group(0), " ", 1)
+        remaining = re.sub(r"提醒(?:我們|我|大家)?", " ", remaining)
+        title = self._clean_content_title(remaining, participants)
+        return rule, remind_at, title
+
+    def _detect_recurrence_marker(
+        self, cleaned: str
+    ) -> tuple[str, RecurrencePeriod, dict[str, object]] | None:
+        """依序試 monthly / yearly / weekly / daily。回傳 (匹配字串, period, 額外欄位 dict)。
+        非法輸入（月/日超出範圍、日期組合不存在）會直接 fall through 給一次性 parser，
+        避免 next_fire 拋 ValueError / RuntimeError 讓整條 parse 崩掉。"""
+        monthly = RECURRENCE_MONTHLY_RE.search(cleaned)
+        if monthly:
+            raw_days = {int(d) for d in re.split(r"[、,，\s]+", monthly.group("days")) if d}
+            # 過濾出 1..31 的合法日期。像「每個月 0 號」或「每個月 45 號」會被跳過。
+            days = tuple(sorted(d for d in raw_days if 1 <= d <= 31))
+            if days:
+                return monthly.group(0), RecurrencePeriod.MONTHLY, {"month_days": days}
+
+        yearly = RECURRENCE_YEARLY_RE.search(cleaned)
+        if yearly:
+            month = int(yearly.group("cn_month") or yearly.group("slash_month"))
+            day = int(yearly.group("cn_day") or yearly.group("slash_day"))
+            if _is_valid_month_day(month, day):
+                return (
+                    yearly.group(0),
+                    RecurrencePeriod.YEARLY,
+                    {"year_month": month, "year_day": day},
+                )
+
+        weekly = RECURRENCE_WEEKLY_RE.search(cleaned)
+        if weekly:
+            weekdays = tuple(
+                sorted(
+                    {
+                        WEEKDAY_MAP[c]
+                        for c in weekly.group("weekdays")
+                        if c in WEEKDAY_MAP
+                    }
+                )
+            )
+            if weekdays:
+                return weekly.group(0), RecurrencePeriod.WEEKLY, {"weekdays": weekdays}
+
+        daily = RECURRENCE_DAILY_RE.search(cleaned)
+        if daily:
+            return daily.group(0), RecurrencePeriod.DAILY, {}
 
         return None
 
@@ -640,6 +776,16 @@ def dedupe_participants(participants: list[Participant]) -> list[Participant]:
         seen.add(key)
         deduped.append(participant)
     return deduped
+
+
+def _is_valid_month_day(month: int, day: int) -> bool:
+    """檢查 (month, day) 是否為存在的日期。用 2028（閏年）當試探年，
+    這樣 2/29 會被視為合法（yearly recurrence 允許），但 2/30、4/31、13/1 都拒絕。"""
+    try:
+        datetime(2028, month, day)
+    except ValueError:
+        return False
+    return True
 
 
 def parse_relative_amount(value: str, unit: str) -> float:

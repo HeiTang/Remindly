@@ -110,6 +110,153 @@ class ReminderParserTest(unittest.TestCase):
         self.assertEqual(23, parse_number("二十三"))
 
 
+class ReminderParserRecurrenceTest(unittest.TestCase):
+    """Phase 2：自然語言 → RecurrenceRule。"""
+
+    def setUp(self) -> None:
+        from remindly.reminders.parser import ReminderParser
+
+        self.zone = ZoneInfo("Asia/Taipei")
+        # 2026-07-04（週六）08:00
+        self.now = datetime(2026, 7, 4, 8, 0, tzinfo=self.zone)
+        self.parser = ReminderParser("Asia/Taipei")
+        self.message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="",
+            entities=(),
+        )
+
+    def _parse(self, text: str):
+        return self.parser.parse(text, self.message, self.now)
+
+    def test_daily_09_00(self) -> None:
+        from remindly.reminders.models import RecurrencePeriod
+
+        r = self._parse("每天 09:00 提醒我吃藥")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual(RecurrencePeriod.DAILY, r.recurrence.period)
+        self.assertEqual(9, r.recurrence.hour)
+        self.assertEqual(0, r.recurrence.minute)
+        self.assertIn("吃藥", r.title or "")
+        self.assertEqual((), r.missing_fields)
+        # 今天 8am → 首次觸發 = 今天 9am
+        self.assertEqual(datetime(2026, 7, 4, 9, 0, tzinfo=self.zone), r.remind_at)
+
+    def test_daily_with_period_word(self) -> None:
+        r = self._parse("每天早上 9 點提醒我運動")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual(9, r.recurrence.hour)
+        self.assertIn("運動", r.title or "")
+
+    def test_weekly_single_day(self) -> None:
+        from remindly.reminders.models import RecurrencePeriod
+
+        r = self._parse("每週一 09:00 提醒我開會")
+        self.assertEqual(RecurrencePeriod.WEEKLY, r.recurrence.period)
+        self.assertEqual((0,), r.recurrence.weekdays)
+        self.assertIn("開會", r.title or "")
+
+    def test_weekly_multi_days_no_separator(self) -> None:
+        r = self._parse("每週一三五 09:00 提醒我運動")
+        self.assertEqual((0, 2, 4), r.recurrence.weekdays)
+
+    def test_weekly_multi_days_with_dun_separator(self) -> None:
+        r = self._parse("每週一、三、五 09:00 提醒我運動")
+        self.assertEqual((0, 2, 4), r.recurrence.weekdays)
+
+    def test_weekly_synonyms(self) -> None:
+        """禮拜、星期 也算 weekly marker。"""
+        for text in ["每禮拜二 09:00 提醒我開會", "每星期二 09:00 提醒我開會"]:
+            r = self._parse(text)
+            self.assertIsNotNone(r.recurrence)
+            self.assertEqual((1,), r.recurrence.weekdays)
+
+    def test_monthly_single_day(self) -> None:
+        from remindly.reminders.models import RecurrencePeriod
+
+        r = self._parse("每個月 1 號 09:00 提醒我付房租")
+        self.assertEqual(RecurrencePeriod.MONTHLY, r.recurrence.period)
+        self.assertEqual((1,), r.recurrence.month_days)
+        self.assertIn("付房租", r.title or "")
+
+    def test_monthly_multi_days_user_example(self) -> None:
+        """使用者的原始請求：每個月 1, 18, 25 提醒我繳信用卡"""
+        r = self._parse("每個月 1, 18, 25 號 09:00 提醒我繳信用卡")
+        self.assertEqual((1, 18, 25), r.recurrence.month_days)
+        self.assertIn("繳信用卡", r.title or "")
+        # 今天 7/4 → 下一次 = 7/18
+        self.assertEqual(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone), r.remind_at)
+
+    def test_monthly_multi_days_with_dun_separator(self) -> None:
+        r = self._parse("每個月 1、18、25 號 09:00 提醒我繳信用卡")
+        self.assertEqual((1, 18, 25), r.recurrence.month_days)
+
+    def test_monthly_short_form_without_ge(self) -> None:
+        """『每月』（不加『個』）也算 monthly marker。"""
+        r = self._parse("每月 15 號 09:00 提醒我發薪")
+        self.assertEqual((15,), r.recurrence.month_days)
+
+    def test_yearly_chinese_date(self) -> None:
+        from remindly.reminders.models import RecurrencePeriod
+
+        r = self._parse("每年 12月25號 08:00 提醒我聖誕節")
+        self.assertEqual(RecurrencePeriod.YEARLY, r.recurrence.period)
+        self.assertEqual(12, r.recurrence.year_month)
+        self.assertEqual(25, r.recurrence.year_day)
+        self.assertIn("聖誕節", r.title or "")
+
+    def test_yearly_slash_date(self) -> None:
+        r = self._parse("每年 12/25 08:00 提醒我聖誕節")
+        self.assertEqual(12, r.recurrence.year_month)
+        self.assertEqual(25, r.recurrence.year_day)
+
+    def test_non_recurring_still_works(self) -> None:
+        """一次性提醒不應被誤認為週期。"""
+        r = self._parse("明天下午三點提醒我倒垃圾")
+        self.assertIsNone(r.recurrence)
+        self.assertEqual(datetime(2026, 7, 5, 15, 0, tzinfo=self.zone), r.remind_at)
+
+    def test_monthly_rejects_zero_and_out_of_range_days(self) -> None:
+        """『每個月 0 號』、『每個月 45 號』會讓 next_fire 崩掉；應該 fall through。"""
+        for text in [
+            "每個月 0 號 09:00 提醒我吃藥",
+            "每個月 45 號 09:00 提醒我吃藥",
+        ]:
+            r = self._parse(text)
+            self.assertIsNone(r.recurrence, f"should not build rule for: {text!r}")
+
+    def test_monthly_partial_valid_days_are_kept(self) -> None:
+        """『每個月 15, 45 號』只保留合法的 15，過濾掉 45。"""
+        r = self._parse("每個月 15, 45 號 09:00 提醒我發薪")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual((15,), r.recurrence.month_days)
+
+    def test_yearly_rejects_invalid_month(self) -> None:
+        """『每年 13/25』月份超出 1-12；不建立規則。"""
+        r = self._parse("每年 13/25 08:00 提醒我")
+        self.assertIsNone(r.recurrence)
+
+    def test_yearly_rejects_impossible_date(self) -> None:
+        """『每年 2/30』日期不存在；不建立規則（會讓 next_fire 崩掉）。"""
+        r = self._parse("每年 2/30 08:00 提醒我")
+        self.assertIsNone(r.recurrence)
+
+    def test_recurrence_title_preserves_yao_like_one_off_path(self) -> None:
+        """一次性路徑刻意保留 `要`（例：`1號要去家樂福` → title 保留 要）。
+        週期路徑應該一致，不再 strip leading 要。"""
+        r = self._parse("每天 09:00 提醒我要運動")
+        self.assertEqual("要運動", r.title)
+
+    def test_yearly_allows_leap_day(self) -> None:
+        """『每年 2/29』是合法規則（閏年才觸發）；`_is_valid_month_day` 用閏年當試探。"""
+        r = self._parse("每年 2/29 08:00 提醒我生日")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual(2, r.recurrence.year_month)
+        self.assertEqual(29, r.recurrence.year_day)
+
+
 class ReminderParserCarrefourVariantsTest(unittest.TestCase):
     """九個表達同一件事的變體，全部應解析為 2026-07-30 21:00 的提醒，
     標題保留 08/01 / 1號 / 隔天等內容日期文字。"""
