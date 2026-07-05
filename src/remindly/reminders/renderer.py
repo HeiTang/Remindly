@@ -4,6 +4,7 @@ from datetime import datetime
 
 from remindly.reminders.callback_data import reminder_callback
 from remindly.reminders.models import MentionKind, Participant, Reminder, ReminderDraft
+from remindly.reminders.recurrence import format_rule
 from remindly.reminders.service import ReminderListFilter, ReminderListGroup
 from remindly.reminders.text import html_escape
 
@@ -11,39 +12,44 @@ from remindly.reminders.text import html_escape
 class ReminderRenderer:
     def render_confirmation(self, draft: ReminderDraft) -> str:
         participants = self.render_participants(draft.participants)
-        return "\n".join(
-            [
-                "確認建立提醒？",
-                f"時間：{format_datetime(draft.remind_at)}",
-                f"對象：{participants}",
-                f"事項：{html_escape(draft.title or '')}",
-            ]
-        )
+        lines = ["確認建立提醒？"]
+        if draft.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(draft.recurrence))}")
+            lines.append(f"下次：{format_datetime(draft.remind_at)}")
+        else:
+            lines.append(f"時間：{format_datetime(draft.remind_at)}")
+        lines.append(f"對象：{participants}")
+        lines.append(f"事項：{html_escape(draft.title or '')}")
+        return "\n".join(lines)
 
     def render_created(self, reminder: Reminder) -> str:
-        return "\n".join(
-            [
-                f"已建立提醒 {html_escape(reminder.short_id)}",
-                f"時間：{format_datetime(reminder.remind_at)}",
-                f"事項：{html_escape(reminder.title)}",
-                f"取消：/cancel {html_escape(reminder.short_id)}",
-            ]
-        )
+        lines = [f"已建立提醒 {html_escape(reminder.short_id)}"]
+        if reminder.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(reminder.recurrence))}")
+            lines.append(f"下次：{format_datetime(reminder.remind_at)}")
+        else:
+            lines.append(f"時間：{format_datetime(reminder.remind_at)}")
+        lines.append(f"事項：{html_escape(reminder.title)}")
+        lines.append(f"取消：/cancel {html_escape(reminder.short_id)}")
+        return "\n".join(lines)
 
     def render_detail(self, reminder: Reminder, participants: list[Participant]) -> str:
         mention_text = self.render_participants(participants)
-        return "\n".join(
-            [
-                f"提醒 {html_escape(reminder.short_id)}",
-                f"時間：{format_datetime(reminder.remind_at)}",
-                f"事項：{html_escape(reminder.title)}",
-                f"對象：{mention_text or '未設定'}",
-            ]
-        )
+        lines = [f"提醒 {html_escape(reminder.short_id)}"]
+        if reminder.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(reminder.recurrence))}")
+            lines.append(f"下次：{format_datetime(reminder.remind_at)}")
+        else:
+            lines.append(f"時間：{format_datetime(reminder.remind_at)}")
+        lines.append(f"事項：{html_escape(reminder.title)}")
+        lines.append(f"對象：{mention_text or '未設定'}")
+        return "\n".join(lines)
 
     def render_delivery(self, reminder: Reminder, participants: list[Participant]) -> str:
         mention_text = self.render_participants(participants)
         lines = [f"提醒：{html_escape(reminder.title)}", f"ID：{html_escape(reminder.short_id)}"]
+        if reminder.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(reminder.recurrence))}")
         if mention_text:
             lines.extend(["", f"對象：{mention_text}"])
         return "\n".join(lines)
@@ -70,8 +76,10 @@ class ReminderRenderer:
         for group in groups:
             lines.extend(["", f"建立者：{html_escape(group.creator_label)}"])
             for reminder in group.reminders:
+                prefix = "[重複] " if reminder.recurrence is not None else ""
                 lines.append(
-                    f"- {html_escape(reminder.short_id)}｜{format_datetime(reminder.remind_at)}｜"
+                    f"- {prefix}{html_escape(reminder.short_id)}｜"
+                    f"{format_datetime(reminder.remind_at)}｜"
                     f"{html_escape(reminder.title)}"
                 )
         lines.extend(["", "點選下方提醒可查看、修改或刪除。"])
@@ -170,11 +178,13 @@ def reminder_list_keyboard(
             ]
         )
         for reminder in group.reminders:
+            prefix = "[重複] " if reminder.recurrence is not None else ""
             rows.append(
                 [
                     {
                         "text": truncate_button_text(
-                            f"{reminder.short_id}｜{format_datetime(reminder.remind_at)}｜{reminder.title}"
+                            f"{prefix}{reminder.short_id}｜"
+                            f"{format_datetime(reminder.remind_at)}｜{reminder.title}"
                         ),
                         "callback_data": reminder_callback("view", reminder.short_id),
                     }

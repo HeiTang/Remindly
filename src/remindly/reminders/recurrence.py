@@ -106,3 +106,31 @@ def _month_offset(year: int, month: int, offset: int) -> tuple[int, int]:
     """回傳 (year+offset_months, month+offset_months) 處理跨年進位。"""
     total = (month - 1) + offset
     return year + total // 12, total % 12 + 1
+
+
+_CHINESE_WEEKDAYS = ("一", "二", "三", "四", "五", "六", "日")
+
+
+def format_rule(rule: RecurrenceRule) -> str:
+    """把 RecurrenceRule 格式化成使用者可讀的中文字串，供確認卡 / 列表 / 詳情共用。
+
+    範例：
+    - DAILY 09:00                              → "每天 09:00"
+    - WEEKLY weekdays=(0,)  09:00              → "每週一 09:00"
+    - WEEKLY weekdays=(0,2,4) 09:00            → "每週一、三、五 09:00"
+    - MONTHLY month_days=(15,) 09:00           → "每月 15 號 09:00"
+    - MONTHLY month_days=(1,18,25) 09:00       → "每月 1, 18, 25 號 09:00"
+    - YEARLY  year_month=12 year_day=25 08:00  → "每年 12/25 08:00"
+    """
+    hhmm = f"{rule.hour:02d}:{rule.minute:02d}"
+    if rule.period == RecurrencePeriod.DAILY:
+        return f"每天 {hhmm}"
+    if rule.period == RecurrencePeriod.WEEKLY:
+        days = "、".join(_CHINESE_WEEKDAYS[d] for d in rule.weekdays)
+        return f"每週{days} {hhmm}"
+    if rule.period == RecurrencePeriod.MONTHLY:
+        days = ", ".join(str(d) for d in rule.month_days)
+        return f"每月 {days} 號 {hhmm}"
+    if rule.period == RecurrencePeriod.YEARLY:
+        return f"每年 {rule.year_month}/{rule.year_day} {hhmm}"
+    raise ValueError(f"unknown recurrence period: {rule.period!r}")
