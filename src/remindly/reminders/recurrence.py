@@ -125,8 +125,14 @@ _CHINESE_WEEKDAYS = ("一", "二", "三", "四", "五", "六", "日")
 def format_rule(rule: RecurrenceRule) -> str:
     """把 RecurrenceRule 格式化成使用者可讀的中文字串，供確認卡 / 列表 / 詳情共用。
 
-    Validation 跟 `next_fire` 對齊：空 weekdays、缺少 yearly 欄位、越界值都直接 raise，
-    避免輸出出現 "每週 09:00" 或 "每年 None/None ..." 這類 malformed 字串。
+    Validation：以 `next_fire` 的 required-field 規則為底（空 weekdays、缺 yearly
+    欄位都 raise），並額外做更嚴格的值域/日期檢查——weekday 必須在 0..6、
+    month_day 必須在 1..31、yearly (month, day) 必須是實際存在的日期（透過
+    `is_valid_month_day` 檢查，2/29 視為合法）。這是刻意比 `next_fire` 嚴格：
+    使用者看得到的字串要立即拒絕 malformed 規則（否則會出現 "每週 09:00" 或
+    "每年 None/None ..." 這種殘缺輸出）；`next_fire` 因為在 scheduler tick 內
+    才呼叫，只保護到「一定找不到觸發時間」這層。
+
     weekdays / month_days 都會排序後再輸出以保證使用者看到穩定順序。
 
     範例：
