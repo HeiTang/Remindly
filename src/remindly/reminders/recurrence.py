@@ -108,6 +108,17 @@ def _month_offset(year: int, month: int, offset: int) -> tuple[int, int]:
     return year + total // 12, total % 12 + 1
 
 
+def is_valid_month_day(month: int, day: int) -> bool:
+    """檢查 (month, day) 是否為存在的日期。用 2028（閏年）當試探年，
+    這樣 2/29 會被視為合法（yearly recurrence 允許），但 2/30、4/31、13/1 都拒絕。
+    parser 與 format_rule 共用，避免驗證邏輯漂移。"""
+    try:
+        datetime(2028, month, day)
+    except ValueError:
+        return False
+    return True
+
+
 _CHINESE_WEEKDAYS = ("一", "二", "三", "四", "五", "六", "日")
 
 
@@ -146,5 +157,9 @@ def format_rule(rule: RecurrenceRule) -> str:
     if rule.period == RecurrencePeriod.YEARLY:
         if rule.year_month is None or rule.year_day is None:
             raise ValueError("yearly recurrence requires year_month and year_day")
+        if not is_valid_month_day(rule.year_month, rule.year_day):
+            raise ValueError(
+                f"invalid yearly date: {rule.year_month}/{rule.year_day}"
+            )
         return f"每年 {rule.year_month}/{rule.year_day} {hhmm}"
     raise ValueError(f"unknown recurrence period: {rule.period!r}")

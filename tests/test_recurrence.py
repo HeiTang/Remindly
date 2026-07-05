@@ -281,6 +281,40 @@ class FormatRuleTest(unittest.TestCase):
                 RecurrenceRule(period=RecurrencePeriod.YEARLY, hour=8, minute=0)
             )
 
+    def test_yearly_out_of_range_month_raises(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=13,
+            year_day=25,
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_yearly_impossible_date_raises(self) -> None:
+        """4/31 不存在；format_rule 應與 parser 的 `is_valid_month_day` 對齊。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=4,
+            year_day=31,
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_yearly_leap_day_is_valid(self) -> None:
+        """2/29 合法（跟 parser 一致）；閏年才觸發。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=2,
+            year_day=29,
+        )
+        self.assertEqual("每年 2/29 08:00", format_rule(rule))
+
     def test_weekly_out_of_range_weekday_raises(self) -> None:
         """越界 weekday（例如 9）不應該爆 IndexError；應該是明確的 ValueError。"""
         rule = RecurrenceRule(
