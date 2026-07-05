@@ -143,6 +143,10 @@ def format_rule(rule: RecurrenceRule) -> str:
     - MONTHLY month_days=(1,18,25) 09:00       → "每月 1, 18, 25 號 09:00"
     - YEARLY  year_month=12 year_day=25 08:00  → "每年 12/25 08:00"
     """
+    if not 0 <= rule.hour <= 23:
+        raise ValueError(f"hour out of range 0..23: {rule.hour}")
+    if not 0 <= rule.minute <= 59:
+        raise ValueError(f"minute out of range 0..59: {rule.minute}")
     hhmm = f"{rule.hour:02d}:{rule.minute:02d}"
     if rule.period == RecurrencePeriod.DAILY:
         return f"每天 {hhmm}"

@@ -304,6 +304,17 @@ class FormatRuleTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             format_rule(rule)
 
+    def test_hour_out_of_range_raises(self) -> None:
+        """corrupted rule 帶 hour=99 應該 fail-fast，而非 render "99:99"。"""
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY, hour=99, minute=0)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_minute_out_of_range_raises(self) -> None:
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY, hour=9, minute=60)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
     def test_yearly_leap_day_is_valid(self) -> None:
         """2/29 合法（跟 parser 一致）；閏年才觸發。"""
         rule = RecurrenceRule(
