@@ -114,6 +114,10 @@ _CHINESE_WEEKDAYS = ("一", "二", "三", "四", "五", "六", "日")
 def format_rule(rule: RecurrenceRule) -> str:
     """把 RecurrenceRule 格式化成使用者可讀的中文字串，供確認卡 / 列表 / 詳情共用。
 
+    Validation 跟 `next_fire` 對齊：空 weekdays、缺少 yearly 欄位、越界值都直接 raise，
+    避免輸出出現 "每週 09:00" 或 "每年 None/None ..." 這類 malformed 字串。
+    weekdays / month_days 都會排序後再輸出以保證使用者看到穩定順序。
+
     範例：
     - DAILY 09:00                              → "每天 09:00"
     - WEEKLY weekdays=(0,)  09:00              → "每週一 09:00"
@@ -126,11 +130,21 @@ def format_rule(rule: RecurrenceRule) -> str:
     if rule.period == RecurrencePeriod.DAILY:
         return f"每天 {hhmm}"
     if rule.period == RecurrencePeriod.WEEKLY:
-        days = "、".join(_CHINESE_WEEKDAYS[d] for d in rule.weekdays)
+        if not rule.weekdays:
+            raise ValueError("weekly recurrence requires at least one weekday")
+        if any(d < 0 or d > 6 for d in rule.weekdays):
+            raise ValueError(f"weekday out of range 0..6: {rule.weekdays}")
+        days = "、".join(_CHINESE_WEEKDAYS[d] for d in sorted(set(rule.weekdays)))
         return f"每週{days} {hhmm}"
     if rule.period == RecurrencePeriod.MONTHLY:
-        days = ", ".join(str(d) for d in rule.month_days)
+        if not rule.month_days:
+            raise ValueError("monthly recurrence requires at least one month_day")
+        if any(d < 1 or d > 31 for d in rule.month_days):
+            raise ValueError(f"month_day out of range 1..31: {rule.month_days}")
+        days = ", ".join(str(d) for d in sorted(set(rule.month_days)))
         return f"每月 {days} 號 {hhmm}"
     if rule.period == RecurrencePeriod.YEARLY:
+        if rule.year_month is None or rule.year_day is None:
+            raise ValueError("yearly recurrence requires year_month and year_day")
         return f"每年 {rule.year_month}/{rule.year_day} {hhmm}"
     raise ValueError(f"unknown recurrence period: {rule.period!r}")

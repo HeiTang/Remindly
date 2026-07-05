@@ -185,5 +185,42 @@ class RenderGroupedListTest(unittest.TestCase):
         self.assertNotIn("[重複] R-ONE", text)
 
 
+class ReminderListKeyboardTest(unittest.TestCase):
+    """按鈕文字的 `[重複]` 前綴：跟 render_grouped_list 對稱，
+    避免只有訊息本文標示、按鈕沒標示的不一致。"""
+
+    def test_keyboard_button_has_bracket_prefix_for_recurring(self) -> None:
+        from remindly.reminders.renderer import reminder_list_keyboard
+
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(1, 18, 25),
+        )
+        groups = [
+            ReminderListGroup(
+                creator_user_id=7,
+                creator_label="你",
+                reminders=[
+                    _reminder(short_id="R-REC", recurrence=rule),
+                    _reminder(id="rmd_2", short_id="R-ONE", recurrence=None),
+                ],
+            )
+        ]
+        markup = reminder_list_keyboard(groups, ReminderListFilter.ALL)
+        button_texts = [
+            button["text"]
+            for row in markup["inline_keyboard"]
+            for button in row
+        ]
+
+        recurring_button = next(t for t in button_texts if "R-REC" in t)
+        oneoff_button = next(t for t in button_texts if "R-ONE" in t)
+
+        self.assertTrue(recurring_button.startswith("[重複] "))
+        self.assertFalse(oneoff_button.startswith("[重複]"))
+
+
 if __name__ == "__main__":
     unittest.main()

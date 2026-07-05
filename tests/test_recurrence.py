@@ -264,6 +264,63 @@ class FormatRuleTest(unittest.TestCase):
         )
         self.assertEqual("每年 12/25 08:00", format_rule(rule))
 
+    def test_weekly_empty_weekdays_raises(self) -> None:
+        """跟 next_fire 對齊：weekly 沒 weekdays 是 invalid rule。"""
+        rule = RecurrenceRule(period=RecurrencePeriod.WEEKLY, hour=9, minute=0)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_monthly_empty_days_raises(self) -> None:
+        rule = RecurrencePeriod.MONTHLY
+        with self.assertRaises(ValueError):
+            format_rule(RecurrenceRule(period=rule, hour=9, minute=0))
+
+    def test_yearly_missing_fields_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            format_rule(
+                RecurrenceRule(period=RecurrencePeriod.YEARLY, hour=8, minute=0)
+            )
+
+    def test_weekly_out_of_range_weekday_raises(self) -> None:
+        """越界 weekday（例如 9）不應該爆 IndexError；應該是明確的 ValueError。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.WEEKLY,
+            hour=9,
+            minute=0,
+            weekdays=(9,),
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_monthly_out_of_range_day_raises(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(0,),
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_format_sorts_weekdays_defensively(self) -> None:
+        """若手動建 rule 沒排序（parser 有 sort，但 API 不強制），輸出仍要穩定。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.WEEKLY,
+            hour=9,
+            minute=0,
+            weekdays=(4, 0, 2),
+        )
+        self.assertEqual("每週一、三、五 09:00", format_rule(rule))
+
+    def test_format_sorts_month_days_defensively(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(25, 1, 18),
+        )
+        self.assertEqual("每月 1, 18, 25 號 09:00", format_rule(rule))
+
 
 if __name__ == "__main__":
     unittest.main()
