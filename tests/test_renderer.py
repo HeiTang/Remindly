@@ -157,6 +157,45 @@ class RenderDeliveryTest(unittest.TestCase):
         self.assertIn("重複：每月 1, 18, 25 號 09:00", text)
 
 
+class RenderSkippedNextTest(unittest.TestCase):
+    """Phase 4a: 使用者按「跳過下次」後看到的訊息。"""
+
+    def setUp(self) -> None:
+        self.renderer = ReminderRenderer()
+
+    def test_shows_short_id_and_next_time(self) -> None:
+        text = self.renderer.render_skipped_next(_reminder())
+        self.assertIn("已跳過下次", text)
+        self.assertIn("R-ABC", text)
+        self.assertIn("下次：2026-07-18 09:00", text)
+        self.assertIn("繳信用卡", text)
+
+    def test_escapes_html_special_chars_in_title(self) -> None:
+        text = self.renderer.render_skipped_next(_reminder(title="<script>"))
+        self.assertIn("&lt;script&gt;", text)
+        self.assertNotIn("<script>", text)
+
+
+class RenderSeriesCancelledTest(unittest.TestCase):
+    """Phase 4a: 使用者按「取消整個系列」後看到的訊息。"""
+
+    def setUp(self) -> None:
+        self.renderer = ReminderRenderer()
+
+    def test_shows_short_id_and_title(self) -> None:
+        text = self.renderer.render_series_cancelled(_reminder())
+        self.assertIn("已取消整個系列", text)
+        self.assertIn("R-ABC", text)
+        self.assertIn("繳信用卡", text)
+        # 取消後不再顯示下次時間
+        self.assertNotIn("下次", text)
+
+    def test_escapes_html_special_chars_in_title(self) -> None:
+        text = self.renderer.render_series_cancelled(_reminder(title="<b>x</b>"))
+        self.assertIn("&lt;b&gt;", text)
+        self.assertNotIn("<b>x</b>", text)
+
+
 class RenderGroupedListTest(unittest.TestCase):
     def setUp(self) -> None:
         self.renderer = ReminderRenderer()

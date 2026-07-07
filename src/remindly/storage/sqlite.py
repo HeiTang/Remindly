@@ -218,7 +218,12 @@ class ReminderRepository:
         return [row_to_participant(row) for row in rows]
 
     def cancel(self, chat_id: int, short_id: str, actor_user_id: int) -> Reminder | None:
-        now = datetime.now().astimezone().isoformat()
+        """把 PENDING 提醒標為 CANCELLED。同 `advance_pending`：SELECT 之後、UPDATE
+        之前若 scheduler.claim_due 把 status 改成 FIRING，UPDATE 會 0 row affected；
+        必須檢查 rowcount 避免回傳「看似取消但 DB 未變」的 Reminder（會讓
+        cancel_series / `/cancel` / 詳情頁刪除都出現 UI 說已取消、實際下次仍會 fire）。
+        """
+        now_dt = datetime.now().astimezone()
         with self.connect() as connection:
             row = connection.execute(
                 """
@@ -234,7 +239,7 @@ class ReminderRepository:
             if int(row["creator_user_id"]) != actor_user_id:
                 return None
 
-            connection.execute(
+            result = connection.execute(
                 """
                 update reminders
                 set status = ?, updated_at = ?
@@ -242,13 +247,21 @@ class ReminderRepository:
                 """,
                 (
                     ReminderStatus.CANCELLED.value,
-                    now,
+                    now_dt.isoformat(),
                     row["id"],
                     ReminderStatus.PENDING.value,
                 ),
             )
+            if result.rowcount != 1:
+                return None
 
-        return replace(row_to_reminder(row), status=ReminderStatus.CANCELLED)
+        # 對齊其他 update 系列的行為：回傳的 Reminder 帶入剛剛寫入 DB 的 updated_at，
+        # 避免 callers 看到「回傳物件的 updated_at 跟 DB 不一致」。
+        return replace(
+            row_to_reminder(row),
+            status=ReminderStatus.CANCELLED,
+            updated_at=now_dt,
+        )
 
     def claim_due(self, now: datetime, limit: int = 20) -> list[Reminder]:
         claimed: list[Reminder] = []
@@ -311,6 +324,41 @@ class ReminderRepository:
                 ),
             )
 
+    def advance_pending(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        next_at: datetime,
+        now: datetime,
+    ) -> Reminder | None:
+        """使用者手動跳過下次觸發：把 PENDING 提醒的 remind_at 直接推到指定的
+        下下次時間。跟 `reschedule` 的差別在於這是使用者觸發、需要 actor guard，
+        且原本狀態就是 PENDING。
+
+        Guard against race with scheduler.claim_due：select 之後、update 之前若
+        scheduler 已經把 status 改成 FIRING，UPDATE 會 0 row affected；此時仍
+        回傳「看似成功」的 Reminder 會讓 DB 與回傳值不一致。檢查 rowcount 保證
+        真的改到才 return。
+        """
+        with self.connect() as connection:
+            row = self._pending_for_actor(connection, chat_id, short_id, actor_user_id)
+            if not row:
+                return None
+
+            result = connection.execute(
+                """
+                update reminders
+                set remind_at = ?, updated_at = ?
+                where id = ? and status = ?
+                """,
+                (next_at.isoformat(), now.isoformat(), row["id"], ReminderStatus.PENDING.value),
+            )
+            if result.rowcount != 1:
+                return None
+
+        return replace(row_to_reminder(row), remind_at=next_at, updated_at=now)
+
     def _mark(
         self,
         reminder_id: str,
@@ -349,7 +397,7 @@ class ReminderRepository:
                 select * from reminders
                 where chat_id = ?
                   and upper(short_id) = upper(?)
-                  and status in (?, ?)
+                  and status in (?, ?, ?)
                 limit 1
                 """,
                 (
@@ -357,16 +405,20 @@ class ReminderRepository:
                     short_id,
                     ReminderStatus.FIRING.value,
                     ReminderStatus.FIRED.value,
+                    # 週期性提醒在 scheduler.tick 內 send 完就會 reschedule 到 PENDING；
+                    # 使用者收到通知後按延後時多半已是 PENDING。若不接受 PENDING，
+                    # 週期性提醒的延後按鈕會全部失效（回 None）。
+                    ReminderStatus.PENDING.value,
                 ),
             ).fetchone()
             if not row or int(row["creator_user_id"]) != actor_user_id:
                 return None
 
-            connection.execute(
+            result = connection.execute(
                 """
                 update reminders
                 set status = ?, remind_at = ?, fired_at = null, updated_at = ?
-                where id = ? and status in (?, ?)
+                where id = ? and status in (?, ?, ?)
                 """,
                 (
                     ReminderStatus.PENDING.value,
@@ -375,8 +427,11 @@ class ReminderRepository:
                     row["id"],
                     ReminderStatus.FIRING.value,
                     ReminderStatus.FIRED.value,
+                    ReminderStatus.PENDING.value,
                 ),
             )
+            if result.rowcount != 1:
+                return None
 
         return replace(
             row_to_reminder(row),
