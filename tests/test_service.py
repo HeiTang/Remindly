@@ -474,6 +474,20 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
             stored.remind_at,
         )
 
+    def test_cancel_series_returns_none_when_reminder_no_longer_pending(self) -> None:
+        """對稱的 race：repository.cancel 也應有 rowcount guard。
+        Pre-existing 但由 Phase 4a 的取消按鈕觸發後更容易被使用者踩到。"""
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        with self.repository.connect() as connection:
+            connection.execute(
+                "update reminders set status = ? where id = ?",
+                ("firing", "rmd_p4a"),
+            )
+
+        self.assertIsNone(self.service.cancel_series(100, "R-P4A", 7))
+        stored = self.repository.get_by_short_id(100, "R-P4A")
+        self.assertEqual(ReminderStatus.FIRING, stored.status)
+
 
 class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):
     """對 sweep_expired_prompts 做 service + SQLite store 的整合測試，

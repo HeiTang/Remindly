@@ -218,6 +218,11 @@ class ReminderRepository:
         return [row_to_participant(row) for row in rows]
 
     def cancel(self, chat_id: int, short_id: str, actor_user_id: int) -> Reminder | None:
+        """把 PENDING 提醒標為 CANCELLED。同 `advance_pending`：SELECT 之後、UPDATE
+        之前若 scheduler.claim_due 把 status 改成 FIRING，UPDATE 會 0 row affected；
+        必須檢查 rowcount 避免回傳「看似取消但 DB 未變」的 Reminder（會讓
+        cancel_series / `/cancel` / 詳情頁刪除都出現 UI 說已取消、實際下次仍會 fire）。
+        """
         now = datetime.now().astimezone().isoformat()
         with self.connect() as connection:
             row = connection.execute(
@@ -234,7 +239,7 @@ class ReminderRepository:
             if int(row["creator_user_id"]) != actor_user_id:
                 return None
 
-            connection.execute(
+            result = connection.execute(
                 """
                 update reminders
                 set status = ?, updated_at = ?
@@ -247,6 +252,8 @@ class ReminderRepository:
                     ReminderStatus.PENDING.value,
                 ),
             )
+            if result.rowcount != 1:
+                return None
 
         return replace(row_to_reminder(row), status=ReminderStatus.CANCELLED)
 
