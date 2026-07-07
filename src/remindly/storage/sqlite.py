@@ -391,7 +391,7 @@ class ReminderRepository:
                 select * from reminders
                 where chat_id = ?
                   and upper(short_id) = upper(?)
-                  and status in (?, ?)
+                  and status in (?, ?, ?)
                 limit 1
                 """,
                 (
@@ -399,16 +399,20 @@ class ReminderRepository:
                     short_id,
                     ReminderStatus.FIRING.value,
                     ReminderStatus.FIRED.value,
+                    # 週期性提醒在 scheduler.tick 內 send 完就會 reschedule 到 PENDING；
+                    # 使用者收到通知後按延後時多半已是 PENDING。若不接受 PENDING，
+                    # 週期性提醒的延後按鈕會全部失效（回 None）。
+                    ReminderStatus.PENDING.value,
                 ),
             ).fetchone()
             if not row or int(row["creator_user_id"]) != actor_user_id:
                 return None
 
-            connection.execute(
+            result = connection.execute(
                 """
                 update reminders
                 set status = ?, remind_at = ?, fired_at = null, updated_at = ?
-                where id = ? and status in (?, ?)
+                where id = ? and status in (?, ?, ?)
                 """,
                 (
                     ReminderStatus.PENDING.value,
@@ -417,8 +421,11 @@ class ReminderRepository:
                     row["id"],
                     ReminderStatus.FIRING.value,
                     ReminderStatus.FIRED.value,
+                    ReminderStatus.PENDING.value,
                 ),
             )
+            if result.rowcount != 1:
+                return None
 
         return replace(
             row_to_reminder(row),

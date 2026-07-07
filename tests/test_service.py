@@ -279,6 +279,49 @@ class ReminderServiceSnoozeTest(unittest.TestCase):
             result.reminder.remind_at,
         )
 
+    def test_snooze_works_on_pending_recurring_reminder(self) -> None:
+        """回歸 (round 4)：週期性提醒的 scheduler.tick 內 send 完會立即 reschedule
+        到 PENDING；此時使用者按延後按鈕時 status 是 PENDING。若 snooze 不接受
+        PENDING，延後按鈕在週期性提醒上會全部失效。"""
+        from remindly.reminders.models import (
+            RecurrencePeriod,
+            RecurrenceRule,
+        )
+
+        # 直接建立 PENDING 狀態的週期性提醒（模擬 scheduler.tick 送完後的狀態）
+        base = datetime(2026, 8, 18, 9, 0, tzinfo=self.zone)
+        reminder = Reminder(
+            id="rmd_pending_rec",
+            short_id="R-PR",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="吃藥",
+            remind_at=datetime(2026, 8, 25, 9, 0, tzinfo=self.zone),
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=base,
+            updated_at=base,
+            recurrence=RecurrenceRule(
+                period=RecurrencePeriod.MONTHLY,
+                hour=9,
+                minute=0,
+                month_days=(1, 18, 25),
+            ),
+        )
+        self.repository.create_reminder(reminder, [])
+
+        click_at = datetime(2026, 8, 18, 9, 5, tzinfo=self.zone)
+        result = self.service.snooze(100, "R-PR", 7, "10m", click_at)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            click_at + timedelta(minutes=10),
+            result.reminder.remind_at,
+        )
+
 
 class ReminderServiceRecurringCreateTest(unittest.TestCase):
     """Phase 2 端到端：一句「每個月 1, 18, 25 號 09:00 提醒我繳信用卡」→
