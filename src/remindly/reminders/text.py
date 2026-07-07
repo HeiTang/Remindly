@@ -46,9 +46,14 @@ def strip_bot_mention(text: str, bot_username: str | None) -> str:
 
 
 def command_body(text: str, command: str, bot_username: str | None = None) -> str | None:
-    command_pattern = rf"^/{re.escape(command)}(?:@{re.escape(bot_username)})?\b"
+    """比對 `/command` 或 `/command@bot`。當 `bot_username=None`（部署未設 `BOT_USERNAME`）
+    時，接受任意 `@\\w+` 尾綴避免拒絕合法輸入。"""
+    # 先分支再構造 pattern：`re.escape(None)` 會 TypeError，過去 bot_username 未設時
+    # 每個 slash command 都會 crash 掉整個 handle_update。
     if bot_username is None:
         command_pattern = rf"^/{re.escape(command)}(?:@\w+)?\b"
+    else:
+        command_pattern = rf"^/{re.escape(command)}(?:@{re.escape(bot_username)})?\b"
 
     match = re.match(command_pattern, text.strip(), flags=re.IGNORECASE)
     if not match:
