@@ -240,10 +240,14 @@ class CallbackHandlers:
             context.now,
         )
         if not result:
-            # skip_next_occurrence 對「提醒不存在 / 不是週期性 / 不是建立者 / 剛被
-            # scheduler claim 走」都回 None。訊息不細分具體原因，只告知無法執行。
+            # skip_next_occurrence 對下列都回 None：
+            #   - 提醒不存在
+            #   - 提醒不是週期性
+            #   - 使用者不是建立者
+            #   - 提醒剛被 scheduler claim 走（PENDING → FIRING，處理中）
             self._client.answer_callback_query(
-                context.callback.id, "無法跳過：提醒不存在、非週期性，或你不是建立者"
+                context.callback.id,
+                "無法跳過：提醒不存在、非週期性、處理中，或你不是建立者",
             )
             return
 
@@ -258,8 +262,11 @@ class CallbackHandlers:
             context.callback.from_user.id,
         )
         if not reminder:
+            # cancel_series delegate 到 repository.cancel()，只接受 PENDING；
+            # FIRING（處理中）與非建立者都會回 None。
             self._client.answer_callback_query(
-                context.callback.id, "找不到可取消的提醒，或你不是建立者"
+                context.callback.id,
+                "無法取消：提醒不存在、處理中，或你不是建立者",
             )
             return
 

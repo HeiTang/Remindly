@@ -265,30 +265,19 @@ def delivery_snooze_keyboard(short_id: str, next_day_time_label: str) -> dict[st
 
 
 def delivery_recurring_keyboard(short_id: str, next_day_time_label: str) -> dict[str, object]:
-    """週期性提醒的到期按鈕：保留原本三顆延後按鈕，額外加上「跳過下次」與
-    「取消整個系列」。使用者拿到通知後可以：
+    """週期性提醒的到期按鈕：延用一次性提醒的三顆延後按鈕，再多一列
+    「跳過下次 / 取消整個系列」。使用者拿到通知後可以：
     - 延後這次到 10 分/1 小時/明天 HH:MM（Bot 送完後仍會照規則排下次）
     - 跳過下次（直接把 remind_at 推到「下下次」，例如每月 1/18/25 剛推到 18 號可再按跳過推到 25 號）
     - 取消整個系列（把提醒標為 CANCELLED，不會再收到）
+
+    Delegate 給 `delivery_snooze_keyboard` 取延後按鈕，避免文字或 callback 規則
+    在兩邊漂移。
     """
+    base = delivery_snooze_keyboard(short_id, next_day_time_label)
     return {
         "inline_keyboard": [
-            [
-                {
-                    "text": "10 分鐘後",
-                    "callback_data": reminder_callback("snooze", short_id, "10m"),
-                },
-                {
-                    "text": "1 小時後",
-                    "callback_data": reminder_callback("snooze", short_id, "1h"),
-                },
-            ],
-            [
-                {
-                    "text": f"明天 {next_day_time_label}",
-                    "callback_data": reminder_callback("snooze", short_id, "1d"),
-                }
-            ],
+            *base["inline_keyboard"],  # type: ignore[misc]
             [
                 {
                     "text": "跳過下次",
