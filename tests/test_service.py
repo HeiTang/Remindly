@@ -452,6 +452,28 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
         self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
         self.assertIsNone(self.service.cancel_series(100, "R-P4A", 999))
 
+    def test_skip_next_returns_none_when_reminder_no_longer_pending(self) -> None:
+        """Race with scheduler.claim_due：advance_pending 的 UPDATE guarded on
+        status = PENDING；若 select 之後、update 之前 scheduler 把 status 改成
+        FIRING，rowcount = 0，服務層應該 return None（別回傳假成功結果）。"""
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        # 模擬 scheduler 在中間把 status 改到 FIRING
+        with self.repository.connect() as connection:
+            connection.execute(
+                "update reminders set status = ? where id = ?",
+                ("firing", "rmd_p4a"),
+            )
+
+        self.assertIsNone(
+            self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
+        )
+        # 原本的 remind_at 沒被更改
+        stored = self.repository.get_by_short_id(100, "R-P4A")
+        self.assertEqual(
+            datetime(2026, 7, 18, 9, 0, tzinfo=self.zone),
+            stored.remind_at,
+        )
+
 
 class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):
     """對 sweep_expired_prompts 做 service + SQLite store 的整合測試，

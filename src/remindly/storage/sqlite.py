@@ -321,13 +321,19 @@ class ReminderRepository:
     ) -> Reminder | None:
         """使用者手動跳過下次觸發：把 PENDING 提醒的 remind_at 直接推到指定的
         下下次時間。跟 `reschedule` 的差別在於這是使用者觸發、需要 actor guard，
-        且原本狀態就是 PENDING。"""
+        且原本狀態就是 PENDING。
+
+        Guard against race with scheduler.claim_due：select 之後、update 之前若
+        scheduler 已經把 status 改成 FIRING，UPDATE 會 0 row affected；此時仍
+        回傳「看似成功」的 Reminder 會讓 DB 與回傳值不一致。檢查 rowcount 保證
+        真的改到才 return。
+        """
         with self.connect() as connection:
             row = self._pending_for_actor(connection, chat_id, short_id, actor_user_id)
             if not row:
                 return None
 
-            connection.execute(
+            result = connection.execute(
                 """
                 update reminders
                 set remind_at = ?, updated_at = ?
@@ -335,6 +341,8 @@ class ReminderRepository:
                 """,
                 (next_at.isoformat(), now.isoformat(), row["id"], ReminderStatus.PENDING.value),
             )
+            if result.rowcount != 1:
+                return None
 
         return replace(row_to_reminder(row), remind_at=next_at, updated_at=now)
 

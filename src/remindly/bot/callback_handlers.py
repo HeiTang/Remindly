@@ -240,8 +240,10 @@ class CallbackHandlers:
             context.now,
         )
         if not result:
+            # skip_next_occurrence 對「提醒不存在 / 不是週期性 / 不是建立者 / 剛被
+            # scheduler claim 走」都回 None。訊息不細分具體原因，只告知無法執行。
             self._client.answer_callback_query(
-                context.callback.id, "找不到可跳過的週期性提醒"
+                context.callback.id, "無法跳過：提醒不存在、非週期性，或你不是建立者"
             )
             return
 
