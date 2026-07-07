@@ -270,7 +270,7 @@ class CallbackHandlers:
             )
             return
 
-        self._client.answer_callback_query(context.callback.id, "已取消系列")
+        self._client.answer_callback_query(context.callback.id, "已取消整個系列")
         self._responses.show_series_cancelled(
             context.chat_id, context.message_id, reminder
         )
