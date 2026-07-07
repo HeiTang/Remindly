@@ -223,7 +223,7 @@ class ReminderRepository:
         必須檢查 rowcount 避免回傳「看似取消但 DB 未變」的 Reminder（會讓
         cancel_series / `/cancel` / 詳情頁刪除都出現 UI 說已取消、實際下次仍會 fire）。
         """
-        now = datetime.now().astimezone().isoformat()
+        now_dt = datetime.now().astimezone()
         with self.connect() as connection:
             row = connection.execute(
                 """
@@ -247,7 +247,7 @@ class ReminderRepository:
                 """,
                 (
                     ReminderStatus.CANCELLED.value,
-                    now,
+                    now_dt.isoformat(),
                     row["id"],
                     ReminderStatus.PENDING.value,
                 ),
@@ -255,7 +255,13 @@ class ReminderRepository:
             if result.rowcount != 1:
                 return None
 
-        return replace(row_to_reminder(row), status=ReminderStatus.CANCELLED)
+        # 對齊其他 update 系列的行為：回傳的 Reminder 帶入剛剛寫入 DB 的 updated_at，
+        # 避免 callers 看到「回傳物件的 updated_at 跟 DB 不一致」。
+        return replace(
+            row_to_reminder(row),
+            status=ReminderStatus.CANCELLED,
+            updated_at=now_dt,
+        )
 
     def claim_due(self, now: datetime, limit: int = 20) -> list[Reminder]:
         claimed: list[Reminder] = []

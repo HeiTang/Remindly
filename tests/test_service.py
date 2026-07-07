@@ -531,6 +531,20 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
         stored = self.repository.get_by_short_id(100, "R-P4A")
         self.assertEqual(ReminderStatus.FIRING, stored.status)
 
+    def test_cancel_series_returned_reminder_has_fresh_updated_at(self) -> None:
+        """回歸 (round 5)：cancel 的回傳 Reminder 過去只 replace status 但 updated_at
+        用 pre-UPDATE SELECT row 的舊值。使用者拿到的物件跟 DB 不一致。
+        重點：回傳與 DB 讀回的 updated_at 一致（都是 cancel 當下的時間）。"""
+        original = self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+
+        cancelled = self.service.cancel_series(100, "R-P4A", 7)
+        self.assertIsNotNone(cancelled)
+        # 回傳 updated_at 應該不等於原本 SELECT row 的 updated_at
+        self.assertNotEqual(cancelled.updated_at, original.updated_at)
+        # 且應該與 DB 的實際值一致
+        stored = self.repository.get_by_short_id(100, "R-P4A")
+        self.assertEqual(stored.updated_at, cancelled.updated_at)
+
 
 class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):
     """對 sweep_expired_prompts 做 service + SQLite store 的整合測試，
