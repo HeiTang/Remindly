@@ -18,6 +18,7 @@ from remindly.reminders.models import (
     ReminderStatus,
 )
 from remindly.reminders.parser import ReminderParser
+from remindly.reminders.recurrence import next_fire
 from remindly.reminders.repositories import ReminderRepository
 from remindly.telegram.models import (
     TelegramCallbackQuery,
@@ -510,6 +511,37 @@ class ReminderService:
 
         reminder = self._repository.snooze(chat_id, short_id, actor_user_id, remind_at, now)
         return SnoozeResult(reminder) if reminder else None
+
+    def skip_next_occurrence(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        now: datetime,
+    ) -> SnoozeResult | None:
+        """使用者從到期通知按「跳過下次」：把週期性提醒的下一次觸發直接推到再下一次。
+        非週期性提醒不應該有這顆按鈕，這裡回傳 None 讓 caller 顯示錯誤。"""
+        current = self._repository.get_by_short_id(chat_id, short_id)
+        if not current or current.recurrence is None:
+            return None
+
+        zone = ZoneInfo(current.timezone)
+        current_next = current.remind_at.astimezone(zone)
+        skipped_to = next_fire(current.recurrence, current_next)
+        reminder = self._repository.advance_pending(
+            chat_id, short_id, actor_user_id, skipped_to, now
+        )
+        return SnoozeResult(reminder) if reminder else None
+
+    def cancel_series(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+    ) -> Reminder | None:
+        """使用者從到期通知按「取消整個系列」：等同於 /cancel。
+        對一次性提醒也可用（雖然按鈕只出現在週期性提醒上）。"""
+        return self._repository.cancel(chat_id, short_id, actor_user_id)
 
     def set_timezone(self, user_id: int, timezone: str) -> None:
         ZoneInfo(timezone)

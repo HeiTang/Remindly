@@ -235,6 +235,94 @@ class ReminderSchedulerTest(unittest.TestCase):
         expected = datetime(2026, 7, 4, 9, 0, tzinfo=reminder_zone)
         self.assertEqual(expected, next_at)
 
+    def test_recurring_delivery_uses_recurring_keyboard(self) -> None:
+        """Phase 4a：週期性提醒的到期訊息要有『跳過下次』與『取消整個系列』按鈕。"""
+        from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
+
+        zone = ZoneInfo("Asia/Taipei")
+        remind_at = datetime(2026, 7, 4, 9, 0, tzinfo=zone)
+        reminder = Reminder(
+            id="rmd_rec_kbd",
+            short_id="R-RKB",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="繳信用卡",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.FIRING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at,
+            updated_at=remind_at,
+            recurrence=RecurrenceRule(
+                period=RecurrencePeriod.MONTHLY,
+                hour=9,
+                minute=0,
+                month_days=(1, 18, 25),
+            ),
+        )
+        repository = FakeDeliveryRepository(reminder)
+        client = FakeTelegramClient()
+        scheduler = ReminderScheduler(
+            repository=repository,  # type: ignore[arg-type]
+            client=client,  # type: ignore[arg-type]
+            renderer=ReminderRenderer(),
+            timezone="Asia/Taipei",
+            interval_seconds=10,
+        )
+
+        scheduler.tick()
+
+        labels = [
+            button["text"]
+            for row in client.messages[0].reply_markup["inline_keyboard"]
+            for button in row
+        ]
+        self.assertIn("跳過下次", labels)
+        self.assertIn("取消整個系列", labels)
+        # 一次性延後按鈕仍存在
+        self.assertIn("10 分鐘後", labels)
+
+    def test_one_off_delivery_does_not_show_skip_or_cancel_buttons(self) -> None:
+        """一次性提醒不應該有『跳過下次』或『取消整個系列』按鈕。"""
+        zone = ZoneInfo("Asia/Taipei")
+        remind_at = datetime(2026, 7, 4, 9, 0, tzinfo=zone)
+        reminder = Reminder(
+            id="rmd_once_kbd",
+            short_id="R-OKB",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="洗衣服",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.FIRING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at,
+            updated_at=remind_at,
+        )
+        repository = FakeDeliveryRepository(reminder)
+        client = FakeTelegramClient()
+        scheduler = ReminderScheduler(
+            repository=repository,  # type: ignore[arg-type]
+            client=client,  # type: ignore[arg-type]
+            renderer=ReminderRenderer(),
+            timezone="Asia/Taipei",
+            interval_seconds=10,
+        )
+
+        scheduler.tick()
+
+        labels = [
+            button["text"]
+            for row in client.messages[0].reply_markup["inline_keyboard"]
+            for button in row
+        ]
+        self.assertNotIn("跳過下次", labels)
+        self.assertNotIn("取消整個系列", labels)
+
     def test_tick_reschedules_recurring_reminder_instead_of_marking_fired(self) -> None:
         from remindly.reminders.models import (
             RecurrencePeriod,

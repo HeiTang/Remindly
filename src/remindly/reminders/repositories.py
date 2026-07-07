@@ -117,6 +117,17 @@ class ReminderRepository(ReminderDeliveryRepository, Protocol):
         """把已送出的提醒延後，重新排回 pending 狀態。"""
         ...
 
+    def advance_pending(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        next_at: datetime,
+        now: datetime,
+    ) -> Reminder | None:
+        """把 PENDING 提醒的 remind_at 直接推到指定時間（跳過下次用）。"""
+        ...
+
     def get_user_timezone(self, user_id: int, default_timezone: str) -> str:
         """取得使用者偏好時區；沒有設定時回傳系統預設時區。"""
         ...

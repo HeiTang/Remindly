@@ -344,6 +344,115 @@ class ReminderServiceRecurringCreateTest(unittest.TestCase):
         self.assertEqual(create_result.reminder.recurrence, stored.recurrence)
 
 
+class ReminderServiceRecurringActionsTest(unittest.TestCase):
+    """Phase 4a：skip_next_occurrence + cancel_series。"""
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = ReminderRepository(Path(self.temp_dir.name) / "test.db")
+        self.repository.migrate()
+        self.zone = ZoneInfo("Asia/Taipei")
+        self.now = datetime(2026, 7, 4, 8, 0, tzinfo=self.zone)
+        self.service = ReminderService(
+            repository=self.repository,
+            parser=ReminderParser("Asia/Taipei"),
+            draft_store=DraftStore(ttl_minutes=10),
+            edit_store=EditSessionStore(ttl_minutes=10),
+            default_timezone="Asia/Taipei",
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _persist_recurring(
+        self,
+        remind_at: datetime,
+        rule=None,
+    ) -> Reminder:
+        from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
+
+        if rule is None:
+            rule = RecurrenceRule(
+                period=RecurrencePeriod.MONTHLY,
+                hour=9,
+                minute=0,
+                month_days=(1, 18, 25),
+            )
+        reminder = Reminder(
+            id="rmd_p4a",
+            short_id="R-P4A",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="繳信用卡",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at,
+            updated_at=remind_at,
+            recurrence=rule,
+        )
+        self.repository.create_reminder(reminder, [])
+        return reminder
+
+    def test_skip_next_advances_one_iteration(self) -> None:
+        """每月 1, 18, 25 已排 7/18；skip 一次 → 7/25。"""
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        result = self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            datetime(2026, 7, 25, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_skip_next_crosses_month_boundary(self) -> None:
+        """已排 7/25（本月最後一次）；skip → 8/1。"""
+        self._persist_recurring(datetime(2026, 7, 25, 9, 0, tzinfo=self.zone))
+        result = self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
+        self.assertEqual(
+            datetime(2026, 8, 1, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_skip_next_rejects_non_recurring_reminder(self) -> None:
+        """一次性提醒不能 skip_next。"""
+        reminder = Reminder(
+            id="rmd_once",
+            short_id="R-ONE",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="X",
+            remind_at=self.now + timedelta(hours=1),
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=self.now,
+            updated_at=self.now,
+        )
+        self.repository.create_reminder(reminder, [])
+        self.assertIsNone(self.service.skip_next_occurrence(100, "R-ONE", 7, self.now))
+
+    def test_skip_next_rejects_non_creator(self) -> None:
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        self.assertIsNone(
+            self.service.skip_next_occurrence(100, "R-P4A", 999, self.now)
+        )
+
+    def test_cancel_series_marks_cancelled(self) -> None:
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        cancelled = self.service.cancel_series(100, "R-P4A", 7)
+        self.assertIsNotNone(cancelled)
+        self.assertEqual(ReminderStatus.CANCELLED, cancelled.status)
+
+    def test_cancel_series_rejects_non_creator(self) -> None:
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        self.assertIsNone(self.service.cancel_series(100, "R-P4A", 999))
+
+
 class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):
     """對 sweep_expired_prompts 做 service + SQLite store 的整合測試，
     scheduler 那邊用的 FakePromptSweeper 抓不到這條路徑上的 regression。"""

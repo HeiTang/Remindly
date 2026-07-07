@@ -311,6 +311,33 @@ class ReminderRepository:
                 ),
             )
 
+    def advance_pending(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        next_at: datetime,
+        now: datetime,
+    ) -> Reminder | None:
+        """使用者手動跳過下次觸發：把 PENDING 提醒的 remind_at 直接推到指定的
+        下下次時間。跟 `reschedule` 的差別在於這是使用者觸發、需要 actor guard，
+        且原本狀態就是 PENDING。"""
+        with self.connect() as connection:
+            row = self._pending_for_actor(connection, chat_id, short_id, actor_user_id)
+            if not row:
+                return None
+
+            connection.execute(
+                """
+                update reminders
+                set remind_at = ?, updated_at = ?
+                where id = ? and status = ?
+                """,
+                (next_at.isoformat(), now.isoformat(), row["id"], ReminderStatus.PENDING.value),
+            )
+
+        return replace(row_to_reminder(row), remind_at=next_at, updated_at=now)
+
     def _mark(
         self,
         reminder_id: str,

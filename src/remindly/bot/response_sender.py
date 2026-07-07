@@ -250,6 +250,36 @@ class ResponseSender:
             reply_markup={"inline_keyboard": []},
         )
 
+    def show_skip_next_result(
+        self,
+        chat_id: int,
+        message_id: int | None,
+        result: SnoozeResult,
+    ) -> None:
+        """把週期性提醒的到期訊息更新成「已跳過下次」並清空按鈕。"""
+        self.edit_or_send(
+            chat_id,
+            message_id,
+            self._renderer.render_skipped_next(result.reminder),
+            parse_mode="HTML",
+            reply_markup={"inline_keyboard": []},
+        )
+
+    def show_series_cancelled(
+        self,
+        chat_id: int,
+        message_id: int | None,
+        reminder: Reminder,
+    ) -> None:
+        """把週期性提醒的到期訊息更新成「已取消整個系列」並清空按鈕。"""
+        self.edit_or_send(
+            chat_id,
+            message_id,
+            self._renderer.render_series_cancelled(reminder),
+            parse_mode="HTML",
+            reply_markup={"inline_keyboard": []},
+        )
+
     def show_delete_result(
         self,
         chat_id: int,

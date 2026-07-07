@@ -51,6 +51,8 @@ class CallbackHandlers:
             "discard": self._discard,
             "time": self._time,
             "snooze": self._snooze,
+            "skip_next": self._skip_next,
+            "cancel_series": self._cancel_series,
             "groupmode": self._groupmode,
         }
 
@@ -228,6 +230,41 @@ class CallbackHandlers:
 
         self._client.answer_callback_query(context.callback.id, "已延後")
         self._responses.show_snooze_result(context.chat_id, context.message_id, result)
+
+    def _skip_next(self, context: CallbackContext) -> None:
+        """把週期性提醒的下一次觸發推到再下一次。原到期訊息更新成新的排程時間。"""
+        result = self._reminder_service.skip_next_occurrence(
+            context.chat_id,
+            context.data.target_id,
+            context.callback.from_user.id,
+            context.now,
+        )
+        if not result:
+            self._client.answer_callback_query(
+                context.callback.id, "找不到可跳過的週期性提醒"
+            )
+            return
+
+        self._client.answer_callback_query(context.callback.id, "已跳過下次")
+        self._responses.show_skip_next_result(context.chat_id, context.message_id, result)
+
+    def _cancel_series(self, context: CallbackContext) -> None:
+        """取消整個系列（把提醒標為 CANCELLED，不會再收到）。"""
+        reminder = self._reminder_service.cancel_series(
+            context.chat_id,
+            context.data.target_id,
+            context.callback.from_user.id,
+        )
+        if not reminder:
+            self._client.answer_callback_query(
+                context.callback.id, "找不到可取消的提醒，或你不是建立者"
+            )
+            return
+
+        self._client.answer_callback_query(context.callback.id, "已取消系列")
+        self._responses.show_series_cancelled(
+            context.chat_id, context.message_id, reminder
+        )
 
     def _groupmode(self, context: CallbackContext) -> None:
         """用 inline button 切換群組自然語言模式，並更新原狀態卡。"""
