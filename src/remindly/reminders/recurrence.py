@@ -106,3 +106,70 @@ def _month_offset(year: int, month: int, offset: int) -> tuple[int, int]:
     """回傳 (year+offset_months, month+offset_months) 處理跨年進位。"""
     total = (month - 1) + offset
     return year + total // 12, total % 12 + 1
+
+
+def is_valid_month_day(month: int, day: int) -> bool:
+    """檢查 (month, day) 是否為存在的日期。用 2028（閏年）當試探年，
+    這樣 2/29 會被視為合法（yearly recurrence 允許），但 2/30、4/31、13/1 都拒絕。
+    parser 與 format_rule 共用，避免驗證邏輯漂移。"""
+    try:
+        datetime(2028, month, day)
+    except ValueError:
+        return False
+    return True
+
+
+_CHINESE_WEEKDAYS = ("一", "二", "三", "四", "五", "六", "日")
+
+
+def format_rule(rule: RecurrenceRule) -> str:
+    """把 RecurrenceRule 格式化成使用者可讀的中文字串，供確認卡 / 列表 / 詳情共用。
+
+    Validation：以 `next_fire` 的 required-field 規則為底（空 weekdays、缺 yearly
+    欄位都 raise），並額外做更嚴格的值域/日期檢查——weekday 必須在 0..6、
+    month_day 必須在 1..31、yearly (month, day) 必須是實際存在的日期（透過
+    `is_valid_month_day` 檢查，2/29 視為合法）。這是刻意比 `next_fire` 嚴格：
+    使用者看得到的字串要立即拒絕 malformed 規則（否則會出現 "每週 09:00" 或
+    "每年 None/None ..." 這種殘缺輸出）；`next_fire` 因為在 scheduler tick 內
+    才呼叫，只保護到「一定找不到觸發時間」這層。
+
+    weekdays / month_days 都會排序後再輸出以保證使用者看到穩定順序。
+
+    範例：
+    - DAILY 09:00                              → "每天 09:00"
+    - WEEKLY weekdays=(0,)  09:00              → "每週一 09:00"
+    - WEEKLY weekdays=(0,2,4) 09:00            → "每週一、三、五 09:00"
+    - MONTHLY month_days=(15,) 09:00           → "每月 15 號 09:00"
+    - MONTHLY month_days=(1,18,25) 09:00       → "每月 1, 18, 25 號 09:00"
+    - YEARLY  year_month=12 year_day=25 08:00  → "每年 12/25 08:00"
+    """
+    if not 0 <= rule.hour <= 23:
+        raise ValueError(f"hour out of range 0..23: {rule.hour}")
+    if not 0 <= rule.minute <= 59:
+        raise ValueError(f"minute out of range 0..59: {rule.minute}")
+    hhmm = f"{rule.hour:02d}:{rule.minute:02d}"
+    if rule.period == RecurrencePeriod.DAILY:
+        return f"每天 {hhmm}"
+    if rule.period == RecurrencePeriod.WEEKLY:
+        if not rule.weekdays:
+            raise ValueError("weekly recurrence requires at least one weekday")
+        if any(d < 0 or d > 6 for d in rule.weekdays):
+            raise ValueError(f"weekday out of range 0..6: {rule.weekdays}")
+        days = "、".join(_CHINESE_WEEKDAYS[d] for d in sorted(set(rule.weekdays)))
+        return f"每週{days} {hhmm}"
+    if rule.period == RecurrencePeriod.MONTHLY:
+        if not rule.month_days:
+            raise ValueError("monthly recurrence requires at least one month_day")
+        if any(d < 1 or d > 31 for d in rule.month_days):
+            raise ValueError(f"month_day out of range 1..31: {rule.month_days}")
+        days = ", ".join(str(d) for d in sorted(set(rule.month_days)))
+        return f"每月 {days} 號 {hhmm}"
+    if rule.period == RecurrencePeriod.YEARLY:
+        if rule.year_month is None or rule.year_day is None:
+            raise ValueError("yearly recurrence requires year_month and year_day")
+        if not is_valid_month_day(rule.year_month, rule.year_day):
+            raise ValueError(
+                f"invalid yearly date: {rule.year_month}/{rule.year_day}"
+            )
+        return f"每年 {rule.year_month}/{rule.year_day} {hhmm}"
+    raise ValueError(f"unknown recurrence period: {rule.period!r}")

@@ -5,7 +5,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
-from remindly.reminders.recurrence import deserialize_rule, next_fire, serialize_rule
+from remindly.reminders.recurrence import (
+    deserialize_rule,
+    format_rule,
+    next_fire,
+    serialize_rule,
+)
 
 ZONE = ZoneInfo("Asia/Taipei")
 
@@ -192,6 +197,174 @@ class NextFireYearlyTest(unittest.TestCase):
         )
         after = datetime(2097, 3, 1, 10, 0, tzinfo=ZONE)
         self.assertEqual(datetime(2104, 2, 29, 8, 0, tzinfo=ZONE), next_fire(rule, after))
+
+
+class FormatRuleTest(unittest.TestCase):
+    def test_daily(self) -> None:
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY, hour=9, minute=0)
+        self.assertEqual("每天 09:00", format_rule(rule))
+
+    def test_daily_pads_minute(self) -> None:
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY, hour=8, minute=5)
+        self.assertEqual("每天 08:05", format_rule(rule))
+
+    def test_weekly_single(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.WEEKLY,
+            hour=9,
+            minute=0,
+            weekdays=(0,),
+        )
+        self.assertEqual("每週一 09:00", format_rule(rule))
+
+    def test_weekly_multi(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.WEEKLY,
+            hour=9,
+            minute=0,
+            weekdays=(0, 2, 4),
+        )
+        self.assertEqual("每週一、三、五 09:00", format_rule(rule))
+
+    def test_weekly_sunday_uses_日(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.WEEKLY,
+            hour=9,
+            minute=0,
+            weekdays=(6,),
+        )
+        self.assertEqual("每週日 09:00", format_rule(rule))
+
+    def test_monthly_single(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(15,),
+        )
+        self.assertEqual("每月 15 號 09:00", format_rule(rule))
+
+    def test_monthly_user_example(self) -> None:
+        """使用者原例：每個月 1, 18, 25。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(1, 18, 25),
+        )
+        self.assertEqual("每月 1, 18, 25 號 09:00", format_rule(rule))
+
+    def test_yearly(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=12,
+            year_day=25,
+        )
+        self.assertEqual("每年 12/25 08:00", format_rule(rule))
+
+    def test_weekly_empty_weekdays_raises(self) -> None:
+        """跟 next_fire 對齊：weekly 沒 weekdays 是 invalid rule。"""
+        rule = RecurrenceRule(period=RecurrencePeriod.WEEKLY, hour=9, minute=0)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_monthly_empty_days_raises(self) -> None:
+        rule = RecurrencePeriod.MONTHLY
+        with self.assertRaises(ValueError):
+            format_rule(RecurrenceRule(period=rule, hour=9, minute=0))
+
+    def test_yearly_missing_fields_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            format_rule(
+                RecurrenceRule(period=RecurrencePeriod.YEARLY, hour=8, minute=0)
+            )
+
+    def test_yearly_out_of_range_month_raises(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=13,
+            year_day=25,
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_yearly_impossible_date_raises(self) -> None:
+        """4/31 不存在；format_rule 應與 parser 的 `is_valid_month_day` 對齊。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=4,
+            year_day=31,
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_hour_out_of_range_raises(self) -> None:
+        """corrupted rule 帶 hour=99 應該 fail-fast，而非 render "99:99"。"""
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY, hour=99, minute=0)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_minute_out_of_range_raises(self) -> None:
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY, hour=9, minute=60)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_yearly_leap_day_is_valid(self) -> None:
+        """2/29 合法（跟 parser 一致）；閏年才觸發。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.YEARLY,
+            hour=8,
+            minute=0,
+            year_month=2,
+            year_day=29,
+        )
+        self.assertEqual("每年 2/29 08:00", format_rule(rule))
+
+    def test_weekly_out_of_range_weekday_raises(self) -> None:
+        """越界 weekday（例如 9）不應該爆 IndexError；應該是明確的 ValueError。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.WEEKLY,
+            hour=9,
+            minute=0,
+            weekdays=(9,),
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_monthly_out_of_range_day_raises(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(0,),
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_format_sorts_weekdays_defensively(self) -> None:
+        """若手動建 rule 沒排序（parser 有 sort，但 API 不強制），輸出仍要穩定。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.WEEKLY,
+            hour=9,
+            minute=0,
+            weekdays=(4, 0, 2),
+        )
+        self.assertEqual("每週一、三、五 09:00", format_rule(rule))
+
+    def test_format_sorts_month_days_defensively(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.MONTHLY,
+            hour=9,
+            minute=0,
+            month_days=(25, 1, 18),
+        )
+        self.assertEqual("每月 1, 18, 25 號 09:00", format_rule(rule))
 
 
 if __name__ == "__main__":

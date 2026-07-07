@@ -12,7 +12,7 @@ from remindly.reminders.models import (
     RecurrencePeriod,
     RecurrenceRule,
 )
-from remindly.reminders.recurrence import next_fire
+from remindly.reminders.recurrence import is_valid_month_day, next_fire
 from remindly.reminders.text import normalize_spaces
 from remindly.telegram.models import TelegramMessage, TelegramUser
 
@@ -346,7 +346,7 @@ class ReminderParser:
         if yearly:
             month = int(yearly.group("cn_month") or yearly.group("slash_month"))
             day = int(yearly.group("cn_day") or yearly.group("slash_day"))
-            if _is_valid_month_day(month, day):
+            if is_valid_month_day(month, day):
                 return (
                     yearly.group(0),
                     RecurrencePeriod.YEARLY,
@@ -776,16 +776,6 @@ def dedupe_participants(participants: list[Participant]) -> list[Participant]:
         seen.add(key)
         deduped.append(participant)
     return deduped
-
-
-def _is_valid_month_day(month: int, day: int) -> bool:
-    """檢查 (month, day) 是否為存在的日期。用 2028（閏年）當試探年，
-    這樣 2/29 會被視為合法（yearly recurrence 允許），但 2/30、4/31、13/1 都拒絕。"""
-    try:
-        datetime(2028, month, day)
-    except ValueError:
-        return False
-    return True
 
 
 def parse_relative_amount(value: str, unit: str) -> float:
