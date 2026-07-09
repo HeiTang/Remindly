@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from remindly.reminders.models import Reminder
+from remindly.reminders.models import RecurrenceError, Reminder
 from remindly.reminders.renderer import (
     ReminderRenderer,
     back_to_list_keyboard,
@@ -337,6 +337,14 @@ class ResponseSender:
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
+
+    def send_recurrence_error(self, chat_id: int, error: RecurrenceError) -> None:
+        """送出「單輪拒絕」錯誤訊息：不進入 draft、不追問。"""
+        self._client.send_message(
+            chat_id,
+            self._renderer.render_recurrence_error(error),
+            parse_mode="HTML",
+        )
 
     def dismiss_prompts(self, prompts: list[ExpiredPrompt]) -> int:
         """把過期或被覆蓋的追問訊息 editMessage 標為已取消並清掉 inline 按鈕。

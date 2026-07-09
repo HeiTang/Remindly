@@ -12,6 +12,7 @@ from remindly.reminders.drafts import (
     ReminderEditSessionStore,
 )
 from remindly.reminders.models import (
+    ParseResult,
     Participant,
     Reminder,
     ReminderDraft,
@@ -156,15 +157,33 @@ class ReminderService:
             now,
         )
 
+    def preview_parse(
+        self,
+        text: str,
+        message: TelegramMessage,
+        now: datetime,
+    ) -> ParseResult:
+        """側寫 parser 結果，供 router 在 `begin_create` 之前偵測 `recurrence_error`
+        並做單輪拒絕，避免把 pending draft / edit session 弄髒。
+        `begin_create` 也可以透過 `parse_result` kwarg 重用此結果避免重複解析。"""
+        creator = require_user(message)
+        timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
+        return self._parser.parse(text, message, now=now.astimezone(ZoneInfo(timezone)))
+
     def begin_create(
         self,
         text: str,
         message: TelegramMessage,
         now: datetime,
+        *,
+        parse_result: ParseResult | None = None,
     ) -> DraftPrompt | Confirmation:
         creator = require_user(message)
         timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
-        parse_result = self._parser.parse(text, message, now=now.astimezone(ZoneInfo(timezone)))
+        if parse_result is None:
+            parse_result = self._parser.parse(
+                text, message, now=now.astimezone(ZoneInfo(timezone))
+            )
         draft = ReminderDraft(
             id=new_id("draft"),
             chat_id=message.chat.id,

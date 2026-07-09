@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from remindly.reminders.callback_data import reminder_callback
-from remindly.reminders.models import MentionKind, Participant, Reminder, ReminderDraft
+from remindly.reminders.models import (
+    MentionKind,
+    Participant,
+    RecurrenceError,
+    Reminder,
+    ReminderDraft,
+)
 from remindly.reminders.recurrence import format_rule
 from remindly.reminders.service import ReminderListFilter, ReminderListGroup
 from remindly.reminders.text import html_escape
@@ -69,6 +75,17 @@ class ReminderRenderer:
                 f"已跳過下次 {html_escape(reminder.short_id)}",
                 f"下次：{format_datetime(reminder.remind_at)}",
                 f"事項：{html_escape(reminder.title)}",
+            ]
+        )
+
+    def render_recurrence_error(self, error: RecurrenceError) -> str:
+        """單輪拒絕：使用者輸入了週期性提醒 marker 但語法無效（例如「每個月 45 號」），
+        直接告知具體原因並要求重打，不進入追問流程。"""
+        return "\n".join(
+            [
+                f"『{html_escape(error.marker_text)}』不是有效的日期"
+                f"（{html_escape(error.reason)}）。",
+                "請重新輸入完整的提醒。",
             ]
         )
 

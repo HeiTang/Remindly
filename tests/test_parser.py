@@ -218,30 +218,49 @@ class ReminderParserRecurrenceTest(unittest.TestCase):
         self.assertIsNone(r.recurrence)
         self.assertEqual(datetime(2026, 7, 5, 15, 0, tzinfo=self.zone), r.remind_at)
 
-    def test_monthly_rejects_zero_and_out_of_range_days(self) -> None:
-        """『每個月 0 號』、『每個月 45 號』會讓 next_fire 崩掉；應該 fall through。"""
-        for text in [
-            "每個月 0 號 09:00 提醒我吃藥",
-            "每個月 45 號 09:00 提醒我吃藥",
+    def test_monthly_out_of_range_days_produce_recurrence_error(self) -> None:
+        """『每個月 0 號』、『每個月 45 號』要單輪拒絕：不建 rule、不建 draft、
+        parser 回傳 `recurrence_error` 讓 router 具體告知使用者。"""
+        for text, expected_marker in [
+            ("每個月 0 號 09:00 提醒我吃藥", "每個月 0 號"),
+            ("每個月 45 號 09:00 提醒我吃藥", "每個月 45 號"),
         ]:
             r = self._parse(text)
             self.assertIsNone(r.recurrence, f"should not build rule for: {text!r}")
+            self.assertIsNotNone(r.recurrence_error, f"should signal error: {text!r}")
+            self.assertEqual(expected_marker, r.recurrence_error.marker_text)
+            self.assertIn("1-31", r.recurrence_error.reason)
+            # 錯誤情境下 title/remind_at 應為 None，讓 caller 明確判斷「不建 draft」
+            self.assertIsNone(r.title)
+            self.assertIsNone(r.remind_at)
 
     def test_monthly_partial_valid_days_are_kept(self) -> None:
-        """『每個月 15, 45 號』只保留合法的 15，過濾掉 45。"""
+        """『每個月 15, 45 號』只保留合法的 15，過濾掉 45（部分合法不算單輪拒絕）。"""
         r = self._parse("每個月 15, 45 號 09:00 提醒我發薪")
         self.assertIsNotNone(r.recurrence)
         self.assertEqual((15,), r.recurrence.month_days)
+        self.assertIsNone(r.recurrence_error)
 
     def test_yearly_rejects_invalid_month(self) -> None:
-        """『每年 13/25』月份超出 1-12；不建立規則。"""
+        """『每年 13/25』月份超出 1-12；單輪拒絕。"""
         r = self._parse("每年 13/25 08:00 提醒我")
         self.assertIsNone(r.recurrence)
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertEqual("每年 13/25", r.recurrence_error.marker_text)
+        self.assertIn("1-12", r.recurrence_error.reason)
 
     def test_yearly_rejects_impossible_date(self) -> None:
-        """『每年 2/30』日期不存在；不建立規則（會讓 next_fire 崩掉）。"""
+        """『每年 2/30』日期不存在；單輪拒絕（reason 說明該月最多天數）。"""
         r = self._parse("每年 2/30 08:00 提醒我")
         self.assertIsNone(r.recurrence)
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertEqual("每年 2/30", r.recurrence_error.marker_text)
+        self.assertEqual("2 月最多 29 天", r.recurrence_error.reason)
+
+    def test_yearly_rejects_april_31(self) -> None:
+        r = self._parse("每年 4/31 08:00 提醒我")
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertEqual("4 月最多 30 天", r.recurrence_error.reason)
 
     def test_recurrence_title_preserves_yao_like_one_off_path(self) -> None:
         """一次性路徑刻意保留 `要`（例：`1號要去家樂福` → title 保留 要）。

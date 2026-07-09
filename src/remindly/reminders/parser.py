@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -9,6 +10,7 @@ from remindly.reminders.models import (
     MentionKind,
     ParseResult,
     Participant,
+    RecurrenceError,
     RecurrencePeriod,
     RecurrenceRule,
 )
@@ -168,6 +170,17 @@ class ReminderParser:
 
         # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。
         recurrence = self._try_recurrence_parse(cleaned, reference, participants)
+        if isinstance(recurrence, RecurrenceError):
+            # marker 匹配但語法無效 — 讓 caller 走單輪拒絕 flow（不建 draft、不追問）。
+            return ParseResult(
+                title=None,
+                remind_at=None,
+                participants=tuple(participants),
+                missing_fields=(),
+                confidence=0.0,
+                raw={"source_text": text, "grain": "recurrence_error"},
+                recurrence_error=recurrence,
+            )
         if recurrence is not None:
             rule, remind_at, title = recurrence
             missing_fields: list[str] = []
@@ -300,14 +313,21 @@ class ReminderParser:
         cleaned: str,
         now: datetime,
         participants: list[Participant],
-    ) -> tuple[RecurrenceRule, datetime, str | None] | None:
+    ) -> tuple[RecurrenceRule, datetime, str | None] | RecurrenceError | None:
         """認出「每天 / 每週X / 每個月 X 號 / 每年 M/D」這類 marker，產出 RecurrenceRule。
         時間必須在同一句出現（TIME_RE 命中）；不到就 fall through 給一次性 parser。
         時區資訊由 `now.tzinfo` 帶著（`next_fire` 也用 `after.tzinfo`），
-        不需要額外的 zone 參數。"""
+        不需要額外的 zone 參數。
+
+        若 `_detect_recurrence_marker` 回傳 `RecurrenceError`（marker 匹配但無效），
+        直接把 error 往上傳；`parse()` 會把它塞到 `ParseResult.recurrence_error` 讓
+        router 做「單輪拒絕」的處理，不建 draft、不追問。
+        """
         marker = self._detect_recurrence_marker(cleaned)
         if marker is None:
             return None
+        if isinstance(marker, RecurrenceError):
+            return marker
         marker_text, period, extras = marker
 
         time_match = TIME_RE.search(cleaned)
@@ -330,10 +350,16 @@ class ReminderParser:
 
     def _detect_recurrence_marker(
         self, cleaned: str
-    ) -> tuple[str, RecurrencePeriod, dict[str, object]] | None:
-        """依序試 monthly / yearly / weekly / daily。回傳 (匹配字串, period, 額外欄位 dict)。
-        非法輸入（月/日超出範圍、日期組合不存在）會直接 fall through 給一次性 parser，
-        避免 next_fire 拋 ValueError / RuntimeError 讓整條 parse 崩掉。"""
+    ) -> tuple[str, RecurrencePeriod, dict[str, object]] | RecurrenceError | None:
+        """依序試 monthly / yearly / weekly / daily。回傳：
+        - `(匹配字串, period, 額外欄位 dict)` — 規則有效，用來建 RecurrenceRule。
+        - `RecurrenceError(marker_text, reason)` — regex 有匹配到 marker 但語法無效
+          （日期超出範圍、月/日組合不存在等）。用來給 caller 產出「單輪拒絕」錯誤訊息。
+        - `None` — 沒有 marker 匹配，fall through 給一次性 parser。
+
+        Monthly 部分合法時（例：`1, 45 號` 只有 1 是合法）會保留合法日期、丟掉無效的；
+        只有**全部無效**才會 raise RecurrenceError（避免使用者一個 typo 就要重打整段）。
+        """
         monthly = RECURRENCE_MONTHLY_RE.search(cleaned)
         if monthly:
             raw_days = {int(d) for d in re.split(r"[、,，\s]+", monthly.group("days")) if d}
@@ -341,6 +367,11 @@ class ReminderParser:
             days = tuple(sorted(d for d in raw_days if 1 <= d <= 31))
             if days:
                 return monthly.group(0), RecurrencePeriod.MONTHLY, {"month_days": days}
+            # 全部日期都非法，回錯誤讓 Bot 具體告知使用者
+            return RecurrenceError(
+                marker_text=monthly.group(0),
+                reason="日期需在 1-31 範圍",
+            )
 
         yearly = RECURRENCE_YEARLY_RE.search(cleaned)
         if yearly:
@@ -352,6 +383,14 @@ class ReminderParser:
                     RecurrencePeriod.YEARLY,
                     {"year_month": month, "year_day": day},
                 )
+            # 產出具體錯誤原因：月份先檢查，通過再檢查該月的天數上限
+            if not 1 <= month <= 12:
+                reason = "月份需在 1-12 範圍"
+            else:
+                # 2028 是閏年：2 月最多 29 天（跟 `is_valid_month_day` 一致）
+                max_day = calendar.monthrange(2028, month)[1]
+                reason = f"{month} 月最多 {max_day} 天"
+            return RecurrenceError(marker_text=yearly.group(0), reason=reason)
 
         weekly = RECURRENCE_WEEKLY_RE.search(cleaned)
         if weekly:
