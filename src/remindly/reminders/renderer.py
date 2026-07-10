@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 
 from remindly.reminders.callback_data import reminder_callback
-from remindly.reminders.models import MentionKind, Participant, Reminder, ReminderDraft
+from remindly.reminders.models import (
+    MentionKind,
+    Participant,
+    RecurrenceError,
+    Reminder,
+    ReminderDraft,
+)
+from remindly.reminders.recurrence import format_rule
 from remindly.reminders.service import ReminderListFilter, ReminderListGroup
 from remindly.reminders.text import html_escape
 
@@ -11,39 +18,44 @@ from remindly.reminders.text import html_escape
 class ReminderRenderer:
     def render_confirmation(self, draft: ReminderDraft) -> str:
         participants = self.render_participants(draft.participants)
-        return "\n".join(
-            [
-                "確認建立提醒？",
-                f"時間：{format_datetime(draft.remind_at)}",
-                f"對象：{participants}",
-                f"事項：{html_escape(draft.title or '')}",
-            ]
-        )
+        lines = ["確認建立提醒？"]
+        if draft.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(draft.recurrence))}")
+            lines.append(f"下次：{format_datetime(draft.remind_at)}")
+        else:
+            lines.append(f"時間：{format_datetime(draft.remind_at)}")
+        lines.append(f"對象：{participants}")
+        lines.append(f"事項：{html_escape(draft.title or '')}")
+        return "\n".join(lines)
 
     def render_created(self, reminder: Reminder) -> str:
-        return "\n".join(
-            [
-                f"已建立提醒 {html_escape(reminder.short_id)}",
-                f"時間：{format_datetime(reminder.remind_at)}",
-                f"事項：{html_escape(reminder.title)}",
-                f"取消：/cancel {html_escape(reminder.short_id)}",
-            ]
-        )
+        lines = [f"已建立提醒 {html_escape(reminder.short_id)}"]
+        if reminder.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(reminder.recurrence))}")
+            lines.append(f"下次：{format_datetime(reminder.remind_at)}")
+        else:
+            lines.append(f"時間：{format_datetime(reminder.remind_at)}")
+        lines.append(f"事項：{html_escape(reminder.title)}")
+        lines.append(f"取消：/cancel {html_escape(reminder.short_id)}")
+        return "\n".join(lines)
 
     def render_detail(self, reminder: Reminder, participants: list[Participant]) -> str:
         mention_text = self.render_participants(participants)
-        return "\n".join(
-            [
-                f"提醒 {html_escape(reminder.short_id)}",
-                f"時間：{format_datetime(reminder.remind_at)}",
-                f"事項：{html_escape(reminder.title)}",
-                f"對象：{mention_text or '未設定'}",
-            ]
-        )
+        lines = [f"提醒 {html_escape(reminder.short_id)}"]
+        if reminder.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(reminder.recurrence))}")
+            lines.append(f"下次：{format_datetime(reminder.remind_at)}")
+        else:
+            lines.append(f"時間：{format_datetime(reminder.remind_at)}")
+        lines.append(f"事項：{html_escape(reminder.title)}")
+        lines.append(f"對象：{mention_text or '未設定'}")
+        return "\n".join(lines)
 
     def render_delivery(self, reminder: Reminder, participants: list[Participant]) -> str:
         mention_text = self.render_participants(participants)
         lines = [f"提醒：{html_escape(reminder.title)}", f"ID：{html_escape(reminder.short_id)}"]
+        if reminder.recurrence is not None:
+            lines.append(f"重複：{html_escape(format_rule(reminder.recurrence))}")
         if mention_text:
             lines.extend(["", f"對象：{mention_text}"])
         return "\n".join(lines)
@@ -53,6 +65,35 @@ class ReminderRenderer:
             [
                 f"已延後提醒 {html_escape(reminder.short_id)}",
                 f"時間：{format_datetime(reminder.remind_at)}",
+                f"事項：{html_escape(reminder.title)}",
+            ]
+        )
+
+    def render_skipped_next(self, reminder: Reminder) -> str:
+        return "\n".join(
+            [
+                f"已跳過下次 {html_escape(reminder.short_id)}",
+                f"下次：{format_datetime(reminder.remind_at)}",
+                f"事項：{html_escape(reminder.title)}",
+            ]
+        )
+
+    def render_recurrence_error(self, error: RecurrenceError) -> str:
+        """單輪拒絕：使用者輸入了週期性提醒 marker 但語法無效（例如「每個月 45 號」、
+        「每 1 分鐘」），直接告知具體原因並要求重打，不進入追問流程。
+        `reason` 由 parser 產生，自帶語意（例：「日期無效，需在 1-31 範圍」、
+        「太頻繁，最低支援 10 分鐘」），renderer 只負責包裝。"""
+        return "\n".join(
+            [
+                f"『{html_escape(error.marker_text)}』{html_escape(error.reason)}。",
+                "請重新輸入完整的提醒。",
+            ]
+        )
+
+    def render_series_cancelled(self, reminder: Reminder) -> str:
+        return "\n".join(
+            [
+                f"已取消整個系列 {html_escape(reminder.short_id)}",
                 f"事項：{html_escape(reminder.title)}",
             ]
         )
@@ -70,8 +111,10 @@ class ReminderRenderer:
         for group in groups:
             lines.extend(["", f"建立者：{html_escape(group.creator_label)}"])
             for reminder in group.reminders:
+                prefix = "[重複] " if reminder.recurrence is not None else ""
                 lines.append(
-                    f"- {html_escape(reminder.short_id)}｜{format_datetime(reminder.remind_at)}｜"
+                    f"- {prefix}{html_escape(reminder.short_id)}｜"
+                    f"{format_datetime(reminder.remind_at)}｜"
                     f"{html_escape(reminder.title)}"
                 )
         lines.extend(["", "點選下方提醒可查看、修改或刪除。"])
@@ -170,11 +213,13 @@ def reminder_list_keyboard(
             ]
         )
         for reminder in group.reminders:
+            prefix = "[重複] " if reminder.recurrence is not None else ""
             rows.append(
                 [
                     {
                         "text": truncate_button_text(
-                            f"{reminder.short_id}｜{format_datetime(reminder.remind_at)}｜{reminder.title}"
+                            f"{prefix}{reminder.short_id}｜"
+                            f"{format_datetime(reminder.remind_at)}｜{reminder.title}"
                         ),
                         "callback_data": reminder_callback("view", reminder.short_id),
                     }
@@ -232,6 +277,30 @@ def delivery_snooze_keyboard(short_id: str, next_day_time_label: str) -> dict[st
                     "text": f"明天 {next_day_time_label}",
                     "callback_data": reminder_callback("snooze", short_id, "1d"),
                 }
+            ],
+        ]
+    }
+
+
+def delivery_recurring_keyboard(short_id: str) -> dict[str, object]:
+    """週期性提醒的到期按鈕：只提供「跳過下次 / 取消整個系列」兩個動作。
+
+    刻意不提供 10 分/1 小時/明天 HH:MM 這種延後按鈕：週期性提醒下一次自然
+    會來，「延後」的心智模型（這次來不及、晚點再叫我）跟「跳過下次」重疊，
+    對 INTERVAL 尤其明顯（每 15 分鐘 + snooze 10 分鐘 = 節奏漂移的多餘通知）。
+    真的需要精細延後時，使用者可以另外用 /remind 建一次性提醒。
+    """
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "跳過下次",
+                    "callback_data": reminder_callback("skip_next", short_id),
+                },
+                {
+                    "text": "取消整個系列",
+                    "callback_data": reminder_callback("cancel_series", short_id),
+                },
             ],
         ]
     }

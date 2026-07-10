@@ -4,12 +4,14 @@ import logging
 import signal
 from types import FrameType
 
+from remindly import __version__
 from remindly.bot.router import BotRouter
 from remindly.reminders.parser import ReminderParser
 from remindly.reminders.renderer import ReminderRenderer
 from remindly.reminders.scheduler import ReminderScheduler, start_scheduler_thread
 from remindly.reminders.service import ReminderService
-from remindly.settings import load_settings
+from remindly.settings import Settings, load_settings
+from remindly.storage.migrations import latest_schema_version
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
 from remindly.telegram.client import BotCommand, TelegramClient
@@ -28,12 +30,33 @@ COMMANDS = [
 ]
 
 
+def format_startup_banner(settings: Settings) -> list[str]:
+    """啟動 banner：把版本與關鍵設定條列成純文字，方便部署後從 log 判斷是否成功 redeploy。"""
+    bot_username_display = f"@{settings.bot_username}" if settings.bot_username else "(未設定)"
+    return [
+        "────────────────────────────────────────",
+        f"Remindly v{__version__} starting",
+        f"  bot_username        = {bot_username_display}",
+        f"  timezone            = {settings.default_timezone}",
+        f"  database_path       = {settings.database_path}",
+        f"  schema_version      = {latest_schema_version()}",
+        f"  poll_timeout_s      = {settings.poll_timeout_seconds}",
+        f"  scheduler_interval  = {settings.scheduler_interval_seconds}s",
+        f"  draft_ttl_minutes   = {settings.draft_ttl_minutes}",
+        f"  confirming_ttl_min  = {settings.confirming_ttl_minutes}",
+        f"  log_level           = {settings.log_level}",
+        "────────────────────────────────────────",
+    ]
+
+
 def main() -> None:
     settings = load_settings()
     logging.basicConfig(
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         level=settings.log_level,
     )
+    for line in format_startup_banner(settings):
+        LOGGER.info(line)
 
     repository = ReminderRepository(settings.database_path)
     repository.migrate()

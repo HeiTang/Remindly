@@ -12,12 +12,15 @@ from remindly.reminders.drafts import (
     ReminderEditSessionStore,
 )
 from remindly.reminders.models import (
+    ParseResult,
     Participant,
+    RecurrenceError,
     Reminder,
     ReminderDraft,
     ReminderStatus,
 )
 from remindly.reminders.parser import ReminderParser
+from remindly.reminders.recurrence import next_fire
 from remindly.reminders.repositories import ReminderRepository
 from remindly.telegram.models import (
     TelegramCallbackQuery,
@@ -36,6 +39,15 @@ class DraftPrompt:
 @dataclass(frozen=True)
 class Confirmation:
     draft: ReminderDraft
+
+
+@dataclass(frozen=True)
+class RecurrenceRejected:
+    """單輪拒絕結果：parser 偵測到週期性 marker 但語法無效，不建 draft、不追問。
+    Router 已在 preview_parse 階段攔截；此型別讓其他 entry point（例如 /remind）
+    也能不繞過守衛。"""
+
+    error: RecurrenceError
 
 
 @dataclass(frozen=True)
@@ -155,15 +167,35 @@ class ReminderService:
             now,
         )
 
+    def preview_parse(
+        self,
+        text: str,
+        message: TelegramMessage,
+        now: datetime,
+    ) -> ParseResult:
+        """側寫 parser 結果，供 router 在 `begin_create` 之前偵測 `recurrence_error`
+        並做單輪拒絕，避免把 pending draft / edit session 弄髒。
+        `begin_create` 也可以透過 `parse_result` kwarg 重用此結果避免重複解析。"""
+        creator = require_user(message)
+        timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
+        return self._parser.parse(text, message, now=now.astimezone(ZoneInfo(timezone)))
+
     def begin_create(
         self,
         text: str,
         message: TelegramMessage,
         now: datetime,
-    ) -> DraftPrompt | Confirmation:
+        *,
+        parse_result: ParseResult | None = None,
+    ) -> DraftPrompt | Confirmation | RecurrenceRejected:
         creator = require_user(message)
         timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
-        parse_result = self._parser.parse(text, message, now=now.astimezone(ZoneInfo(timezone)))
+        if parse_result is None:
+            parse_result = self._parser.parse(
+                text, message, now=now.astimezone(ZoneInfo(timezone))
+            )
+        if parse_result.recurrence_error is not None:
+            return RecurrenceRejected(error=parse_result.recurrence_error)
         draft = ReminderDraft(
             id=new_id("draft"),
             chat_id=message.chat.id,
@@ -176,6 +208,7 @@ class ReminderService:
             participants=list(parse_result.participants),
             missing_fields=list(parse_result.missing_fields),
             parse_result=parse_result.raw,
+            recurrence=parse_result.recurrence,
         )
 
         if draft.is_complete:
@@ -253,6 +286,7 @@ class ReminderService:
             parse_result=draft.parse_result,
             created_at=now,
             updated_at=now,
+            recurrence=draft.recurrence,
         )
         self._repository.create_reminder(reminder, draft.participants)
         self._draft_store.delete(draft_id)
@@ -508,6 +542,37 @@ class ReminderService:
 
         reminder = self._repository.snooze(chat_id, short_id, actor_user_id, remind_at, now)
         return SnoozeResult(reminder) if reminder else None
+
+    def skip_next_occurrence(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        now: datetime,
+    ) -> SnoozeResult | None:
+        """使用者從到期通知按「跳過下次」：把週期性提醒的下一次觸發直接推到再下一次。
+        非週期性提醒不應該有這顆按鈕，這裡回傳 None 讓 caller 顯示錯誤。"""
+        current = self._repository.get_by_short_id(chat_id, short_id)
+        if not current or current.recurrence is None:
+            return None
+
+        zone = ZoneInfo(current.timezone)
+        current_next = current.remind_at.astimezone(zone)
+        skipped_to = next_fire(current.recurrence, current_next)
+        reminder = self._repository.advance_pending(
+            chat_id, short_id, actor_user_id, skipped_to, now
+        )
+        return SnoozeResult(reminder) if reminder else None
+
+    def cancel_series(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+    ) -> Reminder | None:
+        """使用者從到期通知按「取消整個系列」：等同於 /cancel。
+        對一次性提醒也可用（雖然按鈕只出現在週期性提醒上）。"""
+        return self._repository.cancel(chat_id, short_id, actor_user_id)
 
     def set_timezone(self, user_id: int, timezone: str) -> None:
         ZoneInfo(timezone)

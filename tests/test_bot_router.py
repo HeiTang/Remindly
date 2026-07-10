@@ -384,6 +384,46 @@ class BotRouterTest(unittest.TestCase):
             self.assertIn("要 TEST3", client.messages[-1].text)
             self.assertNotIn("TEST2", client.messages[-1].text)
 
+    def test_invalid_recurrence_gets_single_turn_reject(self) -> None:
+        """X flow：使用者輸入無效日期的週期性 marker（例：每個月 45 號）→
+        Bot 送具體錯誤訊息，不建 draft、不追問「什麼時候提醒？」。"""
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "每個月 45 號 09:00 提醒我吃藥")
+
+            self.assertEqual(1, len(client.messages))
+            reply = client.messages[-1]
+            self.assertIn("每個月 45 號", reply.text)
+            self.assertIn("1-31", reply.text)
+            self.assertIn("請重新輸入", reply.text)
+            # 沒 inline keyboard（不是追問也不是確認卡）
+            self.assertIsNone(reply.reply_markup)
+
+    def test_invalid_recurrence_does_not_disturb_pending_draft(self) -> None:
+        """使用者若正在建立別的提醒（有 pending draft），送出無效週期不應覆蓋。"""
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository)
+
+            send_text(router, 1, "提醒我要洗衣服")
+            self.assertIn("什麼時候提醒？", client.messages[-1].text)
+            first_prompt_id = client.messages[-1].id
+
+            # 送無效週期
+            send_text(router, 2, "每個月 45 號 09:00 提醒我")
+
+            # 舊 prompt 沒被 editMessage（沒被覆蓋通知）
+            first_still = next(m for m in client.messages if m.id == first_prompt_id)
+            self.assertIn("什麼時候提醒？", first_still.text)
+            self.assertNotIn("已取消", first_still.text)
+
+            # 錯誤訊息獨立送出（沒建 draft）
+            self.assertIn("每個月 45 號", client.messages[-1].text)
+
     def test_message_without_from_user_is_ignored(self) -> None:
         """匿名管理員 / sender_chat 沒有 from_user，session-based 流程應直接跳過而非 crash。"""
         with tempfile.TemporaryDirectory() as directory:

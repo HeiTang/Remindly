@@ -23,6 +23,7 @@ from remindly.reminders.service import (
 )
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
+from remindly.telegram.models import TelegramChat, TelegramMessage, TelegramUser
 
 
 class ReminderServiceListGroupingTest(unittest.TestCase):
@@ -277,6 +278,321 @@ class ReminderServiceSnoozeTest(unittest.TestCase):
             click_at + timedelta(hours=1),
             result.reminder.remind_at,
         )
+
+    def test_snooze_works_on_pending_recurring_reminder(self) -> None:
+        """回歸 (round 4)：週期性提醒的 scheduler.tick 內 send 完會立即 reschedule
+        到 PENDING；此時使用者按延後按鈕時 status 是 PENDING。若 snooze 不接受
+        PENDING，延後按鈕在週期性提醒上會全部失效。"""
+        from remindly.reminders.models import (
+            RecurrencePeriod,
+            RecurrenceRule,
+        )
+
+        # 直接建立 PENDING 狀態的週期性提醒（模擬 scheduler.tick 送完後的狀態）
+        base = datetime(2026, 8, 18, 9, 0, tzinfo=self.zone)
+        reminder = Reminder(
+            id="rmd_pending_rec",
+            short_id="R-PR",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="吃藥",
+            remind_at=datetime(2026, 8, 25, 9, 0, tzinfo=self.zone),
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=base,
+            updated_at=base,
+            recurrence=RecurrenceRule(
+                period=RecurrencePeriod.MONTHLY,
+                hour=9,
+                minute=0,
+                month_days=(1, 18, 25),
+            ),
+        )
+        self.repository.create_reminder(reminder, [])
+
+        click_at = datetime(2026, 8, 18, 9, 5, tzinfo=self.zone)
+        result = self.service.snooze(100, "R-PR", 7, "10m", click_at)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            click_at + timedelta(minutes=10),
+            result.reminder.remind_at,
+        )
+
+
+class ReminderServiceRecurringCreateTest(unittest.TestCase):
+    """Phase 2 端到端：一句「每個月 1, 18, 25 號 09:00 提醒我繳信用卡」→
+    begin_create 應該產生帶 recurrence 的 draft、confirm 應該把 recurrence 帶進 Reminder。"""
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = ReminderRepository(Path(self.temp_dir.name) / "test.db")
+        self.repository.migrate()
+        self.zone = ZoneInfo("Asia/Taipei")
+        self.now = datetime(2026, 7, 4, 8, 0, tzinfo=self.zone)
+        self.service = ReminderService(
+            repository=self.repository,
+            parser=ReminderParser("Asia/Taipei"),
+            draft_store=DraftStore(ttl_minutes=10),
+            edit_store=EditSessionStore(ttl_minutes=10),
+            default_timezone="Asia/Taipei",
+        )
+        self.message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="",
+            entities=(),
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_begin_create_populates_draft_recurrence(self) -> None:
+        from remindly.reminders.models import RecurrencePeriod
+        from remindly.reminders.service import Confirmation
+
+        result = self.service.begin_create(
+            "每個月 1, 18, 25 號 09:00 提醒我繳信用卡",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, Confirmation)
+        self.assertIsNotNone(result.draft.recurrence)
+        self.assertEqual(RecurrencePeriod.MONTHLY, result.draft.recurrence.period)
+        self.assertEqual((1, 18, 25), result.draft.recurrence.month_days)
+        self.assertEqual("繳信用卡", result.draft.title)
+
+    def test_begin_create_populates_interval_recurrence(self) -> None:
+        """Phase 5：『每 15 分鐘提醒我喝水』端到端跑通，draft 帶 INTERVAL 規則
+        且 remind_at 是 now + interval，讓 Bot 送出確認卡而非追問時間。"""
+        from remindly.reminders.models import RecurrencePeriod
+        from remindly.reminders.service import Confirmation
+
+        result = self.service.begin_create(
+            "每 15 分鐘提醒我喝水",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, Confirmation)
+        self.assertEqual(RecurrencePeriod.INTERVAL, result.draft.recurrence.period)
+        self.assertEqual(900, result.draft.recurrence.interval_seconds)
+        self.assertEqual("喝水", result.draft.title)
+        from datetime import timedelta
+
+        self.assertEqual(self.now + timedelta(seconds=900), result.draft.remind_at)
+
+    def test_begin_create_rejects_too_frequent_interval(self) -> None:
+        """『每 1 分鐘』低於 10 分鐘下限，走 RecurrenceRejected 單輪拒絕。"""
+        from remindly.reminders.service import RecurrenceRejected
+
+        result = self.service.begin_create(
+            "每 1 分鐘提醒我要站起來",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, RecurrenceRejected)
+        self.assertIn("太頻繁", result.error.reason)
+        self.assertIsNone(
+            self.service._draft_store.get_for_context(100, 7, self.now)
+        )
+
+    def test_begin_create_returns_recurrence_rejected_for_invalid_marker(self) -> None:
+        """/remind 之類的 entry point 不走 router preview_parse，begin_create 也要能
+        單輪拒絕，不建 draft。"""
+        from remindly.reminders.service import RecurrenceRejected
+
+        result = self.service.begin_create(
+            "每個月 45 號 09:00 提醒我做某事",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, RecurrenceRejected)
+        self.assertIn("45", result.error.marker_text)
+        # 無 draft 進 store（避免影響後續 pending session）
+        self.assertIsNone(self.service._draft_store.get_for_context(100, 7, self.now))
+
+    def test_confirm_transfers_recurrence_to_reminder(self) -> None:
+        from remindly.reminders.service import Confirmation
+
+        result = self.service.begin_create(
+            "每天 09:00 提醒我吃藥",
+            self.message,
+            self.now,
+        )
+        assert isinstance(result, Confirmation)
+        draft_id = result.draft.id
+
+        create_result = self.service.confirm(draft_id, 7, self.now)
+        self.assertIsNotNone(create_result)
+        self.assertIsNotNone(create_result.reminder.recurrence)
+        self.assertEqual(result.draft.recurrence, create_result.reminder.recurrence)
+
+        # 從 DB 讀回時也帶著 recurrence
+        stored = self.repository.get_by_short_id(100, create_result.reminder.short_id)
+        self.assertEqual(create_result.reminder.recurrence, stored.recurrence)
+
+
+class ReminderServiceRecurringActionsTest(unittest.TestCase):
+    """Phase 4a：skip_next_occurrence + cancel_series。"""
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repository = ReminderRepository(Path(self.temp_dir.name) / "test.db")
+        self.repository.migrate()
+        self.zone = ZoneInfo("Asia/Taipei")
+        self.now = datetime(2026, 7, 4, 8, 0, tzinfo=self.zone)
+        self.service = ReminderService(
+            repository=self.repository,
+            parser=ReminderParser("Asia/Taipei"),
+            draft_store=DraftStore(ttl_minutes=10),
+            edit_store=EditSessionStore(ttl_minutes=10),
+            default_timezone="Asia/Taipei",
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _persist_recurring(
+        self,
+        remind_at: datetime,
+        rule=None,
+    ) -> Reminder:
+        from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
+
+        if rule is None:
+            rule = RecurrenceRule(
+                period=RecurrencePeriod.MONTHLY,
+                hour=9,
+                minute=0,
+                month_days=(1, 18, 25),
+            )
+        reminder = Reminder(
+            id="rmd_p4a",
+            short_id="R-P4A",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="繳信用卡",
+            remind_at=remind_at,
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=remind_at,
+            updated_at=remind_at,
+            recurrence=rule,
+        )
+        self.repository.create_reminder(reminder, [])
+        return reminder
+
+    def test_skip_next_advances_one_iteration(self) -> None:
+        """每月 1, 18, 25 已排 7/18；skip 一次 → 7/25。"""
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        result = self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            datetime(2026, 7, 25, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_skip_next_crosses_month_boundary(self) -> None:
+        """已排 7/25（本月最後一次）；skip → 8/1。"""
+        self._persist_recurring(datetime(2026, 7, 25, 9, 0, tzinfo=self.zone))
+        result = self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
+        self.assertEqual(
+            datetime(2026, 8, 1, 9, 0, tzinfo=self.zone),
+            result.reminder.remind_at,
+        )
+
+    def test_skip_next_rejects_non_recurring_reminder(self) -> None:
+        """一次性提醒不能 skip_next。"""
+        reminder = Reminder(
+            id="rmd_once",
+            short_id="R-ONE",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            title="X",
+            remind_at=self.now + timedelta(hours=1),
+            timezone="Asia/Taipei",
+            status=ReminderStatus.PENDING,
+            source_text="",
+            parse_result={},
+            created_at=self.now,
+            updated_at=self.now,
+        )
+        self.repository.create_reminder(reminder, [])
+        self.assertIsNone(self.service.skip_next_occurrence(100, "R-ONE", 7, self.now))
+
+    def test_skip_next_rejects_non_creator(self) -> None:
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        self.assertIsNone(
+            self.service.skip_next_occurrence(100, "R-P4A", 999, self.now)
+        )
+
+    def test_cancel_series_marks_cancelled(self) -> None:
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        cancelled = self.service.cancel_series(100, "R-P4A", 7)
+        self.assertIsNotNone(cancelled)
+        self.assertEqual(ReminderStatus.CANCELLED, cancelled.status)
+
+    def test_cancel_series_rejects_non_creator(self) -> None:
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        self.assertIsNone(self.service.cancel_series(100, "R-P4A", 999))
+
+    def test_skip_next_returns_none_when_reminder_no_longer_pending(self) -> None:
+        """Race with scheduler.claim_due：advance_pending 的 UPDATE guarded on
+        status = PENDING；若 select 之後、update 之前 scheduler 把 status 改成
+        FIRING，rowcount = 0，服務層應該 return None（別回傳假成功結果）。"""
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        # 模擬 scheduler 在中間把 status 改到 FIRING
+        with self.repository.connect() as connection:
+            connection.execute(
+                "update reminders set status = ? where id = ?",
+                ("firing", "rmd_p4a"),
+            )
+
+        self.assertIsNone(
+            self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
+        )
+        # 原本的 remind_at 沒被更改
+        stored = self.repository.get_by_short_id(100, "R-P4A")
+        self.assertEqual(
+            datetime(2026, 7, 18, 9, 0, tzinfo=self.zone),
+            stored.remind_at,
+        )
+
+    def test_cancel_series_returns_none_when_reminder_no_longer_pending(self) -> None:
+        """對稱的 race：repository.cancel 也應有 rowcount guard。
+        Pre-existing 但由 Phase 4a 的取消按鈕觸發後更容易被使用者踩到。"""
+        self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+        with self.repository.connect() as connection:
+            connection.execute(
+                "update reminders set status = ? where id = ?",
+                ("firing", "rmd_p4a"),
+            )
+
+        self.assertIsNone(self.service.cancel_series(100, "R-P4A", 7))
+        stored = self.repository.get_by_short_id(100, "R-P4A")
+        self.assertEqual(ReminderStatus.FIRING, stored.status)
+
+    def test_cancel_series_returned_reminder_has_fresh_updated_at(self) -> None:
+        """回歸 (round 5)：cancel 的回傳 Reminder 過去只 replace status 但 updated_at
+        用 pre-UPDATE SELECT row 的舊值。使用者拿到的物件跟 DB 不一致。
+        重點：回傳與 DB 讀回的 updated_at 一致（都是 cancel 當下的時間）。"""
+        original = self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
+
+        cancelled = self.service.cancel_series(100, "R-P4A", 7)
+        self.assertIsNotNone(cancelled)
+        # 回傳 updated_at 應該不等於原本 SELECT row 的 updated_at
+        self.assertNotEqual(cancelled.updated_at, original.updated_at)
+        # 且應該與 DB 的實際值一致
+        stored = self.repository.get_by_short_id(100, "R-P4A")
+        self.assertEqual(stored.updated_at, cancelled.updated_at)
 
 
 class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):

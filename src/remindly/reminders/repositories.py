@@ -23,6 +23,10 @@ class ReminderDeliveryRepository(Protocol):
         """將送出失敗的提醒標記為 failed，方便後續追蹤或重試。"""
         ...
 
+    def reschedule(self, reminder_id: str, next_at: datetime, now: datetime) -> None:
+        """把週期性提醒送出後轉回 PENDING 並更新到下一次觸發時間。"""
+        ...
+
 
 class ReminderRepository(ReminderDeliveryRepository, Protocol):
     def upsert_user(
@@ -111,6 +115,17 @@ class ReminderRepository(ReminderDeliveryRepository, Protocol):
         now: datetime,
     ) -> Reminder | None:
         """把已送出的提醒延後，重新排回 pending 狀態。"""
+        ...
+
+    def advance_pending(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        next_at: datetime,
+        now: datetime,
+    ) -> Reminder | None:
+        """把 PENDING 提醒的 remind_at 直接推到指定時間（跳過下次用）。"""
         ...
 
     def get_user_timezone(self, user_id: int, default_timezone: str) -> str:

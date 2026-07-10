@@ -14,6 +14,7 @@ from remindly.reminders.models import (
     Reminder,
     ReminderStatus,
 )
+from remindly.reminders.recurrence import deserialize_rule, serialize_rule
 from remindly.storage.migrations import migrate_sqlite_database
 
 
@@ -133,9 +134,10 @@ class ReminderRepository:
                 """
                 insert into reminders (
                     id, short_id, chat_id, chat_type, creator_user_id, title, remind_at,
-                    timezone, status, source_text, parse_result, created_at, updated_at
+                    timezone, status, source_text, parse_result, created_at, updated_at,
+                    recurrence
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     reminder.id,
@@ -151,6 +153,7 @@ class ReminderRepository:
                     json.dumps(reminder.parse_result, ensure_ascii=False),
                     reminder.created_at.isoformat(),
                     reminder.updated_at.isoformat(),
+                    serialize_rule(reminder.recurrence) if reminder.recurrence else None,
                 ),
             )
 
@@ -180,7 +183,7 @@ class ReminderRepository:
                 """
                 select * from reminders
                 where chat_id = ? and status = ?
-                order by remind_at asc
+                order by julianday(remind_at) asc
                 limit ?
                 """,
                 (chat_id, ReminderStatus.PENDING.value, limit),
@@ -215,7 +218,12 @@ class ReminderRepository:
         return [row_to_participant(row) for row in rows]
 
     def cancel(self, chat_id: int, short_id: str, actor_user_id: int) -> Reminder | None:
-        now = datetime.now().astimezone().isoformat()
+        """把 PENDING 提醒標為 CANCELLED。同 `advance_pending`：SELECT 之後、UPDATE
+        之前若 scheduler.claim_due 把 status 改成 FIRING，UPDATE 會 0 row affected；
+        必須檢查 rowcount 避免回傳「看似取消但 DB 未變」的 Reminder（會讓
+        cancel_series / `/cancel` / 詳情頁刪除都出現 UI 說已取消、實際下次仍會 fire）。
+        """
+        now_dt = datetime.now().astimezone()
         with self.connect() as connection:
             row = connection.execute(
                 """
@@ -231,7 +239,7 @@ class ReminderRepository:
             if int(row["creator_user_id"]) != actor_user_id:
                 return None
 
-            connection.execute(
+            result = connection.execute(
                 """
                 update reminders
                 set status = ?, updated_at = ?
@@ -239,23 +247,34 @@ class ReminderRepository:
                 """,
                 (
                     ReminderStatus.CANCELLED.value,
-                    now,
+                    now_dt.isoformat(),
                     row["id"],
                     ReminderStatus.PENDING.value,
                 ),
             )
+            if result.rowcount != 1:
+                return None
 
-        return replace(row_to_reminder(row), status=ReminderStatus.CANCELLED)
+        # 對齊其他 update 系列的行為：回傳的 Reminder 帶入剛剛寫入 DB 的 updated_at，
+        # 避免 callers 看到「回傳物件的 updated_at 跟 DB 不一致」。
+        return replace(
+            row_to_reminder(row),
+            status=ReminderStatus.CANCELLED,
+            updated_at=now_dt,
+        )
 
     def claim_due(self, now: datetime, limit: int = 20) -> list[Reminder]:
         claimed: list[Reminder] = []
         now_text = now.isoformat()
         with self.connect() as connection:
+            # `julianday()` 把 ISO 字串轉成絕對時間（Julian Day 浮點），
+            # 讓不同 tz offset（例如 `+08:00` vs `+00:00`）的相同瞬間能正確比對。
+            # 只靠字典序比對 ISO 字串在跨時區部署時會漏掉 reminders。
             rows = connection.execute(
                 """
                 select * from reminders
-                where status = ? and remind_at <= ?
-                order by remind_at asc
+                where status = ? and julianday(remind_at) <= julianday(?)
+                order by julianday(remind_at) asc
                 limit ?
                 """,
                 (ReminderStatus.PENDING.value, now_text, limit),
@@ -285,6 +304,60 @@ class ReminderRepository:
 
     def mark_failed(self, reminder_id: str, now: datetime) -> None:
         self._mark(reminder_id, ReminderStatus.FAILED, now)
+
+    def reschedule(self, reminder_id: str, next_at: datetime, now: datetime) -> None:
+        """把已送出的週期性提醒轉回 PENDING 並更新到下一次觸發時間。
+        只有處於 FIRING 狀態才會被更新，避免競爭條件重複重排。"""
+        with self.connect() as connection:
+            connection.execute(
+                """
+                update reminders
+                set status = ?, remind_at = ?, fired_at = null, updated_at = ?
+                where id = ? and status = ?
+                """,
+                (
+                    ReminderStatus.PENDING.value,
+                    next_at.isoformat(),
+                    now.isoformat(),
+                    reminder_id,
+                    ReminderStatus.FIRING.value,
+                ),
+            )
+
+    def advance_pending(
+        self,
+        chat_id: int,
+        short_id: str,
+        actor_user_id: int,
+        next_at: datetime,
+        now: datetime,
+    ) -> Reminder | None:
+        """使用者手動跳過下次觸發：把 PENDING 提醒的 remind_at 直接推到指定的
+        下下次時間。跟 `reschedule` 的差別在於這是使用者觸發、需要 actor guard，
+        且原本狀態就是 PENDING。
+
+        Guard against race with scheduler.claim_due：select 之後、update 之前若
+        scheduler 已經把 status 改成 FIRING，UPDATE 會 0 row affected；此時仍
+        回傳「看似成功」的 Reminder 會讓 DB 與回傳值不一致。檢查 rowcount 保證
+        真的改到才 return。
+        """
+        with self.connect() as connection:
+            row = self._pending_for_actor(connection, chat_id, short_id, actor_user_id)
+            if not row:
+                return None
+
+            result = connection.execute(
+                """
+                update reminders
+                set remind_at = ?, updated_at = ?
+                where id = ? and status = ?
+                """,
+                (next_at.isoformat(), now.isoformat(), row["id"], ReminderStatus.PENDING.value),
+            )
+            if result.rowcount != 1:
+                return None
+
+        return replace(row_to_reminder(row), remind_at=next_at, updated_at=now)
 
     def _mark(
         self,
@@ -324,7 +397,7 @@ class ReminderRepository:
                 select * from reminders
                 where chat_id = ?
                   and upper(short_id) = upper(?)
-                  and status in (?, ?)
+                  and status in (?, ?, ?)
                 limit 1
                 """,
                 (
@@ -332,16 +405,20 @@ class ReminderRepository:
                     short_id,
                     ReminderStatus.FIRING.value,
                     ReminderStatus.FIRED.value,
+                    # 週期性提醒在 scheduler.tick 內 send 完就會 reschedule 到 PENDING；
+                    # 使用者收到通知後按延後時多半已是 PENDING。若不接受 PENDING，
+                    # 週期性提醒的延後按鈕會全部失效（回 None）。
+                    ReminderStatus.PENDING.value,
                 ),
             ).fetchone()
             if not row or int(row["creator_user_id"]) != actor_user_id:
                 return None
 
-            connection.execute(
+            result = connection.execute(
                 """
                 update reminders
                 set status = ?, remind_at = ?, fired_at = null, updated_at = ?
-                where id = ? and status in (?, ?)
+                where id = ? and status in (?, ?, ?)
                 """,
                 (
                     ReminderStatus.PENDING.value,
@@ -350,8 +427,11 @@ class ReminderRepository:
                     row["id"],
                     ReminderStatus.FIRING.value,
                     ReminderStatus.FIRED.value,
+                    ReminderStatus.PENDING.value,
                 ),
             )
+            if result.rowcount != 1:
+                return None
 
         return replace(
             row_to_reminder(row),
@@ -451,6 +531,8 @@ class ReminderRepository:
 
 
 def row_to_reminder(row: sqlite3.Row) -> Reminder:
+    # sqlite3.Row 的 `in` 迭代 values 而非 keys，所以必須顯式取 .keys()。
+    recurrence_raw = row["recurrence"] if "recurrence" in row.keys() else None  # noqa: SIM118
     return Reminder(
         id=str(row["id"]),
         short_id=str(row["short_id"]),
@@ -465,6 +547,7 @@ def row_to_reminder(row: sqlite3.Row) -> Reminder:
         parse_result=json.loads(str(row["parse_result"])),
         created_at=datetime.fromisoformat(str(row["created_at"])),
         updated_at=datetime.fromisoformat(str(row["updated_at"])),
+        recurrence=deserialize_rule(str(recurrence_raw)) if recurrence_raw else None,
     )
 
 

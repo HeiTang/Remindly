@@ -78,6 +78,16 @@ class BotRouter:
                 return
 
         if starts_new_reminder:
+            # 先 preview parse：若 parser 標記了 recurrence_error（例如「每個月 45 號」），
+            # 走單輪拒絕流程 — 不清 pending draft/edit、不建新 draft、不追問，
+            # 只送一句具體錯誤訊息讓使用者重打。
+            parse_result = self._reminder_service.preview_parse(text, message, now)
+            if parse_result.recurrence_error is not None:
+                self._responses.send_recurrence_error(
+                    message.chat.id, parse_result.recurrence_error
+                )
+                return
+
             cancelled = self._reminder_service.clear_pending_conversation(
                 message.chat.id, actor_id
             )
@@ -88,7 +98,10 @@ class BotRouter:
                 if cancelled and edited < len(cancelled)
                 else None
             )
-            result = self._reminder_service.begin_create(text, message, now)
+            # 重用 preview parse 的結果，避免重複解析。
+            result = self._reminder_service.begin_create(
+                text, message, now, parse_result=parse_result
+            )
             self._responses.send_draft_result(message.chat.id, result, notice=notice)
 
     def _should_treat_as_reminder(self, message: TelegramMessage, text: str) -> bool:

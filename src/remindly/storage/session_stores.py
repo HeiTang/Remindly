@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from remindly.reminders.drafts import EditSession
 from remindly.reminders.models import MentionKind, Participant, ReminderDraft
+from remindly.reminders.recurrence import deserialize_rule, serialize_rule
 from remindly.storage.sqlite import ReminderRepository
 
 
@@ -33,9 +34,9 @@ class SqliteDraftStore:
                 insert into reminder_drafts (
                     id, chat_id, chat_type, creator_user_id, timezone, source_text, title,
                     remind_at, participants, missing_fields, parse_result, expires_at,
-                    prompt_message_id
+                    prompt_message_id, recurrence
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     draft.id,
@@ -54,6 +55,7 @@ class SqliteDraftStore:
                     json.dumps(draft.parse_result, ensure_ascii=False),
                     draft.expires_at.isoformat() if draft.expires_at else None,
                     draft.prompt_message_id,
+                    serialize_rule(draft.recurrence) if draft.recurrence else None,
                 ),
             )
         return draft
@@ -218,6 +220,7 @@ def participant_from_dict(data: dict[str, object]) -> Participant:
 
 
 def row_to_draft(row) -> ReminderDraft:
+    recurrence_raw = _optional_str(row, "recurrence")
     return ReminderDraft(
         id=str(row["id"]),
         chat_id=int(row["chat_id"]),
@@ -232,6 +235,7 @@ def row_to_draft(row) -> ReminderDraft:
         parse_result=dict(json.loads(str(row["parse_result"]))),
         expires_at=datetime.fromisoformat(str(row["expires_at"])) if row["expires_at"] else None,
         prompt_message_id=_optional_int(row, "prompt_message_id"),
+        recurrence=deserialize_rule(recurrence_raw) if recurrence_raw else None,
     )
 
 
@@ -252,3 +256,11 @@ def _optional_int(row, column: str) -> int | None:
         return None
     value = row[column]
     return int(value) if value is not None else None
+
+
+def _optional_str(row, column: str) -> str | None:
+    keys = row.keys() if hasattr(row, "keys") else ()
+    if column not in keys:
+        return None
+    value = row[column]
+    return str(value) if value is not None else None

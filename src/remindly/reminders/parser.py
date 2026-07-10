@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import calendar
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from remindly.reminders.models import MentionKind, ParseResult, Participant
+from remindly.reminders.models import (
+    MentionKind,
+    ParseResult,
+    Participant,
+    RecurrenceError,
+    RecurrencePeriod,
+    RecurrenceRule,
+)
+from remindly.reminders.recurrence import (
+    INTERVAL_MIN_SECONDS,
+    is_valid_month_day,
+    next_fire,
+)
 from remindly.reminders.text import normalize_spaces
 from remindly.telegram.models import TelegramMessage, TelegramUser
 
@@ -85,6 +98,50 @@ WEEKDAY_RE = re.compile(
 
 REL_DAY_RE = re.compile(r"(?P<kw>後天|明天|明日|今天|今日)")
 
+# 週期性提醒 marker：以 "每" 開頭。
+# 每天 / 每日 — daily
+RECURRENCE_DAILY_RE = re.compile(r"每(?:天|日)")
+
+# 每週一 / 每禮拜一二三 / 每星期一、三、五 — weekly
+# 群組 chars 允許用 、 , ，或空白分隔
+RECURRENCE_WEEKLY_RE = re.compile(
+    r"每(?:週|周|禮拜|礼拜|星期)\s*"
+    r"(?P<weekdays>[一二三四五六日天](?:[、,，\s]*[一二三四五六日天])*)"
+)
+
+# 每個月 1 號 / 每月 1, 18, 25 號 — monthly
+RECURRENCE_MONTHLY_RE = re.compile(
+    r"每(?:個)?月\s*"
+    r"(?P<days>\d{1,2}(?:\s*[、,，]\s*\d{1,2})*)"
+    r"\s*[號号日]"
+)
+
+# 每年 12月25號 / 每年 12/25 — yearly
+RECURRENCE_YEARLY_RE = re.compile(
+    r"每年\s*"
+    r"(?:(?P<cn_month>\d{1,2})月\s*(?P<cn_day>\d{1,2})\s*[號号日]?"
+    r"|(?P<slash_month>\d{1,2})/(?P<slash_day>\d{1,2}))"
+)
+
+# 每 N 分鐘 / 每 N 小時 / 每 N 天 / 每 N 週 — interval
+# 「日/週」是常見別名。n 用 \d+ 是為了 catch「每 0 分鐘」這種明顯錯誤而給
+# 專屬 reason（如果用 [1-9]\d* 排除 0，「每 0 分鐘」會 fall through 到一次性
+# parser 然後追問「什麼時候提醒？」，體驗更差）；下界 policy 由
+# INTERVAL_MIN_SECONDS 控，太大的 n 由 OverflowError catch。
+RECURRENCE_INTERVAL_RE = re.compile(
+    r"每\s*(?P<n>\d+)\s*(?P<unit>分鐘|小時|天|日|週|周)"
+)
+
+# INTERVAL 單位 → 秒數。日/天、週/周為別名。
+_INTERVAL_UNIT_SECONDS: dict[str, int] = {
+    "分鐘": 60,
+    "小時": 3600,
+    "天": 24 * 3600,
+    "日": 24 * 3600,
+    "週": 7 * 24 * 3600,
+    "周": 7 * 24 * 3600,
+}
+
 # 切割 '提醒我/我們/大家' 的錨點；用於「以動詞切段」策略
 PROMPT_SPLIT_RE = re.compile(r"提醒(?:我們|我|大家)?")
 
@@ -134,6 +191,43 @@ class ReminderParser:
         cleaned = normalize_spaces(text)
         participants = self._extract_participants(cleaned, message)
 
+        # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。
+        recurrence = self._try_recurrence_parse(cleaned, reference, participants)
+        if isinstance(recurrence, RecurrenceError):
+            # marker 匹配但語法無效 — 讓 caller 走單輪拒絕 flow（不建 draft、不追問）。
+            return ParseResult(
+                title=None,
+                remind_at=None,
+                participants=tuple(participants),
+                missing_fields=(),
+                confidence=0.0,
+                raw={"source_text": text, "grain": "recurrence_error"},
+                recurrence_error=recurrence,
+            )
+        if recurrence is not None:
+            rule, remind_at, title = recurrence
+            missing_fields: list[str] = []
+            if not title:
+                missing_fields.append("title")
+            if not participants:
+                missing_fields.append("participants")
+            confidence = 0.95 if not missing_fields else 0.55
+            raw = {
+                "source_text": text,
+                "grain": "recurrence",
+                "missing_fields": missing_fields,
+                "confidence": confidence,
+            }
+            return ParseResult(
+                title=title,
+                remind_at=remind_at,
+                participants=tuple(participants),
+                missing_fields=tuple(missing_fields),
+                confidence=confidence,
+                raw=raw,
+                recurrence=rule,
+            )
+
         split = self._try_split_parse(cleaned, reference, zone, participants)
         if split is not None:
             time_parse, title = split
@@ -141,7 +235,7 @@ class ReminderParser:
             time_parse = self._parse_time(cleaned, reference, zone)
             title = self._extract_title(cleaned, time_parse.consumed_text, participants)
 
-        missing_fields: list[str] = []
+        missing_fields = []
         if time_parse.remind_at is None or time_parse.missing_time or time_parse.is_past:
             missing_fields.append("time")
 
@@ -234,6 +328,157 @@ class ReminderParser:
         if content_zone.strip():
             title = self._clean_content_title(content_zone, participants)
             return TimeParse(None, "", "unknown"), title
+
+        return None
+
+    def _try_recurrence_parse(
+        self,
+        cleaned: str,
+        now: datetime,
+        participants: list[Participant],
+    ) -> tuple[RecurrenceRule, datetime, str | None] | RecurrenceError | None:
+        """認出「每天 / 每週X / 每個月 X 號 / 每年 M/D」這類 marker，產出 RecurrenceRule。
+        時間必須在同一句出現（TIME_RE 命中）；不到就 fall through 給一次性 parser。
+        時區資訊由 `now.tzinfo` 帶著（`next_fire` 也用 `after.tzinfo`），
+        不需要額外的 zone 參數。
+
+        若 `_detect_recurrence_marker` 回傳 `RecurrenceError`（marker 匹配但無效），
+        直接把 error 往上傳；`parse()` 會把它塞到 `ParseResult.recurrence_error` 讓
+        router 做「單輪拒絕」的處理，不建 draft、不追問。
+        """
+        marker = self._detect_recurrence_marker(cleaned)
+        if marker is None:
+            return None
+        if isinstance(marker, RecurrenceError):
+            return marker
+        marker_text, period, extras = marker
+
+        # INTERVAL 沒有 time-of-day，marker 自身已含所有時間資訊，next_fire 直接
+        # 從 now 加 interval 就是首發時間。不需要 TIME_RE 命中。
+        # 巨大的 n（例如「每 99999999999 週」）會讓 now + timedelta 超出
+        # datetime.max，Python 拋 OverflowError；接住並轉成 RecurrenceError，
+        # 避免 begin_create 崩潰。
+        if period == RecurrencePeriod.INTERVAL:
+            rule = RecurrenceRule(period=period, **extras)
+            try:
+                remind_at = next_fire(rule, now)
+            except OverflowError:
+                return RecurrenceError(
+                    marker_text=marker_text,
+                    reason="間隔太大，超出可支援範圍",
+                )
+            remaining = cleaned.replace(marker_text, " ", 1)
+            remaining = re.sub(r"提醒(?:我們|我|大家)?", " ", remaining)
+            title = self._clean_content_title(remaining, participants)
+            return rule, remind_at, title
+
+        time_match = TIME_RE.search(cleaned)
+        if not time_match:
+            return None
+        hour, minute = self._parse_clock(time_match)
+
+        rule = RecurrenceRule(period=period, hour=hour, minute=minute, **extras)
+        remind_at = next_fire(rule, now)
+
+        # 標題：把 marker、時間片段、提醒(我/我們/大家)? 從 cleaned 挖掉，
+        # 剩下的 participant / mention / 連接詞清理交給 `_clean_content_title`，
+        # 讓週期與一次性路徑的 title 產出方式一致（例如都保留 `要`）。
+        remaining = cleaned
+        remaining = remaining.replace(marker_text, " ", 1)
+        remaining = remaining.replace(time_match.group(0), " ", 1)
+        remaining = re.sub(r"提醒(?:我們|我|大家)?", " ", remaining)
+        title = self._clean_content_title(remaining, participants)
+        return rule, remind_at, title
+
+    def _detect_recurrence_marker(
+        self, cleaned: str
+    ) -> tuple[str, RecurrencePeriod, dict[str, object]] | RecurrenceError | None:
+        """依序試 monthly / yearly / weekly / daily。回傳：
+        - `(匹配字串, period, 額外欄位 dict)` — 規則有效，用來建 RecurrenceRule。
+        - `RecurrenceError(marker_text, reason)` — regex 有匹配到 marker 但語法無效
+          （日期超出範圍、月/日組合不存在等）。用來給 caller 產出「單輪拒絕」錯誤訊息。
+        - `None` — 沒有 marker 匹配，fall through 給一次性 parser。
+
+        Monthly 部分合法時（例：`1, 45 號` 只有 1 是合法）會保留合法日期、丟掉無效的；
+        只有**全部無效**才會回傳 RecurrenceError（避免使用者一個 typo 就要重打整段）。
+
+        INTERVAL 優先於其他 period 檢查：`每 10 分鐘` 不會被 DAILY/WEEKLY/YEARLY 的
+        regex 撿到（它們只認「每天/每日」或「每年」等固定字），但保險起見放最前面。
+        INTERVAL 若間隔低於 `INTERVAL_MIN_SECONDS` 一律回 RecurrenceError。
+        """
+        interval = RECURRENCE_INTERVAL_RE.search(cleaned)
+        if interval:
+            n = int(interval.group("n"))
+            unit_seconds = _INTERVAL_UNIT_SECONDS[interval.group("unit")]
+            seconds = n * unit_seconds
+            if seconds <= 0:
+                return RecurrenceError(
+                    marker_text=interval.group(0),
+                    reason="間隔需為正整數",
+                )
+            if seconds < INTERVAL_MIN_SECONDS:
+                return RecurrenceError(
+                    marker_text=interval.group(0),
+                    reason=f"太頻繁，最低支援 {INTERVAL_MIN_SECONDS // 60} 分鐘",
+                )
+            return (
+                interval.group(0),
+                RecurrencePeriod.INTERVAL,
+                {"interval_seconds": seconds},
+            )
+
+        monthly = RECURRENCE_MONTHLY_RE.search(cleaned)
+        if monthly:
+            raw_days = {int(d) for d in re.split(r"[、,，\s]+", monthly.group("days")) if d}
+            # 過濾出 1..31 的合法日期。像「每個月 0 號」或「每個月 45 號」會被跳過。
+            days = tuple(sorted(d for d in raw_days if 1 <= d <= 31))
+            if days:
+                return monthly.group(0), RecurrencePeriod.MONTHLY, {"month_days": days}
+            # 全部日期都非法，回錯誤讓 Bot 具體告知使用者
+            return RecurrenceError(
+                marker_text=monthly.group(0),
+                reason="日期無效，需在 1-31 範圍",
+            )
+
+        yearly = RECURRENCE_YEARLY_RE.search(cleaned)
+        if yearly:
+            month = int(yearly.group("cn_month") or yearly.group("slash_month"))
+            day = int(yearly.group("cn_day") or yearly.group("slash_day"))
+            if is_valid_month_day(month, day):
+                return (
+                    yearly.group(0),
+                    RecurrencePeriod.YEARLY,
+                    {"year_month": month, "year_day": day},
+                )
+            # 產出具體錯誤原因：月份先檢查，通過再檢查該月的天數上限
+            if not 1 <= month <= 12:
+                reason = "月份無效，需在 1-12 範圍"
+            else:
+                # 2028 是閏年：2 月最多 29 天（跟 `is_valid_month_day` 一致）。
+                # 前綴「日期無效」跟 monthly/interval 的錯誤訊息維持一致，讓
+                # render_recurrence_error 產出「『每年 2/30』日期無效，2 月最多
+                # 29 天。」而不是像陳述事實的「『每年 2/30』2 月最多 29 天。」。
+                max_day = calendar.monthrange(2028, month)[1]
+                reason = f"日期無效，{month} 月最多 {max_day} 天"
+            return RecurrenceError(marker_text=yearly.group(0), reason=reason)
+
+        weekly = RECURRENCE_WEEKLY_RE.search(cleaned)
+        if weekly:
+            weekdays = tuple(
+                sorted(
+                    {
+                        WEEKDAY_MAP[c]
+                        for c in weekly.group("weekdays")
+                        if c in WEEKDAY_MAP
+                    }
+                )
+            )
+            if weekdays:
+                return weekly.group(0), RecurrencePeriod.WEEKLY, {"weekdays": weekdays}
+
+        daily = RECURRENCE_DAILY_RE.search(cleaned)
+        if daily:
+            return daily.group(0), RecurrencePeriod.DAILY, {}
 
         return None
 
