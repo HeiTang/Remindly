@@ -358,7 +358,7 @@ class ReminderParser:
         - `None` — 沒有 marker 匹配，fall through 給一次性 parser。
 
         Monthly 部分合法時（例：`1, 45 號` 只有 1 是合法）會保留合法日期、丟掉無效的；
-        只有**全部無效**才會 raise RecurrenceError（避免使用者一個 typo 就要重打整段）。
+        只有**全部無效**才會回傳 RecurrenceError（避免使用者一個 typo 就要重打整段）。
         """
         monthly = RECURRENCE_MONTHLY_RE.search(cleaned)
         if monthly:

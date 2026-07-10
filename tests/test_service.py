@@ -366,6 +366,21 @@ class ReminderServiceRecurringCreateTest(unittest.TestCase):
         self.assertEqual((1, 18, 25), result.draft.recurrence.month_days)
         self.assertEqual("繳信用卡", result.draft.title)
 
+    def test_begin_create_returns_recurrence_rejected_for_invalid_marker(self) -> None:
+        """/remind 之類的 entry point 不走 router preview_parse，begin_create 也要能
+        單輪拒絕，不建 draft。"""
+        from remindly.reminders.service import RecurrenceRejected
+
+        result = self.service.begin_create(
+            "每個月 45 號 09:00 提醒我做某事",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, RecurrenceRejected)
+        self.assertIn("45", result.error.marker_text)
+        # 無 draft 進 store（避免影響後續 pending session）
+        self.assertIsNone(self.service._draft_store.get_for_context(100, 7, self.now))
+
     def test_confirm_transfers_recurrence_to_reminder(self) -> None:
         from remindly.reminders.service import Confirmation
 

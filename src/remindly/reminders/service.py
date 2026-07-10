@@ -14,6 +14,7 @@ from remindly.reminders.drafts import (
 from remindly.reminders.models import (
     ParseResult,
     Participant,
+    RecurrenceError,
     Reminder,
     ReminderDraft,
     ReminderStatus,
@@ -38,6 +39,15 @@ class DraftPrompt:
 @dataclass(frozen=True)
 class Confirmation:
     draft: ReminderDraft
+
+
+@dataclass(frozen=True)
+class RecurrenceRejected:
+    """單輪拒絕結果：parser 偵測到週期性 marker 但語法無效，不建 draft、不追問。
+    Router 已在 preview_parse 階段攔截；此型別讓其他 entry point（例如 /remind）
+    也能不繞過守衛。"""
+
+    error: RecurrenceError
 
 
 @dataclass(frozen=True)
@@ -177,13 +187,15 @@ class ReminderService:
         now: datetime,
         *,
         parse_result: ParseResult | None = None,
-    ) -> DraftPrompt | Confirmation:
+    ) -> DraftPrompt | Confirmation | RecurrenceRejected:
         creator = require_user(message)
         timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
         if parse_result is None:
             parse_result = self._parser.parse(
                 text, message, now=now.astimezone(ZoneInfo(timezone))
             )
+        if parse_result.recurrence_error is not None:
+            return RecurrenceRejected(error=parse_result.recurrence_error)
         draft = ReminderDraft(
             id=new_id("draft"),
             chat_id=message.chat.id,
