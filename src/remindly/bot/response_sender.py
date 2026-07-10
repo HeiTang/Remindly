@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from remindly.reminders.models import Reminder
+from remindly.reminders.models import RecurrenceError, Reminder
 from remindly.reminders.renderer import (
     ReminderRenderer,
     back_to_list_keyboard,
@@ -22,6 +22,7 @@ from remindly.reminders.service import (
     EditPrompt,
     EditResult,
     ExpiredPrompt,
+    RecurrenceRejected,
     ReminderListFilter,
     ReminderService,
     SnoozeResult,
@@ -167,13 +168,18 @@ class ResponseSender:
     def send_draft_result(
         self,
         chat_id: int,
-        result: DraftPrompt | Confirmation,
+        result: DraftPrompt | Confirmation | RecurrenceRejected,
         *,
         notice: str | None = None,
     ) -> None:
         """依草稿狀態回覆追問問題，或送出建立前的確認卡。
         `notice` 用來附加訊息前綴（例如覆蓋舊 draft 時的取消提示）。
-        送出後把 message_id 綁回 draft，供 sweep 過期時 editMessage 用。"""
+        送出後把 message_id 綁回 draft，供 sweep 過期時 editMessage 用。
+
+        `RecurrenceRejected` 走單輪拒絕：不建 draft、不追問、不套 notice。"""
+        if isinstance(result, RecurrenceRejected):
+            self.send_recurrence_error(chat_id, result.error)
+            return
         if isinstance(result, Confirmation):
             message_id = self._client.send_message(
                 chat_id,
@@ -337,6 +343,14 @@ class ResponseSender:
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
+
+    def send_recurrence_error(self, chat_id: int, error: RecurrenceError) -> None:
+        """送出「單輪拒絕」錯誤訊息：不進入 draft、不追問。"""
+        self._client.send_message(
+            chat_id,
+            self._renderer.render_recurrence_error(error),
+            parse_mode="HTML",
+        )
 
     def dismiss_prompts(self, prompts: list[ExpiredPrompt]) -> int:
         """把過期或被覆蓋的追問訊息 editMessage 標為已取消並清掉 inline 按鈕。

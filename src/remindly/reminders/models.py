@@ -102,6 +102,15 @@ class ReminderDraft:
 
 
 @dataclass(frozen=True)
+class RecurrenceError:
+    """Parser 偵測到週期性提醒 marker 但語法無效時的信號。
+    `marker_text` 是使用者實際輸入的錯誤片段（原話回顯到訊息裡），
+    `reason` 是給使用者看的具體錯誤原因（例：`日期需在 1-31 範圍`）。"""
+    marker_text: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class ParseResult:
     title: str | None
     remind_at: datetime | None
@@ -110,3 +119,4 @@ class ParseResult:
     confidence: float
     raw: dict[str, object]
     recurrence: RecurrenceRule | None = None
+    recurrence_error: RecurrenceError | None = None
