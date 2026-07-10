@@ -6,6 +6,40 @@ Remindly 的重要變更會記錄在這裡。
 
 - 尚未有未發布變更。
 
+## v0.4.0 - 2026-07-11
+
+### Added
+
+- **週期性提醒**：`每天 09:00`、`每週一、三、五 09:00`、`每個月 1, 18, 25 號 09:00`、`每年 12/25 08:00` 都能用一句自然語言建立，parser 產出結構化 `RecurrenceRule` 並在到期後自動排下一次（Phase 1-3）。
+- **INTERVAL 週期**：`每 N 分鐘 / 小時 / 天 / 週`（含「日」/「週」/「周」別名）；下限 10 分鐘，低於此值直接單輪拒絕。首次觸發等於 `now + interval`（無 time-of-day 概念）。
+- **週期到期新按鈕**：`[跳過下次]`（把 remind_at 推到 next_fire 的再下一次）與 `[取消整個系列]`。
+- **週期性顯示**：確認卡 / `/list` / 詳情 / 到期訊息都會顯示 `重複：` 行；`/list` 對重複提醒加 `[重複]` 前綴。
+- **無效 recurrence marker 單輪拒絕**：`每個月 45 號`、`每年 2/30`、`每 1 分鐘`、`每 0 分鐘`、超大 N（OverflowError）都會回具體錯誤原因（例：`『每年 2/30』日期無效，2 月最多 29 天。`）並要求重打，不建 draft、不追問。
+- **啟動時 log 版本與關鍵設定**：Redeploy 後可從 log 立即確認版本已更新。
+
+### Changed
+
+- **週期性到期不再帶 snooze 按鈕**：只留 `[跳過下次][取消整個系列]`，避免與週期節奏語意重疊（每 15 分鐘 + snooze 10 分鐘只會造成節奏漂移）。一次性提醒的三顆延後按鈕維持不變。
+- **`render_recurrence_error` 模板改為 reason 自帶語意**：monthly / yearly / interval 的錯誤訊息語氣一致（例：`『每個月 45 號』日期無效，需在 1-31 範圍。`、`『每 1 分鐘』太頻繁，最低支援 10 分鐘。`）。
+- **`RecurrenceRule.hour / minute` 改為 Optional**：INTERVAL 不需要 time-of-day，non-interval 由 `next_fire / format_rule / serialize_rule` 三處早 raise 明確 ValueError 保護。
+
+### Fixed
+
+- **`command_body` 對 `bot_username=None` 不再 crash**（v0.3.1 的預存 bug）。
+- **race condition**：`advance_pending / cancel / snooze` 的 SELECT-then-UPDATE 都加 `rowcount != 1` 檢查回 None，避免併發操作造成不一致狀態。
+- **`snooze` 對 recurring reminder 支援**：原本 SQL 只接受 FIRING/FIRED，週期性提醒 scheduler tick 立刻轉回 PENDING 導致 snooze DOA；加 PENDING 到允許狀態。
+- **cross-timezone `claim_due`**：改用 `julianday()` 做絕對時間比較，避免 lexicographic ISO 字串在跨時區時漏抓即將到期的提醒。
+- **scheduler 用 reminder 自己的時區算 `next_fire`**：避免使用者「每天 09:00」設定漂到 scheduler 主機時區的 09:00。
+- **`cancel` 回傳 fresh `updated_at`**：不再返回 stale timestamp。
+- **`format_rule` 驗證比 `next_fire` 嚴格**：weekday 0-6、month_day 1-31、yearly (month, day) 必須實際存在（`is_valid_month_day` 允許 2/29），避免出現「每年 None/None」殘缺輸出。
+- **`_format_interval_seconds` fail-fast**：非 60 秒倍數直接 raise ValueError，取代 silent truncate 造成 UI 與實際排程漂移。
+
+### Persistence
+
+- Schema v4：`reminders` 表新增 `recurrence` 欄位（JSON blob），存 `serialize_rule` 產出的字串。
+- Schema v5：`reminder_drafts` 表新增 `recurrence` 欄位，確認前也能帶著規則。
+- INTERVAL 新增不需 migration：直接沿用 `recurrence` JSON blob，`serialize_rule` 加分支寫 `interval_seconds`、`deserialize_rule` 反向即可。
+
 ## v0.3.1 - 2026-07-03
 
 ### Added
