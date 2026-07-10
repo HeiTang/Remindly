@@ -417,6 +417,15 @@ class IntervalRecurrenceTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             format_rule(rule)
 
+    def test_format_rule_interval_rejects_non_divisible_seconds(self) -> None:
+        """601 秒不是 60 的倍數，parser 不會產出這種值；fail-fast 而非 silent
+        truncate 顯示「每 10 分鐘」，避免 UI 跟實際排程漂移。"""
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.INTERVAL, interval_seconds=601
+        )
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
     def test_non_interval_missing_hour_raises_in_format(self) -> None:
         """defensive：DAILY/WEEKLY/等在 hour/minute 為 None 時 format_rule 要 raise，
         避免出現「每天 None:None」。"""

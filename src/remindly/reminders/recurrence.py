@@ -175,12 +175,19 @@ _INTERVAL_UNITS: tuple[tuple[str, int], ...] = (
 
 def _format_interval_seconds(seconds: int) -> str:
     """挑最大能整除的單位輸出，例如 900 → 每 15 分鐘、3600 → 每 1 小時、
-    604800 → 每 1 週。永遠不會 fall through 到「秒」（parser 已經限制單位）。"""
+    604800 → 每 1 週。
+
+    Parser 保證 `interval_seconds` 是 60 的整數倍（最小單位「分鐘」），所以
+    正常路徑一定會命中 _INTERVAL_UNITS 其中一個。若真的走到 raise，代表資料
+    是從非 parser 路徑進來的（例如 DB 手改）；fail-fast 比 silent truncate
+    好——例如 601s 就顯示「每 10 分鐘」會讓 UI 跟實際排程漂 1 秒，且看不出
+    問題。跟 `next_fire` / `format_rule` 其他 branch 的 defensive raise 對齊。"""
     for unit, div in _INTERVAL_UNITS:
         if seconds % div == 0:
             return f"每 {seconds // div} {unit}"
-    # 非 60 倍數不應該由 parser 產生；保底退回分鐘表示
-    return f"每 {seconds // 60} 分鐘"
+    raise ValueError(
+        f"interval_seconds must divide evenly into 分鐘/小時/天/週: {seconds!r}"
+    )
 
 
 def format_rule(rule: RecurrenceRule) -> str:
