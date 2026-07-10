@@ -367,5 +367,63 @@ class FormatRuleTest(unittest.TestCase):
         self.assertEqual("每月 1, 18, 25 號 09:00", format_rule(rule))
 
 
+class IntervalRecurrenceTest(unittest.TestCase):
+    """Phase 5：INTERVAL period 覆蓋 serialize / next_fire / format_rule 三條路徑，
+    確保 dataclass 擴充後與其他 period 隔離、彼此不互相污染。"""
+
+    def test_interval_serialize_omits_hour_minute(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.INTERVAL, interval_seconds=900
+        )
+        payload = serialize_rule(rule)
+        self.assertNotIn("hour", payload)
+        self.assertNotIn("minute", payload)
+        self.assertIn("interval_seconds", payload)
+        self.assertEqual(rule, deserialize_rule(payload))
+
+    def test_interval_next_fire_adds_seconds(self) -> None:
+        rule = RecurrenceRule(
+            period=RecurrencePeriod.INTERVAL, interval_seconds=600
+        )
+        after = datetime(2026, 7, 4, 8, 0, tzinfo=ZONE)
+        from datetime import timedelta
+
+        self.assertEqual(after + timedelta(seconds=600), next_fire(rule, after))
+
+    def test_interval_next_fire_rejects_missing_seconds(self) -> None:
+        rule = RecurrenceRule(period=RecurrencePeriod.INTERVAL)
+        with self.assertRaises(ValueError):
+            next_fire(rule, datetime(2026, 7, 4, 8, 0, tzinfo=ZONE))
+
+    def test_format_rule_interval_picks_largest_unit(self) -> None:
+        cases = [
+            (600, "每 10 分鐘"),
+            (900, "每 15 分鐘"),
+            (3600, "每 1 小時"),
+            (7200, "每 2 小時"),
+            (86400, "每 1 天"),
+            (172800, "每 2 天"),
+            (604800, "每 1 週"),
+            (1209600, "每 2 週"),
+        ]
+        for seconds, expected in cases:
+            rule = RecurrenceRule(
+                period=RecurrencePeriod.INTERVAL, interval_seconds=seconds
+            )
+            self.assertEqual(expected, format_rule(rule), f"failed for {seconds}s")
+
+    def test_format_rule_interval_rejects_missing_seconds(self) -> None:
+        rule = RecurrenceRule(period=RecurrencePeriod.INTERVAL)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+    def test_non_interval_missing_hour_raises_in_format(self) -> None:
+        """defensive：DAILY/WEEKLY/等在 hour/minute 為 None 時 format_rule 要 raise，
+        避免出現「每天 None:None」。"""
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY)
+        with self.assertRaises(ValueError):
+            format_rule(rule)
+
+
 if __name__ == "__main__":
     unittest.main()

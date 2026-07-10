@@ -9,12 +9,15 @@ from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
 
 def serialize_rule(rule: RecurrenceRule) -> str:
     """把 RecurrenceRule 存成 JSON 字串，供 DB 儲存。
-    只寫入 period 用到的欄位，讓資料庫檔案人眼可讀。"""
-    payload: dict[str, object] = {
-        "period": rule.period.value,
-        "hour": rule.hour,
-        "minute": rule.minute,
-    }
+    只寫入 period 用到的欄位，讓資料庫檔案人眼可讀。
+    INTERVAL 不寫 hour/minute（沒有 time-of-day 語意）。"""
+    payload: dict[str, object] = {"period": rule.period.value}
+    if rule.period == RecurrencePeriod.INTERVAL:
+        payload["interval_seconds"] = rule.interval_seconds
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    payload["hour"] = rule.hour
+    payload["minute"] = rule.minute
     if rule.period == RecurrencePeriod.WEEKLY:
         payload["weekdays"] = list(rule.weekdays)
     elif rule.period == RecurrencePeriod.MONTHLY:
@@ -29,6 +32,11 @@ def deserialize_rule(payload: str) -> RecurrenceRule:
     """反向：從 DB 讀回 JSON 字串，還原成 RecurrenceRule。"""
     data = json.loads(payload)
     period = RecurrencePeriod(str(data["period"]))
+    if period == RecurrencePeriod.INTERVAL:
+        return RecurrenceRule(
+            period=period,
+            interval_seconds=int(data["interval_seconds"]),
+        )
     return RecurrenceRule(
         period=period,
         hour=int(data["hour"]),
@@ -47,6 +55,13 @@ def next_fire(rule: RecurrenceRule, after: datetime) -> datetime:
     避免無限迴圈（例如 daily 提醒剛好落在 tick 那一秒）。
     """
     zone = after.tzinfo
+    if rule.period == RecurrencePeriod.INTERVAL:
+        if rule.interval_seconds is None or rule.interval_seconds <= 0:
+            raise ValueError(
+                f"interval recurrence requires positive interval_seconds: {rule.interval_seconds!r}"
+            )
+        return after + timedelta(seconds=rule.interval_seconds)
+
     if rule.period == RecurrencePeriod.DAILY:
         candidate = after.replace(hour=rule.hour, minute=rule.minute, second=0, microsecond=0)
         if candidate <= after:
@@ -119,7 +134,28 @@ def is_valid_month_day(month: int, day: int) -> bool:
     return True
 
 
+# 使用者輸入的 INTERVAL 最低支援 10 分鐘。低於此值 → parser 產出 RecurrenceError，
+# 避免 Telegram rate limit + 使用者不斷被打擾。同一常數也讓 UX 訊息保持一致。
+INTERVAL_MIN_SECONDS = 10 * 60
+
 _CHINESE_WEEKDAYS = ("一", "二", "三", "四", "五", "六", "日")
+
+_INTERVAL_UNITS: tuple[tuple[str, int], ...] = (
+    ("週", 7 * 24 * 3600),
+    ("天", 24 * 3600),
+    ("小時", 3600),
+    ("分鐘", 60),
+)
+
+
+def _format_interval_seconds(seconds: int) -> str:
+    """挑最大能整除的單位輸出，例如 900 → 每 15 分鐘、3600 → 每 1 小時、
+    604800 → 每 1 週。永遠不會 fall through 到「秒」（parser 已經限制單位）。"""
+    for unit, div in _INTERVAL_UNITS:
+        if seconds % div == 0:
+            return f"每 {seconds // div} {unit}"
+    # 非 60 倍數不應該由 parser 產生；保底退回分鐘表示
+    return f"每 {seconds // 60} 分鐘"
 
 
 def format_rule(rule: RecurrenceRule) -> str:
@@ -142,7 +178,20 @@ def format_rule(rule: RecurrenceRule) -> str:
     - MONTHLY month_days=(15,) 09:00           → "每月 15 號 09:00"
     - MONTHLY month_days=(1,18,25) 09:00       → "每月 1, 18, 25 號 09:00"
     - YEARLY  year_month=12 year_day=25 08:00  → "每年 12/25 08:00"
+    - INTERVAL interval_seconds=900            → "每 15 分鐘"
+    - INTERVAL interval_seconds=3600           → "每 1 小時"
     """
+    if rule.period == RecurrencePeriod.INTERVAL:
+        if rule.interval_seconds is None or rule.interval_seconds <= 0:
+            raise ValueError(
+                f"interval recurrence requires positive interval_seconds: {rule.interval_seconds!r}"
+            )
+        return _format_interval_seconds(rule.interval_seconds)
+    if rule.hour is None or rule.minute is None:
+        raise ValueError(
+            "non-interval recurrence requires hour/minute: "
+            f"hour={rule.hour!r}, minute={rule.minute!r}"
+        )
     if not 0 <= rule.hour <= 23:
         raise ValueError(f"hour out of range 0..23: {rule.hour}")
     if not 0 <= rule.minute <= 59:

@@ -79,12 +79,13 @@ class ReminderRenderer:
         )
 
     def render_recurrence_error(self, error: RecurrenceError) -> str:
-        """單輪拒絕：使用者輸入了週期性提醒 marker 但語法無效（例如「每個月 45 號」），
-        直接告知具體原因並要求重打，不進入追問流程。"""
+        """單輪拒絕：使用者輸入了週期性提醒 marker 但語法無效（例如「每個月 45 號」、
+        「每 1 分鐘」），直接告知具體原因並要求重打，不進入追問流程。
+        `reason` 由 parser 產生，自帶語意（例：「日期無效，需在 1-31 範圍」、
+        「太頻繁，最低支援 10 分鐘」），renderer 只負責包裝。"""
         return "\n".join(
             [
-                f"『{html_escape(error.marker_text)}』不是有效的日期"
-                f"（{html_escape(error.reason)}）。",
+                f"『{html_escape(error.marker_text)}』{html_escape(error.reason)}。",
                 "請重新輸入完整的提醒。",
             ]
         )
