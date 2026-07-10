@@ -10,11 +10,26 @@ from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
 def serialize_rule(rule: RecurrenceRule) -> str:
     """把 RecurrenceRule 存成 JSON 字串，供 DB 儲存。
     只寫入 period 用到的欄位，讓資料庫檔案人眼可讀。
-    INTERVAL 不寫 hour/minute（沒有 time-of-day 語意）。"""
+    INTERVAL 不寫 hour/minute（沒有 time-of-day 語意）。
+
+    Validation 跟 next_fire / format_rule 對齊：INTERVAL 必須有正的
+    interval_seconds、其他 period 必須有 hour/minute。這裡早 raise 避免
+    存壞資料，之後 deserialize 讀回時 crash 出更難查的 bug。"""
     payload: dict[str, object] = {"period": rule.period.value}
     if rule.period == RecurrencePeriod.INTERVAL:
+        if rule.interval_seconds is None or rule.interval_seconds <= 0:
+            raise ValueError(
+                "interval recurrence requires positive interval_seconds: "
+                f"{rule.interval_seconds!r}"
+            )
         payload["interval_seconds"] = rule.interval_seconds
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    if rule.hour is None or rule.minute is None:
+        raise ValueError(
+            "non-interval recurrence requires hour/minute: "
+            f"hour={rule.hour!r}, minute={rule.minute!r}"
+        )
 
     payload["hour"] = rule.hour
     payload["minute"] = rule.minute
@@ -58,9 +73,19 @@ def next_fire(rule: RecurrenceRule, after: datetime) -> datetime:
     if rule.period == RecurrencePeriod.INTERVAL:
         if rule.interval_seconds is None or rule.interval_seconds <= 0:
             raise ValueError(
-                f"interval recurrence requires positive interval_seconds: {rule.interval_seconds!r}"
+                "interval recurrence requires positive interval_seconds: "
+                f"{rule.interval_seconds!r}"
             )
         return after + timedelta(seconds=rule.interval_seconds)
+
+    # 非 INTERVAL 一律要 hour/minute。之前是靠各分支自己用 rule.hour 觸發，
+    # Optional 化後 datetime.replace(hour=None) 會拋 TypeError 讓錯誤訊息難看，
+    # 這裡先 raise 明確的 ValueError。
+    if rule.hour is None or rule.minute is None:
+        raise ValueError(
+            "non-interval recurrence requires hour/minute: "
+            f"hour={rule.hour!r}, minute={rule.minute!r}"
+        )
 
     if rule.period == RecurrencePeriod.DAILY:
         candidate = after.replace(hour=rule.hour, minute=rule.minute, second=0, microsecond=0)

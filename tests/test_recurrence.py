@@ -424,6 +424,26 @@ class IntervalRecurrenceTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             format_rule(rule)
 
+    def test_non_interval_missing_hour_raises_in_next_fire(self) -> None:
+        """defensive：`next_fire` 對非 INTERVAL rule 若 hour/minute 為 None，
+        應該 raise 明確的 ValueError，而不是讓 `after.replace(hour=None)` 拋
+        TypeError（訊息難查）。"""
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY)
+        with self.assertRaises(ValueError):
+            next_fire(rule, datetime(2026, 7, 4, 8, 0, tzinfo=ZONE))
+
+    def test_serialize_rejects_missing_interval_seconds(self) -> None:
+        """defensive：serialize_rule 對 INTERVAL 沒 interval_seconds 就 raise，
+        避免把壞資料寫進 DB 之後 deserialize 讀回時 crash。"""
+        rule = RecurrenceRule(period=RecurrencePeriod.INTERVAL)
+        with self.assertRaises(ValueError):
+            serialize_rule(rule)
+
+    def test_serialize_rejects_missing_hour_minute(self) -> None:
+        rule = RecurrenceRule(period=RecurrencePeriod.DAILY)
+        with self.assertRaises(ValueError):
+            serialize_rule(rule)
+
 
 if __name__ == "__main__":
     unittest.main()

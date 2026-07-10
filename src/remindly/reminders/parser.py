@@ -124,8 +124,10 @@ RECURRENCE_YEARLY_RE = re.compile(
 )
 
 # 每 N 分鐘 / 每 N 小時 / 每 N 天 / 每 N 週 — interval
-# 「日/週」是常見別名；n 沒上限（policy 由 INTERVAL_MIN_SECONDS 控），但零和負數
-# 由 regex 直接排除（\d+ 且後續 unit-multiplier 保證 > 0）。
+# 「日/週」是常見別名。n 用 \d+ 是為了 catch「每 0 分鐘」這種明顯錯誤而給
+# 專屬 reason（如果用 [1-9]\d* 排除 0，「每 0 分鐘」會 fall through 到一次性
+# parser 然後追問「什麼時候提醒？」，體驗更差）；下界 policy 由
+# INTERVAL_MIN_SECONDS 控，太大的 n 由 OverflowError catch。
 RECURRENCE_INTERVAL_RE = re.compile(
     r"每\s*(?P<n>\d+)\s*(?P<unit>分鐘|小時|天|日|週|周)"
 )
@@ -353,9 +355,18 @@ class ReminderParser:
 
         # INTERVAL 沒有 time-of-day，marker 自身已含所有時間資訊，next_fire 直接
         # 從 now 加 interval 就是首發時間。不需要 TIME_RE 命中。
+        # 巨大的 n（例如「每 99999999999 週」）會讓 now + timedelta 超出
+        # datetime.max，Python 拋 OverflowError；接住並轉成 RecurrenceError，
+        # 避免 begin_create 崩潰。
         if period == RecurrencePeriod.INTERVAL:
             rule = RecurrenceRule(period=period, **extras)
-            remind_at = next_fire(rule, now)
+            try:
+                remind_at = next_fire(rule, now)
+            except OverflowError:
+                return RecurrenceError(
+                    marker_text=marker_text,
+                    reason="間隔太大，超出可支援範圍",
+                )
             remaining = cleaned.replace(marker_text, " ", 1)
             remaining = re.sub(r"提醒(?:我們|我|大家)?", " ", remaining)
             title = self._clean_content_title(remaining, participants)
@@ -400,6 +411,11 @@ class ReminderParser:
             n = int(interval.group("n"))
             unit_seconds = _INTERVAL_UNIT_SECONDS[interval.group("unit")]
             seconds = n * unit_seconds
+            if seconds <= 0:
+                return RecurrenceError(
+                    marker_text=interval.group(0),
+                    reason="間隔需為正整數",
+                )
             if seconds < INTERVAL_MIN_SECONDS:
                 return RecurrenceError(
                     marker_text=interval.group(0),

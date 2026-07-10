@@ -308,6 +308,22 @@ class ReminderParserRecurrenceTest(unittest.TestCase):
                 f"seconds mismatch for {text!r}",
             )
 
+    def test_interval_zero_rejected_with_positive_int_reason(self) -> None:
+        """『每 0 分鐘』給不同的 reason（間隔需為正整數），不跟 <10min 混淆。"""
+        r = self._parse("每 0 分鐘提醒我")
+        self.assertIsNone(r.recurrence)
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertEqual("每 0 分鐘", r.recurrence_error.marker_text)
+        self.assertIn("正整數", r.recurrence_error.reason)
+
+    def test_interval_overflow_rejected(self) -> None:
+        """巨大的 n（例：99999999999 週）會讓 datetime + timedelta 超出可表示範圍，
+        parser 要 catch OverflowError 轉成 RecurrenceError，不要 crash begin_create。"""
+        r = self._parse("每 99999999999 週提醒我")
+        self.assertIsNone(r.recurrence)
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertIn("太大", r.recurrence_error.reason)
+
     def test_interval_below_minimum_rejected(self) -> None:
         """『每 1 分鐘』低於 10 分鐘下限，parser 回 RecurrenceError（單輪拒絕）。"""
         r = self._parse("每 1 分鐘提醒我要站起來")
