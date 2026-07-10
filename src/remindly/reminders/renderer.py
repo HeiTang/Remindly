@@ -79,12 +79,13 @@ class ReminderRenderer:
         )
 
     def render_recurrence_error(self, error: RecurrenceError) -> str:
-        """單輪拒絕：使用者輸入了週期性提醒 marker 但語法無效（例如「每個月 45 號」），
-        直接告知具體原因並要求重打，不進入追問流程。"""
+        """單輪拒絕：使用者輸入了週期性提醒 marker 但語法無效（例如「每個月 45 號」、
+        「每 1 分鐘」），直接告知具體原因並要求重打，不進入追問流程。
+        `reason` 由 parser 產生，自帶語意（例：「日期無效，需在 1-31 範圍」、
+        「太頻繁，最低支援 10 分鐘」），renderer 只負責包裝。"""
         return "\n".join(
             [
-                f"『{html_escape(error.marker_text)}』不是有效的日期"
-                f"（{html_escape(error.reason)}）。",
+                f"『{html_escape(error.marker_text)}』{html_escape(error.reason)}。",
                 "請重新輸入完整的提醒。",
             ]
         )
@@ -281,20 +282,16 @@ def delivery_snooze_keyboard(short_id: str, next_day_time_label: str) -> dict[st
     }
 
 
-def delivery_recurring_keyboard(short_id: str, next_day_time_label: str) -> dict[str, object]:
-    """週期性提醒的到期按鈕：延用一次性提醒的三顆延後按鈕，再多一列
-    「跳過下次 / 取消整個系列」。使用者拿到通知後可以：
-    - 延後這次到 10 分/1 小時/明天 HH:MM（Bot 送完後仍會照規則排下次）
-    - 跳過下次（直接把 remind_at 推到「下下次」，例如每月 1/18/25 剛推到 18 號可再按跳過推到 25 號）
-    - 取消整個系列（把提醒標為 CANCELLED，不會再收到）
+def delivery_recurring_keyboard(short_id: str) -> dict[str, object]:
+    """週期性提醒的到期按鈕：只提供「跳過下次 / 取消整個系列」兩個動作。
 
-    Delegate 給 `delivery_snooze_keyboard` 取延後按鈕，避免文字或 callback 規則
-    在兩邊漂移。
+    刻意不提供 10 分/1 小時/明天 HH:MM 這種延後按鈕：週期性提醒下一次自然
+    會來，「延後」的心智模型（這次來不及、晚點再叫我）跟「跳過下次」重疊，
+    對 INTERVAL 尤其明顯（每 15 分鐘 + snooze 10 分鐘 = 節奏漂移的多餘通知）。
+    真的需要精細延後時，使用者可以另外用 /remind 建一次性提醒。
     """
-    base = delivery_snooze_keyboard(short_id, next_day_time_label)
     return {
         "inline_keyboard": [
-            *base["inline_keyboard"],  # type: ignore[misc]
             [
                 {
                     "text": "跳過下次",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from remindly.reminders.parser import ReminderParser, parse_number
@@ -250,17 +250,18 @@ class ReminderParserRecurrenceTest(unittest.TestCase):
         self.assertIn("1-12", r.recurrence_error.reason)
 
     def test_yearly_rejects_impossible_date(self) -> None:
-        """『每年 2/30』日期不存在；單輪拒絕（reason 說明該月最多天數）。"""
+        """『每年 2/30』日期不存在；單輪拒絕（reason 帶「日期無效」語意前綴 +
+        該月最多天數，跟 monthly/interval 的錯誤訊息語氣一致）。"""
         r = self._parse("每年 2/30 08:00 提醒我")
         self.assertIsNone(r.recurrence)
         self.assertIsNotNone(r.recurrence_error)
         self.assertEqual("每年 2/30", r.recurrence_error.marker_text)
-        self.assertEqual("2 月最多 29 天", r.recurrence_error.reason)
+        self.assertEqual("日期無效，2 月最多 29 天", r.recurrence_error.reason)
 
     def test_yearly_rejects_april_31(self) -> None:
         r = self._parse("每年 4/31 08:00 提醒我")
         self.assertIsNotNone(r.recurrence_error)
-        self.assertEqual("4 月最多 30 天", r.recurrence_error.reason)
+        self.assertEqual("日期無效，4 月最多 30 天", r.recurrence_error.reason)
 
     def test_recurrence_title_preserves_yao_like_one_off_path(self) -> None:
         """一次性路徑刻意保留 `要`（例：`1號要去家樂福` → title 保留 要）。
@@ -274,6 +275,83 @@ class ReminderParserRecurrenceTest(unittest.TestCase):
         self.assertIsNotNone(r.recurrence)
         self.assertEqual(2, r.recurrence.year_month)
         self.assertEqual(29, r.recurrence.year_day)
+
+    def test_interval_minutes(self) -> None:
+        """每 15 分鐘 → interval_seconds=900、remind_at 為 now + 15min，
+        title 從剩下的內容中提取（marker + '提醒我' 都被挖掉）。"""
+        from remindly.reminders.models import RecurrencePeriod
+
+        r = self._parse("每 15 分鐘提醒我喝水")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual(RecurrencePeriod.INTERVAL, r.recurrence.period)
+        self.assertEqual(900, r.recurrence.interval_seconds)
+        self.assertIsNone(r.recurrence.hour)
+        self.assertIsNone(r.recurrence.minute)
+        self.assertEqual(self.now + timedelta(seconds=900), r.remind_at)
+        self.assertEqual("喝水", r.title)
+
+    def test_interval_units_all_convert(self) -> None:
+        """分鐘/小時/天/日/週/周 都能轉成正確秒數。"""
+        cases = [
+            ("每 30 分鐘提醒我看螢幕", 30 * 60),
+            ("每 2 小時提醒我看遠方", 2 * 3600),
+            ("每 3 天提醒我澆花", 3 * 86400),
+            ("每 5 日提醒我", 5 * 86400),  # 「日」為「天」別名
+            ("每 2 週提醒我倒垃圾", 2 * 7 * 86400),
+            ("每 4 周提醒我", 4 * 7 * 86400),  # 「周」為「週」別名
+        ]
+        for text, expected_seconds in cases:
+            r = self._parse(text)
+            self.assertIsNotNone(r.recurrence, f"failed for {text!r}")
+            self.assertEqual(
+                expected_seconds,
+                r.recurrence.interval_seconds,
+                f"seconds mismatch for {text!r}",
+            )
+
+    def test_interval_zero_rejected_with_positive_int_reason(self) -> None:
+        """『每 0 分鐘』給不同的 reason（間隔需為正整數），不跟 <10min 混淆。"""
+        r = self._parse("每 0 分鐘提醒我")
+        self.assertIsNone(r.recurrence)
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertEqual("每 0 分鐘", r.recurrence_error.marker_text)
+        self.assertIn("正整數", r.recurrence_error.reason)
+
+    def test_interval_overflow_rejected(self) -> None:
+        """巨大的 n（例：99999999999 週）會讓 datetime + timedelta 超出可表示範圍，
+        parser 要 catch OverflowError 轉成 RecurrenceError，不要 crash begin_create。"""
+        r = self._parse("每 99999999999 週提醒我")
+        self.assertIsNone(r.recurrence)
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertIn("太大", r.recurrence_error.reason)
+
+    def test_interval_below_minimum_rejected(self) -> None:
+        """『每 1 分鐘』低於 10 分鐘下限，parser 回 RecurrenceError（單輪拒絕）。"""
+        r = self._parse("每 1 分鐘提醒我要站起來")
+        self.assertIsNone(r.recurrence)
+        self.assertIsNotNone(r.recurrence_error)
+        self.assertEqual("每 1 分鐘", r.recurrence_error.marker_text)
+        self.assertIn("太頻繁", r.recurrence_error.reason)
+        self.assertIn("10 分鐘", r.recurrence_error.reason)
+        self.assertIsNone(r.title)
+        self.assertIsNone(r.remind_at)
+
+    def test_interval_at_boundary_accepted(self) -> None:
+        """『每 10 分鐘』剛好等於下限，接受不拒絕。"""
+        r = self._parse("每 10 分鐘提醒我喝水")
+        self.assertIsNotNone(r.recurrence)
+        self.assertEqual(600, r.recurrence.interval_seconds)
+        self.assertIsNone(r.recurrence_error)
+
+    def test_interval_without_title_still_produces_rule(self) -> None:
+        """『每 10 分鐘提醒』沒事項 → rule 有效但 title 為空，走原本 draft 追問流程
+        （不是單輪拒絕）。這對應 [[invalid-recurrence-single-turn-reject]] 的另一半：
+        規則錯 → 單輪拒；規則對事項空 → 正常追問。"""
+        r = self._parse("每 10 分鐘提醒")
+        self.assertIsNotNone(r.recurrence)
+        self.assertIsNone(r.recurrence_error)
+        # title 應為 None 或空字串，讓 service.begin_create 走 DraftPrompt 追問
+        self.assertFalse(r.title)
 
 
 class ReminderParserCarrefourVariantsTest(unittest.TestCase):

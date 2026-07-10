@@ -59,21 +59,23 @@ class ReminderScheduler:
         for reminder in due_reminders:
             try:
                 participants = self._repository.list_participants(reminder.id)
-                next_day_time_label = reminder.remind_at.astimezone(
-                    ZoneInfo(reminder.timezone)
-                ).strftime("%H:%M")
-                # 週期性提醒：延後按鈕外加「跳過下次」與「取消整個系列」；
-                # 一次性提醒維持三顆延後按鈕（點掉即結束）。
-                keyboard_fn = (
-                    delivery_recurring_keyboard
-                    if reminder.recurrence is not None
-                    else delivery_snooze_keyboard
-                )
+                # 週期性提醒到期只有兩個動作（跳過下次 / 取消整個系列），沒有延後
+                # 按鈕，所以連 next_day_time_label 都省得算；一次性提醒才需要
+                # 「明天 HH:MM」的標籤。
+                if reminder.recurrence is not None:
+                    reply_markup = delivery_recurring_keyboard(reminder.short_id)
+                else:
+                    next_day_time_label = reminder.remind_at.astimezone(
+                        ZoneInfo(reminder.timezone)
+                    ).strftime("%H:%M")
+                    reply_markup = delivery_snooze_keyboard(
+                        reminder.short_id, next_day_time_label
+                    )
                 self._client.send_message(
                     reminder.chat_id,
                     self._renderer.render_delivery(reminder, participants),
                     parse_mode="HTML",
-                    reply_markup=keyboard_fn(reminder.short_id, next_day_time_label),
+                    reply_markup=reply_markup,
                 )
                 if reminder.recurrence is not None:
                     # 週期性提醒：計算下次觸發並轉回 PENDING，不標 FIRED。

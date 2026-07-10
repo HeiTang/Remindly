@@ -236,7 +236,8 @@ class ReminderSchedulerTest(unittest.TestCase):
         self.assertEqual(expected, next_at)
 
     def test_recurring_delivery_uses_recurring_keyboard(self) -> None:
-        """Phase 4a：週期性提醒的到期訊息要有『跳過下次』與『取消整個系列』按鈕。"""
+        """Phase 5：週期性提醒的到期訊息只有『跳過下次』與『取消整個系列』兩顆按鈕，
+        不再帶 10 分/1 小時/明天 HH:MM 的延後按鈕（週期會自然來，延後跟跳過語意重疊）。"""
         from remindly.reminders.models import RecurrencePeriod, RecurrenceRule
 
         zone = ZoneInfo("Asia/Taipei")
@@ -279,10 +280,10 @@ class ReminderSchedulerTest(unittest.TestCase):
             for row in client.messages[0].reply_markup["inline_keyboard"]
             for button in row
         ]
-        self.assertIn("跳過下次", labels)
-        self.assertIn("取消整個系列", labels)
-        # 一次性延後按鈕仍存在
-        self.assertIn("10 分鐘後", labels)
+        self.assertEqual(["跳過下次", "取消整個系列"], labels)
+        # 週期性提醒不再帶延後按鈕
+        self.assertNotIn("10 分鐘後", labels)
+        self.assertNotIn("1 小時後", labels)
 
     def test_one_off_delivery_does_not_show_skip_or_cancel_buttons(self) -> None:
         """一次性提醒不應該有『跳過下次』或『取消整個系列』按鈕。"""

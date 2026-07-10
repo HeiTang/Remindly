@@ -24,6 +24,7 @@ class RecurrencePeriod(StrEnum):
     WEEKLY = "weekly"
     MONTHLY = "monthly"
     YEARLY = "yearly"
+    INTERVAL = "interval"
 
 
 @dataclass(frozen=True)
@@ -35,14 +36,19 @@ class RecurrenceRule:
     - `weekly`：`weekdays`（0=Mon, 6=Sun，可多選）+ `hour` / `minute`
     - `monthly`：`month_days`（1-31，可多選；超出當月天數自動跳過）+ `hour` / `minute`
     - `yearly`：`year_month` + `year_day` + `hour` / `minute`
+    - `interval`：只用 `interval_seconds`（每 N 分鐘 / 小時 / 天 / 週），不綁 time-of-day
+
+    `hour` / `minute` 對 non-interval 是必填、對 interval 必為 None；
+    `next_fire` 與 `format_rule` 會依 period 驗證。
     """
     period: RecurrencePeriod
-    hour: int
-    minute: int
+    hour: int | None = None
+    minute: int | None = None
     weekdays: tuple[int, ...] = ()
     month_days: tuple[int, ...] = ()
     year_month: int | None = None
     year_day: int | None = None
+    interval_seconds: int | None = None
 
 
 @dataclass(frozen=True)

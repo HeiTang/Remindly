@@ -366,6 +366,40 @@ class ReminderServiceRecurringCreateTest(unittest.TestCase):
         self.assertEqual((1, 18, 25), result.draft.recurrence.month_days)
         self.assertEqual("繳信用卡", result.draft.title)
 
+    def test_begin_create_populates_interval_recurrence(self) -> None:
+        """Phase 5：『每 15 分鐘提醒我喝水』端到端跑通，draft 帶 INTERVAL 規則
+        且 remind_at 是 now + interval，讓 Bot 送出確認卡而非追問時間。"""
+        from remindly.reminders.models import RecurrencePeriod
+        from remindly.reminders.service import Confirmation
+
+        result = self.service.begin_create(
+            "每 15 分鐘提醒我喝水",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, Confirmation)
+        self.assertEqual(RecurrencePeriod.INTERVAL, result.draft.recurrence.period)
+        self.assertEqual(900, result.draft.recurrence.interval_seconds)
+        self.assertEqual("喝水", result.draft.title)
+        from datetime import timedelta
+
+        self.assertEqual(self.now + timedelta(seconds=900), result.draft.remind_at)
+
+    def test_begin_create_rejects_too_frequent_interval(self) -> None:
+        """『每 1 分鐘』低於 10 分鐘下限，走 RecurrenceRejected 單輪拒絕。"""
+        from remindly.reminders.service import RecurrenceRejected
+
+        result = self.service.begin_create(
+            "每 1 分鐘提醒我要站起來",
+            self.message,
+            self.now,
+        )
+        self.assertIsInstance(result, RecurrenceRejected)
+        self.assertIn("太頻繁", result.error.reason)
+        self.assertIsNone(
+            self.service._draft_store.get_for_context(100, 7, self.now)
+        )
+
     def test_begin_create_returns_recurrence_rejected_for_invalid_marker(self) -> None:
         """/remind 之類的 entry point 不走 router preview_parse，begin_create 也要能
         單輪拒絕，不建 draft。"""

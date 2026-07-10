@@ -14,7 +14,11 @@ from remindly.reminders.models import (
     RecurrencePeriod,
     RecurrenceRule,
 )
-from remindly.reminders.recurrence import is_valid_month_day, next_fire
+from remindly.reminders.recurrence import (
+    INTERVAL_MIN_SECONDS,
+    is_valid_month_day,
+    next_fire,
+)
 from remindly.reminders.text import normalize_spaces
 from remindly.telegram.models import TelegramMessage, TelegramUser
 
@@ -118,6 +122,25 @@ RECURRENCE_YEARLY_RE = re.compile(
     r"(?:(?P<cn_month>\d{1,2})月\s*(?P<cn_day>\d{1,2})\s*[號号日]?"
     r"|(?P<slash_month>\d{1,2})/(?P<slash_day>\d{1,2}))"
 )
+
+# 每 N 分鐘 / 每 N 小時 / 每 N 天 / 每 N 週 — interval
+# 「日/週」是常見別名。n 用 \d+ 是為了 catch「每 0 分鐘」這種明顯錯誤而給
+# 專屬 reason（如果用 [1-9]\d* 排除 0，「每 0 分鐘」會 fall through 到一次性
+# parser 然後追問「什麼時候提醒？」，體驗更差）；下界 policy 由
+# INTERVAL_MIN_SECONDS 控，太大的 n 由 OverflowError catch。
+RECURRENCE_INTERVAL_RE = re.compile(
+    r"每\s*(?P<n>\d+)\s*(?P<unit>分鐘|小時|天|日|週|周)"
+)
+
+# INTERVAL 單位 → 秒數。日/天、週/周為別名。
+_INTERVAL_UNIT_SECONDS: dict[str, int] = {
+    "分鐘": 60,
+    "小時": 3600,
+    "天": 24 * 3600,
+    "日": 24 * 3600,
+    "週": 7 * 24 * 3600,
+    "周": 7 * 24 * 3600,
+}
 
 # 切割 '提醒我/我們/大家' 的錨點；用於「以動詞切段」策略
 PROMPT_SPLIT_RE = re.compile(r"提醒(?:我們|我|大家)?")
@@ -330,6 +353,25 @@ class ReminderParser:
             return marker
         marker_text, period, extras = marker
 
+        # INTERVAL 沒有 time-of-day，marker 自身已含所有時間資訊，next_fire 直接
+        # 從 now 加 interval 就是首發時間。不需要 TIME_RE 命中。
+        # 巨大的 n（例如「每 99999999999 週」）會讓 now + timedelta 超出
+        # datetime.max，Python 拋 OverflowError；接住並轉成 RecurrenceError，
+        # 避免 begin_create 崩潰。
+        if period == RecurrencePeriod.INTERVAL:
+            rule = RecurrenceRule(period=period, **extras)
+            try:
+                remind_at = next_fire(rule, now)
+            except OverflowError:
+                return RecurrenceError(
+                    marker_text=marker_text,
+                    reason="間隔太大，超出可支援範圍",
+                )
+            remaining = cleaned.replace(marker_text, " ", 1)
+            remaining = re.sub(r"提醒(?:我們|我|大家)?", " ", remaining)
+            title = self._clean_content_title(remaining, participants)
+            return rule, remind_at, title
+
         time_match = TIME_RE.search(cleaned)
         if not time_match:
             return None
@@ -359,7 +401,32 @@ class ReminderParser:
 
         Monthly 部分合法時（例：`1, 45 號` 只有 1 是合法）會保留合法日期、丟掉無效的；
         只有**全部無效**才會回傳 RecurrenceError（避免使用者一個 typo 就要重打整段）。
+
+        INTERVAL 優先於其他 period 檢查：`每 10 分鐘` 不會被 DAILY/WEEKLY/YEARLY 的
+        regex 撿到（它們只認「每天/每日」或「每年」等固定字），但保險起見放最前面。
+        INTERVAL 若間隔低於 `INTERVAL_MIN_SECONDS` 一律回 RecurrenceError。
         """
+        interval = RECURRENCE_INTERVAL_RE.search(cleaned)
+        if interval:
+            n = int(interval.group("n"))
+            unit_seconds = _INTERVAL_UNIT_SECONDS[interval.group("unit")]
+            seconds = n * unit_seconds
+            if seconds <= 0:
+                return RecurrenceError(
+                    marker_text=interval.group(0),
+                    reason="間隔需為正整數",
+                )
+            if seconds < INTERVAL_MIN_SECONDS:
+                return RecurrenceError(
+                    marker_text=interval.group(0),
+                    reason=f"太頻繁，最低支援 {INTERVAL_MIN_SECONDS // 60} 分鐘",
+                )
+            return (
+                interval.group(0),
+                RecurrencePeriod.INTERVAL,
+                {"interval_seconds": seconds},
+            )
+
         monthly = RECURRENCE_MONTHLY_RE.search(cleaned)
         if monthly:
             raw_days = {int(d) for d in re.split(r"[、,，\s]+", monthly.group("days")) if d}
@@ -370,7 +437,7 @@ class ReminderParser:
             # 全部日期都非法，回錯誤讓 Bot 具體告知使用者
             return RecurrenceError(
                 marker_text=monthly.group(0),
-                reason="日期需在 1-31 範圍",
+                reason="日期無效，需在 1-31 範圍",
             )
 
         yearly = RECURRENCE_YEARLY_RE.search(cleaned)
@@ -385,11 +452,14 @@ class ReminderParser:
                 )
             # 產出具體錯誤原因：月份先檢查，通過再檢查該月的天數上限
             if not 1 <= month <= 12:
-                reason = "月份需在 1-12 範圍"
+                reason = "月份無效，需在 1-12 範圍"
             else:
-                # 2028 是閏年：2 月最多 29 天（跟 `is_valid_month_day` 一致）
+                # 2028 是閏年：2 月最多 29 天（跟 `is_valid_month_day` 一致）。
+                # 前綴「日期無效」跟 monthly/interval 的錯誤訊息維持一致，讓
+                # render_recurrence_error 產出「『每年 2/30』日期無效，2 月最多
+                # 29 天。」而不是像陳述事實的「『每年 2/30』2 月最多 29 天。」。
                 max_day = calendar.monthrange(2028, month)[1]
-                reason = f"{month} 月最多 {max_day} 天"
+                reason = f"日期無效，{month} 月最多 {max_day} 天"
             return RecurrenceError(marker_text=yearly.group(0), reason=reason)
 
         weekly = RECURRENCE_WEEKLY_RE.search(cleaned)
