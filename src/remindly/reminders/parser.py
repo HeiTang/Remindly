@@ -454,9 +454,12 @@ class ReminderParser:
             if not 1 <= month <= 12:
                 reason = "月份無效，需在 1-12 範圍"
             else:
-                # 2028 是閏年：2 月最多 29 天（跟 `is_valid_month_day` 一致）
+                # 2028 是閏年：2 月最多 29 天（跟 `is_valid_month_day` 一致）。
+                # 前綴「日期無效」跟 monthly/interval 的錯誤訊息維持一致，讓
+                # render_recurrence_error 產出「『每年 2/30』日期無效，2 月最多
+                # 29 天。」而不是像陳述事實的「『每年 2/30』2 月最多 29 天。」。
                 max_day = calendar.monthrange(2028, month)[1]
-                reason = f"{month} 月最多 {max_day} 天"
+                reason = f"日期無效，{month} 月最多 {max_day} 天"
             return RecurrenceError(marker_text=yearly.group(0), reason=reason)
 
         weekly = RECURRENCE_WEEKLY_RE.search(cleaned)

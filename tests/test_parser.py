@@ -250,17 +250,18 @@ class ReminderParserRecurrenceTest(unittest.TestCase):
         self.assertIn("1-12", r.recurrence_error.reason)
 
     def test_yearly_rejects_impossible_date(self) -> None:
-        """『每年 2/30』日期不存在；單輪拒絕（reason 說明該月最多天數）。"""
+        """『每年 2/30』日期不存在；單輪拒絕（reason 帶「日期無效」語意前綴 +
+        該月最多天數，跟 monthly/interval 的錯誤訊息語氣一致）。"""
         r = self._parse("每年 2/30 08:00 提醒我")
         self.assertIsNone(r.recurrence)
         self.assertIsNotNone(r.recurrence_error)
         self.assertEqual("每年 2/30", r.recurrence_error.marker_text)
-        self.assertEqual("2 月最多 29 天", r.recurrence_error.reason)
+        self.assertEqual("日期無效，2 月最多 29 天", r.recurrence_error.reason)
 
     def test_yearly_rejects_april_31(self) -> None:
         r = self._parse("每年 4/31 08:00 提醒我")
         self.assertIsNotNone(r.recurrence_error)
-        self.assertEqual("4 月最多 30 天", r.recurrence_error.reason)
+        self.assertEqual("日期無效，4 月最多 30 天", r.recurrence_error.reason)
 
     def test_recurrence_title_preserves_yao_like_one_off_path(self) -> None:
         """一次性路徑刻意保留 `要`（例：`1號要去家樂福` → title 保留 要）。
