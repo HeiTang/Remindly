@@ -17,7 +17,7 @@
   <img alt="uv" src="https://img.shields.io/badge/uv-ready-111827?style=flat-square" />
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-persistent-003B57?style=flat-square&logo=sqlite&logoColor=white" />
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" />
-  <img alt="Runtime dependencies" src="https://img.shields.io/badge/runtime%20deps-stdlib%20only-22C55E?style=flat-square" />
+  <img alt="Key encryption" src="https://img.shields.io/badge/key%20encryption-Fernet-22C55E?style=flat-square" />
 </p>
 
 <p align="center">
@@ -28,9 +28,11 @@
 
 - 🔎 **自然語言建立提醒**：支援「明天下午三點提醒我倒垃圾」這類中文輸入，拆出提醒時間、提醒事項與參與者。
 
-- 🔁 **週期性提醒**：`每天 09:00`、`每週一 09:00`、`每個月 1, 18, 25 號 09:00`、`每年 12/25 08:00`、`每 15 分鐘 / 每 2 小時` 都能一句話建立，到期後自動排下一次。無效語法（`每個月 45 號 / 每 1 分鐘`）會單輪拒絕並具體說明原因。
+- 🧠 **自帶 Gemini 語意解析**：個人可設定多組 API Key，以 Gemini 3.5 Flash-Lite 理解口語、不同日期及草稿修正；不明確時追問，仍需確認才建立。未設定或關閉 AI 時使用原本規則解析。
 
-- 💬 **缺漏資訊追問**：時間不足時主動追問，並提供 09:00、12:00、15:00、18:00 快捷按鈕。
+- 🔁 **週期性提醒**：`每天 09:00`、`每週一 09:00`、`每個月 1, 18, 25 號 09:00`、`每年 12/25 08:00`、`每 15 分鐘 / 每 2 小時` 都能一句話建立，到期後自動排下一次。內建解析遇到無效語法會直接拒絕；AI 解析遇到缺漏或歧義則追問。
+
+- 💬 **缺漏資訊追問**：缺少資訊時主動追問；內建解析在日期明確但缺少時間時，提供 09:00、12:00、15:00、18:00 快捷按鈕。
 
 - 🛠️ **互動式提醒管理**：`/list` 依建立者分組，並支援今天、本週、我的、全部篩選。週期性提醒會以 `[重複]` 前綴標示。
 
@@ -57,7 +59,7 @@ Telegram Update
   -> BotRouter
   -> CommandHandlers / CallbackHandlers
   -> ReminderService
-  -> ReminderParser / DraftStore / ReminderRepository
+  -> ReminderParser / SemanticParser / DraftStore / ReminderRepository
   -> SQLite
   -> ReminderScheduler
   -> TelegramClient
@@ -76,6 +78,34 @@ Telegram Update
 | `/cancel R-8F3K` | 取消提醒。 |
 | `/timezone Asia/Taipei` | 設定時區。 |
 | `/groupmode on\|off\|status` | 查看或切換群組自然語言模式。 |
+| `/ai` | 私聊管理個人 Gemini Key、開關及備援順序。 |
+
+### 個人 AI 設定（選用）
+
+**不設定也能用。** 所有使用者功能相同，不分免費／付費；預設使用內建規則解析。
+想用 AI 理解口語提醒，可自備 Gemini API Key，平台不提供 Key。
+
+**開啟：** 與 Bot 私聊，輸入：
+
+```text
+/ai add <你的 Gemini API Key>
+```
+
+首次新增後自動開啟；若之前手動關閉過，請再輸入 `/ai on`。
+接著直接說「明晚八點叫我拿包裹」，確認後才會建立提醒。
+確認卡會標示「使用 … 解析」，方便核對本次使用的模型或內建規則。
+
+| 想做什麼 | 指令 |
+| --- | --- |
+| 查看狀態與 Key ID | `/ai` |
+| 關閉／重新開啟 AI | `/ai off` ／ `/ai on` |
+| 新增備援 Key | `/ai add <另一組 Key>` |
+| 將某組 Key 優先使用 | `/ai move <Key ID> 1` |
+| 刪除 Key | `/ai delete <Key ID>` |
+
+- **費用自己掌握：** 依你的 Google 專案計費；付費專案可能直接收費，不會先跳出付費確認。同專案多組 Key 共用額度。
+- **資料會傳出：** Key 經 Telegram 傳至 Bot 加密保存；啟用後，一般私聊文字、群組觸發訊息及必要上下文會送至 Google。
+- **AI 暫時不能用：** 草稿會保留；稍後重試，或 `/ai off` 後重送，改用內建解析。
 
 ### 自然語言範例
 
@@ -160,6 +190,20 @@ cp .env.example .env
 | `SCHEDULER_INTERVAL_SECONDS` | 否 | `10` | 到期提醒掃描間隔。 |
 | `DRAFT_TTL_MINUTES` | 否 | `10` | 草稿與修改 session 過期時間。 |
 | `LOG_LEVEL` | 否 | `INFO` | Logging level。 |
+| `AI_ENCRYPTION_KEY` | AI 設定必填 | 無 | Fernet 主金鑰，加密個人 Gemini Key；需固定並另行備份。 |
+
+### 啟用個人 AI（選用）
+
+若要讓使用者自行設定 AI Key，管理員需先產生加密主金鑰，填入 `.env` 或部署環境的
+`AI_ENCRYPTION_KEY`，再重啟。這是伺服器用來保護已存 Key 的加密金鑰，並非供應商 API Key；
+一般使用者不需要產生或設定它。
+
+```sh
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+這把主金鑰要固定保存，並在資料庫以外另外備份。換掉或遺失後，原有 API Key 無法解密；
+不會自動以新主金鑰覆蓋。未設定時 Bot 仍可使用內建規則解析，但不能新增或使用 AI Key。
 
 ### Docker Compose
 
@@ -238,6 +282,7 @@ Smoke test 會模擬：
 | 路徑 | 職責 |
 | --- | --- |
 | `src/remindly/bot/` | Telegram update routing、指令、callback、訊息回覆。 |
+| `src/remindly/ai/` | 供應商 adapter、Key 加密與備援、語意解析及模型顯示名稱。 |
 | `src/remindly/reminders/` | 提醒 domain model、parser、service、renderer、scheduler。 |
 | `src/remindly/storage/` | SQLite repository、session stores、versioned migrations。 |
 | `src/remindly/telegram/` | Telegram Bot API client 與 DTO。 |
@@ -250,6 +295,16 @@ main -> dev -> feature/<name> -> PR -> dev -> PR -> main
 ```
 
 Feature branch 合併到 `dev` 必須開 PR；`dev` 驗證通過後再以 release PR 合併回 `main`。
+
+Runtime 新增 `cryptography` 供 Key 加密。更新 runtime dependencies 後同步 Docker 安裝清單：
+
+```sh
+uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt
+```
+
+`tests/test_ai.py` 與 `tests/test_ai_flow.py` 使用模擬 Gemini 回應及暫存 SQLite，檢查 REST
+請求、結構化驗證、Key 備援與 Telegram 完整流程，不消耗真實 API 額度。這些檢查不代表
+已量測模型中文準確率；實際模型表現需另用真實 Key 驗證。
 
 ### Release Flow
 

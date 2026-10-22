@@ -189,7 +189,7 @@ class ReminderParser:
             reference = reference.replace(tzinfo=zone)
 
         cleaned = normalize_spaces(text)
-        participants = self._extract_participants(cleaned, message)
+        participants = self.extract_participants(cleaned, message)
 
         # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。
         recurrence = self._try_recurrence_parse(cleaned, reference, participants)
@@ -808,7 +808,7 @@ class ReminderParser:
 
         return hour, minute
 
-    def _extract_participants(self, text: str, message: TelegramMessage) -> list[Participant]:
+    def extract_participants(self, text: str, message: TelegramMessage) -> list[Participant]:
         participants: list[Participant] = []
         if "我" in text or not re.search(r"@\w+", text):
             from_user = message.from_user

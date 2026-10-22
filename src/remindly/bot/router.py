@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from remindly.ai.contracts import AiUnavailable
+from remindly.bot.ai_commands import AiCommands
 from remindly.bot.callback_handlers import CallbackHandlers
 from remindly.bot.command_handlers import CommandHandlers
 from remindly.bot.response_sender import ResponseSender
@@ -22,6 +24,7 @@ class BotRouter:
         *,
         bot_username: str | None,
         default_timezone: str,
+        ai_commands: AiCommands | None = None,
     ) -> None:
         self._reminder_service = reminder_service
         self._bot_username = bot_username
@@ -34,6 +37,8 @@ class BotRouter:
             bot_username=bot_username,
         )
         self._callback_handlers = CallbackHandlers(client, reminder_service, self._responses)
+        self._client = client
+        self._ai_commands = ai_commands
 
     def handle_update(self, update: TelegramUpdate) -> None:
         """接收 Telegram update，依型別分派給 message 或 callback 流程。"""
@@ -43,7 +48,10 @@ class BotRouter:
             return
 
         if update.message and update.message.text:
-            self._handle_message(update.message, now)
+            try:
+                self._handle_message(update.message, now)
+            except AiUnavailable as exc:
+                self._client.send_message(update.message.chat.id, str(exc))
 
     def _handle_message(self, message: TelegramMessage, now: datetime) -> None:
         """處理一般文字訊息：指令、修改流程、草稿追問、自然語言提醒。
@@ -51,6 +59,8 @@ class BotRouter:
         使用者意圖比 session state 更權威：若新訊息本身像新的提醒，優先斬斷舊 draft/edit。
         """
         text = strip_bot_mention(message.text, self._bot_username)
+        if self._ai_commands is not None and self._ai_commands.handle(message):
+            return
         self._reminder_service.record_message_context(message, now)
 
         if self._command_handlers.handle(message, text, now):
@@ -63,13 +73,14 @@ class BotRouter:
 
         actor_id = message.from_user.id
         starts_new_reminder = self._should_treat_as_reminder(message, text)
+        if self._reminder_service.ai_enabled(actor_id):
+            self._handle_ai_message(message, text, now, starts_new_reminder)
+            return
 
         if not starts_new_reminder:
             edit_result = self._reminder_service.continue_edit(message, now)
             if edit_result:
-                self._responses.send_edit_result(
-                    message.chat.id, edit_result, user_id=actor_id
-                )
+                self._responses.send_edit_result(message.chat.id, edit_result, user_id=actor_id)
                 return
 
             draft_result = self._reminder_service.continue_draft(message, now)
@@ -88,21 +99,42 @@ class BotRouter:
                 )
                 return
 
-            cancelled = self._reminder_service.clear_pending_conversation(
-                message.chat.id, actor_id
-            )
-            edited = self._responses.dismiss_prompts(cancelled)
-            # 若清了但 editMessage 沒全部成功（例如原訊息已刪或超過 48h），退回附上 inline notice。
-            notice = (
-                "（已取消上一個未完成的提醒）\n"
-                if cancelled and edited < len(cancelled)
-                else None
-            )
-            # 重用 preview parse 的結果，避免重複解析。
+            draft = self._reminder_service.peek_draft(message.chat.id, actor_id, now)
+            editing = self._reminder_service.peek_edit_session(message.chat.id, actor_id, now)
+            # 重用 preview parse 的結果，保存成功後再清理舊對話。
             result = self._reminder_service.begin_create(
                 text, message, now, parse_result=parse_result
             )
+            cancelled = self._reminder_service.discard_conversation(draft, editing)
+            edited = self._responses.dismiss_prompts(cancelled)
+            # 若清了但 editMessage 沒全部成功（例如原訊息已刪或超過 48h），退回附上 inline notice。
+            notice = (
+                "（已取消上一個未完成的提醒）\n" if cancelled and edited < len(cancelled) else None
+            )
             self._responses.send_draft_result(message.chat.id, result, notice=notice)
+
+    def _handle_ai_message(
+        self, message: TelegramMessage, text: str, now: datetime, triggered: bool
+    ) -> None:
+        actor_id = message.from_user.id
+        draft = self._reminder_service.peek_draft(message.chat.id, actor_id, now)
+        editing = self._reminder_service.peek_edit_session(message.chat.id, actor_id, now)
+        if editing and not triggered:
+            result = self._reminder_service.continue_edit(message, now)
+            if result:
+                self._responses.send_edit_result(message.chat.id, result, user_id=actor_id)
+            return
+        if not (message.chat.type == "private" or triggered or draft):
+            return
+        parsed = self._reminder_service.parse_ai(text, message, now, context=draft)
+        if parsed.raw.get("intent") == "not_reminder":
+            return
+        source = draft.source_text if draft and parsed.raw.get("intent") == "update" else text
+        result = self._reminder_service.begin_create(source, message, now, parse_result=parsed)
+        # 新草稿保存成功後才清理舊對話，寫入失敗仍能重試原草稿。
+        cancelled = self._reminder_service.discard_conversation(draft, editing)
+        self._responses.dismiss_prompts(cancelled)
+        self._responses.send_draft_result(message.chat.id, result)
 
     def _should_treat_as_reminder(self, message: TelegramMessage, text: str) -> bool:
         """判斷非指令文字是否應進入建立提醒流程。"""

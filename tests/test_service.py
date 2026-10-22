@@ -36,7 +36,7 @@ class ReminderServiceListGroupingTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -178,7 +178,7 @@ class ReminderServiceSnoozeTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -336,7 +336,7 @@ class ReminderServiceRecurringCreateTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -396,9 +396,7 @@ class ReminderServiceRecurringCreateTest(unittest.TestCase):
         )
         self.assertIsInstance(result, RecurrenceRejected)
         self.assertIn("太頻繁", result.error.reason)
-        self.assertIsNone(
-            self.service._draft_store.get_for_context(100, 7, self.now)
-        )
+        self.assertIsNone(self.service._draft_store.get_for_context(100, 7, self.now))
 
     def test_begin_create_returns_recurrence_rejected_for_invalid_marker(self) -> None:
         """/remind 之類的 entry point 不走 router preview_parse，begin_create 也要能
@@ -448,7 +446,7 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -530,9 +528,7 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
 
     def test_skip_next_rejects_non_creator(self) -> None:
         self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
-        self.assertIsNone(
-            self.service.skip_next_occurrence(100, "R-P4A", 999, self.now)
-        )
+        self.assertIsNone(self.service.skip_next_occurrence(100, "R-P4A", 999, self.now))
 
     def test_cancel_series_marks_cancelled(self) -> None:
         self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
@@ -556,9 +552,7 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
                 ("firing", "rmd_p4a"),
             )
 
-        self.assertIsNone(
-            self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
-        )
+        self.assertIsNone(self.service.skip_next_occurrence(100, "R-P4A", 7, self.now))
         # 原本的 remind_at 沒被更改
         stored = self.repository.get_by_short_id(100, "R-P4A")
         self.assertEqual(

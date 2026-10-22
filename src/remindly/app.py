@@ -5,6 +5,11 @@ import signal
 from types import FrameType
 
 from remindly import __version__
+from remindly.ai.gateway import AiGateway
+from remindly.ai.gemini import GeminiProvider
+from remindly.ai.keys import ApiKeyStore
+from remindly.ai.parser import SemanticParser
+from remindly.bot.ai_commands import AiCommands
 from remindly.bot.router import BotRouter
 from remindly.reminders.parser import ReminderParser
 from remindly.reminders.renderer import ReminderRenderer
@@ -27,6 +32,7 @@ COMMANDS = [
     BotCommand("cancel", "取消提醒"),
     BotCommand("timezone", "設定時區"),
     BotCommand("groupmode", "群組自然語言模式"),
+    BotCommand("ai", "個人 AI Key 與語意解析設定"),
 ]
 
 
@@ -60,6 +66,8 @@ def main() -> None:
 
     repository = ReminderRepository(settings.database_path)
     repository.migrate()
+    ai_keys = ApiKeyStore(repository, settings.ai_encryption_key)
+    ai_gateway = AiGateway(ai_keys, {"gemini": GeminiProvider()}, default_provider="gemini")
 
     client = TelegramClient(settings.token)
     renderer = ReminderRenderer()
@@ -76,6 +84,7 @@ def main() -> None:
         draft_store=draft_store,
         edit_store=edit_store,
         default_timezone=settings.default_timezone,
+        ai_parser=SemanticParser(ai_gateway),
     )
     router = BotRouter(
         client=client,
@@ -83,6 +92,7 @@ def main() -> None:
         renderer=renderer,
         bot_username=settings.bot_username,
         default_timezone=settings.default_timezone,
+        ai_commands=AiCommands(client, ai_gateway, settings.bot_username),
     )
     scheduler = ReminderScheduler(
         repository=repository,

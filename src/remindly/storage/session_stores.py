@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timedelta
 
 from remindly.reminders.drafts import EditSession
-from remindly.reminders.models import MentionKind, Participant, ReminderDraft
+from remindly.reminders.models import MentionKind, Participant, Reminder, ReminderDraft
 from remindly.reminders.recurrence import deserialize_rule, serialize_rule
 from remindly.storage.sqlite import ReminderRepository
 
@@ -24,11 +24,14 @@ class SqliteDraftStore:
         self._repository = repository
 
     def save(self, draft: ReminderDraft, now: datetime) -> ReminderDraft:
-        self.delete_for_context(draft.chat_id, draft.creator_user_id)
         # 每次 save 都以當下時間重算 TTL，讓活躍對話不會因初始時戳而過期；
         # 也讓 draft 從 asking 進入 confirming 時能升級到較長的 TTL。
         draft.expires_at = now + self._default_ttl(draft)
         with self._repository.connect() as connection:
+            connection.execute(
+                "delete from reminder_drafts where chat_id = ? and creator_user_id = ?",
+                (draft.chat_id, draft.creator_user_id),
+            )
             connection.execute(
                 """
                 insert into reminder_drafts (
@@ -59,6 +62,9 @@ class SqliteDraftStore:
                 ),
             )
         return draft
+
+    def confirm(self, draft: ReminderDraft, reminder: Reminder) -> bool:
+        return self._repository.create_reminder(reminder, draft.participants, draft_id=draft.id)
 
     def get_by_id(self, draft_id: str, now: datetime) -> ReminderDraft | None:
         with self._repository.connect() as connection:
@@ -134,14 +140,15 @@ class SqliteEditSessionStore:
             connection.execute(
                 """
                 insert into edit_sessions (
-                    chat_id, user_id, short_id, field, expires_at, prompt_message_id
+                    chat_id, user_id, short_id, field, expires_at, prompt_message_id, ai_context
                 )
-                values (?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?)
                 on conflict(chat_id, user_id) do update set
                     short_id = excluded.short_id,
                     field = excluded.field,
                     expires_at = excluded.expires_at,
-                    prompt_message_id = excluded.prompt_message_id
+                    prompt_message_id = excluded.prompt_message_id,
+                    ai_context = excluded.ai_context
                 """,
                 (
                     session.chat_id,
@@ -150,6 +157,9 @@ class SqliteEditSessionStore:
                     session.field,
                     session.expires_at.isoformat() if session.expires_at else None,
                     session.prompt_message_id,
+                    json.dumps(session.ai_context, ensure_ascii=False)
+                    if session.ai_context is not None
+                    else None,
                 ),
             )
         return session
@@ -179,9 +189,7 @@ class SqliteEditSessionStore:
                 (chat_id, user_id),
             )
 
-    def set_prompt_message_id(
-        self, chat_id: int, user_id: int, message_id: int
-    ) -> None:
+    def set_prompt_message_id(self, chat_id: int, user_id: int, message_id: int) -> None:
         with self._repository.connect() as connection:
             connection.execute(
                 """
@@ -247,6 +255,7 @@ def row_to_edit_session(row) -> EditSession:
         field=str(row["field"]),
         expires_at=datetime.fromisoformat(str(row["expires_at"])) if row["expires_at"] else None,
         prompt_message_id=_optional_int(row, "prompt_message_id"),
+        ai_context=json.loads(row["ai_context"]) if _optional_str(row, "ai_context") else None,
     )
 
 
