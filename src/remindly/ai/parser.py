@@ -14,6 +14,7 @@ from remindly.reminders.models import (
     RecurrenceRule,
     ReminderDraft,
 )
+from remindly.reminders.parser import LEADING_ZAI_RE, RELATIVE_RE, ReminderParser
 from remindly.reminders.recurrence import (
     INTERVAL_MIN_SECONDS,
     format_rule,
@@ -46,6 +47,9 @@ participants 是可信的候選對象，participant_indices 只可選其中的 i
 沒指定對象預設選 is_self=true；明確提到其他人但候選找不到，回空陣列並追問 @username。
 context 的 participant_indices 在 update 時保留，除非使用者明確修改對象。
 purpose=edit_time 時只修改目前提醒的下一次時間，保留 title/recurrence，不改整個系列。
+未指定年份的月日若已過，取下一年；明確指定年份時禁止改年。
+追問中只補時分時，保留 context 日期、事項、對象與週期，禁止換成今天。
+日期無效仍是提醒意圖，保留事項與對象並追問，不得標成 not_reminder。
 """
 
 RECURRENCE_INTEGERS = ("hour", "minute", "year_month", "year_day", "interval_seconds")
@@ -156,6 +160,139 @@ class SemanticParser:
         )
         try:
             result = validate_result(response.data, now, participants)
+            rules = ReminderParser(str(now.tzinfo))
+            constraint = rules.explicit_time(text, now, context.remind_at if context else None)
+            if constraint and (context is not None or not constraint[1]):
+                temporal, time_only = constraint
+                data = dict(response.data)
+                data.update(
+                    date=temporal.remind_at.date().isoformat() if temporal.remind_at else None,
+                    time=(
+                        temporal.remind_at.strftime("%H:%M")
+                        if temporal.remind_at and not temporal.missing_time
+                        else None
+                    ),
+                    relative_minutes=None,
+                    intent=(
+                        "update"
+                        if time_only and context
+                        else "create"
+                        if data["intent"] == "not_reminder"
+                        else data["intent"]
+                    ),
+                )
+                if temporal.remind_at and RELATIVE_RE.fullmatch(
+                    LEADING_ZAI_RE.sub("", temporal.consumed_text).strip()
+                ):
+                    elapsed = temporal.remind_at.astimezone(UTC) - now.astimezone(UTC)
+                    if elapsed.total_seconds() >= 60:
+                        data.update(
+                            date=None,
+                            time=None,
+                            relative_minutes=int(elapsed.total_seconds() // 60),
+                        )
+                if time_only and context:
+                    data.update(
+                        title=context.title,
+                        participant_indices=[
+                            i
+                            for i, p in enumerate(participants)
+                            if p.stable_key in {c.stable_key for c in context.participants}
+                        ],
+                        recurrence=_recurrence_data(context.recurrence),
+                        question=context.parse_result.get("question")
+                        if "clarification" in context.missing_fields
+                        else None,
+                    )
+                    marker = rules.recurrence_marker(context.source_text)
+                    if (
+                        context.recurrence is None
+                        and isinstance(marker, tuple)
+                        and marker[1] != RecurrencePeriod.INTERVAL
+                        and temporal.remind_at
+                        and not temporal.missing_time
+                        and temporal.grain != "invalid"
+                    ):
+                        recurrence = RecurrenceRule(
+                            period=marker[1],
+                            hour=temporal.remind_at.hour,
+                            minute=temporal.remind_at.minute,
+                            **marker[2],
+                        )
+                        data.update(recurrence=_recurrence_data(recurrence), date=None, time=None)
+                elif (
+                    not data["participant_indices"]
+                    and len(participants) == 1
+                    and re.match(r"^提醒我", text.strip())
+                ):
+                    data["participant_indices"] = [
+                        i for i, p in enumerate(participants) if p.user_id == user_id
+                    ]
+                if temporal.grain == "invalid":
+                    data["question"] = "日期或時間無效，請重新輸入正確日期與時間。"
+                elif temporal.is_past:
+                    data["question"] = "這個時間已經過去，請重新輸入未來的日期與時間。"
+                elif temporal.missing_time:
+                    data["question"] = "那天幾點？"
+                pending_condition = bool(
+                    time_only and context and "clarification" in context.missing_fields
+                )
+                if pending_condition:
+                    prior_question = str(
+                        context.parse_result.get("condition_question")
+                        or context.parse_result.get("question")
+                        or "請確認先前的條件。"
+                    )
+                    data["question"] = (
+                        prior_question
+                        if not data["question"]
+                        or data["question"] == context.parse_result.get("question")
+                        else f"{prior_question[:220]}\n{data['question'] or ''}".strip()[:300]
+                    )
+                if not time_only and result.recurrence:
+                    marker = rules.recurrence_marker(text)
+                    expected_rule = None
+                    if isinstance(marker, tuple) and temporal.remind_at:
+                        clock = (
+                            {}
+                            if marker[1] == RecurrencePeriod.INTERVAL
+                            else {
+                                "hour": temporal.remind_at.hour,
+                                "minute": temporal.remind_at.minute,
+                            }
+                        )
+                        expected_rule = RecurrenceRule(period=marker[1], **clock, **marker[2])
+                    retained = (
+                        context
+                        and data["intent"] == "update"
+                        and result.recurrence == context.recurrence
+                    )
+                    if not retained and result.recurrence != expected_rule:
+                        data.update(
+                            recurrence=None,
+                            question=(
+                                f"{data['question'] or ''}\n"
+                                "請確認是否需要重複提醒，並提供明確的週期。"
+                            ).strip()[:300],
+                        )
+                result = validate_result(data, now, participants)
+                if pending_condition:
+                    result = replace(
+                        result,
+                        raw={**result.raw, "condition_question": prior_question},
+                        missing_fields=tuple(
+                            dict.fromkeys((*result.missing_fields, "clarification"))
+                        ),
+                    )
+                if temporal.grain == "invalid":
+                    result = replace(
+                        result,
+                        remind_at=None,
+                        missing_fields=tuple(dict.fromkeys((*result.missing_fields, "time"))),
+                    )
+                elif data["date"] is not None and data["time"] is not None:
+                    result = replace(result, remind_at=temporal.remind_at)
+                result = replace(result, raw={**result.raw, "time_validation": "rules"})
             return replace(
                 result,
                 raw={
@@ -167,6 +304,16 @@ class SemanticParser:
             )
         except (ValueError, TypeError, KeyError, OverflowError):
             raise AiUnavailable("AI 的時間或格式無法驗證，請換個說法重試；原草稿已保留。") from None
+
+
+def _recurrence_data(rule: RecurrenceRule | None) -> dict[str, object] | None:
+    if rule is None:
+        return None
+    return {
+        **dict.fromkeys(RECURRENCE_INTEGERS),
+        **{name: [] for name in RECURRENCE_ARRAYS},
+        **json.loads(serialize_rule(rule)),
+    }
 
 
 def validate_result(
@@ -207,7 +354,7 @@ def validate_result(
         remind_at = next_fire(rule, now)
     else:
         missing.append("time")
-    if remind_at and remind_at <= now and "time" not in missing:
+    if remind_at and remind_at.astimezone(UTC) <= now.astimezone(UTC) and "time" not in missing:
         missing.append("time")
     title = data["title"].strip() if data["title"] else None
     if not title:

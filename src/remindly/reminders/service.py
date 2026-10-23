@@ -538,7 +538,10 @@ class ReminderService:
                         else None
                     )
                     context.missing_fields = list(pending["missing_fields"])
-                    context.parse_result = {"question": pending["question"]}
+                    context.parse_result = {
+                        "question": pending["question"],
+                        "condition_question": pending.get("condition_question"),
+                    }
                 parsed = self.parse_ai(
                     message.text, message, now, context=context, purpose="edit_time"
                 )
@@ -548,6 +551,7 @@ class ReminderService:
                             "remind_at": parsed.remind_at.isoformat() if parsed.remind_at else None,
                             "missing_fields": list(parsed.missing_fields),
                             "question": parsed.raw.get("question"),
+                            "condition_question": parsed.raw.get("condition_question"),
                         }
                         self._edit_store.save(session, now)
                     return EditPrompt(

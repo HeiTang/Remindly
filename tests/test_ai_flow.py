@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,6 +32,124 @@ from remindly.telegram.models import (
 
 
 class AiFlowTest(unittest.TestCase):
+    def test_edit_condition_survives_date_clock_and_store_reload(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(),
+                parsed(intent="update", question="是否只限工作日？"),
+                parsed(intent="update"),
+                parsed(intent="update"),
+            ]
+        )
+        self.send("明天下午三點提醒我交報告")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.confirm(draft.id)
+        original = self.repo.list_pending(CHAT.id)[0]
+        self.service.begin_edit(CHAT.id, original.short_id, USER.id, "time", NOW)
+        self.send("改成工作日")
+        self.send("11/17")
+        self.service._edit_store = SqliteEditSessionStore(10, self.repo)
+        self.send("23:55")
+        self.assertEqual("是否只限工作日？", self.telegram.messages[-1].text)
+        self.assertEqual(original.remind_at, self.repo.list_pending(CHAT.id)[0].remind_at)
+        self.assertIsNotNone(self.service.peek_edit_session(CHAT.id, USER.id, NOW))
+
+    def test_date_and_clock_do_not_confirm_unresolved_condition(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(question="是否只限工作日？"),
+                parsed(intent="update", question=None),
+                parsed(intent="update", question=None),
+            ]
+        )
+        for text in ("提醒我工作日喝水", "11/17", "23:55"):
+            self.send(text)
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertIn("clarification", draft.missing_fields)
+        self.assertIn("是否只限工作日？", self.telegram.messages[-1].text)
+        self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+
+    def test_unrequested_recurrence_cannot_be_confirmed(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(parsed(recurrence=rule()))
+        self.send("提醒我明天下午三點買湯")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertIsNone(draft.recurrence)
+        self.assertIn("clarification", draft.missing_fields)
+        self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+
+    def test_wrong_model_dates_cannot_change_followup_date(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(title="要領蝦幣", date=None, time=None, question="什麼時候提醒？"),
+                parsed(intent="update", date="2026-09-17", time=None, question="那天幾點？"),
+                parsed(intent="create", date="2026-10-22", time="23:55", title="其他事項"),
+            ]
+        )
+        for text in ("提醒我要領蝦幣", "09-17", "23:55"):
+            self.send(text)
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual(datetime(2027, 9, 17, 23, 55, tzinfo=NOW.tzinfo), draft.remind_at)
+        self.assertEqual("要領蝦幣", draft.title)
+        self.assertTrue(draft.is_complete)
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+
+    def test_invalid_reminder_is_not_silently_dropped(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(
+            parsed(
+                intent="not_reminder",
+                title=None,
+                date=None,
+                time=None,
+                question="九月沒有31日",
+                participant_indices=[],
+            )
+        )
+        self.send("提醒我09-31 23:55買湯")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertIsNotNone(draft)
+        self.assertFalse(draft.is_complete)
+        self.assertIn("日期或時間無效", self.telegram.messages[-1].text)
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+
+    def test_explicit_new_reminder_keeps_its_source(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(title="舊事項", date=None, time=None, question="什麼時候？"),
+                parsed(title="買湯", intent="create"),
+            ]
+        )
+        self.send("提醒我舊事項")
+        self.send("提醒我明天下午三點買湯")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual("提醒我明天下午三點買湯", draft.source_text)
+        self.assertEqual("買湯", draft.title)
+        self.assertEqual("create", draft.parse_result["intent"])
+
+    def test_not_reminder_question_is_shown_without_replacing_draft(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(parsed(time=None, question="幾點？"))
+        self.send("提醒我下班後買湯")
+        original = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.gemini.responses.append(
+            parsed(
+                intent="not_reminder",
+                date=None,
+                time=None,
+                question="請提供明確的時間。",
+            )
+        )
+        self.send("下班的時候")
+        self.assertEqual("請提供明確的時間。", self.telegram.messages[-1].text)
+        self.assertEqual(original.id, self.service.peek_draft(CHAT.id, USER.id, NOW).id)
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = ReminderRepository(Path(self.tmp.name) / "test.db")

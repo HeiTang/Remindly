@@ -24,7 +24,7 @@ from remindly.ai.gateway import AiGateway
 from remindly.ai.gemini import GeminiProvider, gemini_schema, quota_cooldown
 from remindly.ai.keys import ApiKeyStore
 from remindly.ai.parser import SCHEMA, SemanticParser, validate_result
-from remindly.reminders.models import MentionKind, Participant
+from remindly.reminders.models import MentionKind, Participant, RecurrencePeriod, RecurrenceRule
 from remindly.storage.sqlite import ReminderRepository
 
 NOW = datetime(2026, 10, 22, 12, tzinfo=ZoneInfo("Asia/Taipei"))
@@ -492,6 +492,194 @@ class GeminiClientTest(unittest.TestCase):
                 {"error": {"details": [{"violations": [{"quotaId": "RequestsPerDayPerModel"}]}]}}
             )
         self.assertEqual(90001, delay)
+
+
+class SemanticTimeGuardTest(unittest.TestCase):
+    def test_date_then_clock_cannot_clear_pending_condition(self):
+        context = self.draft(
+            missing_fields=["time", "clarification"],
+            parse_result={"question": "是否只限工作日？"},
+        )
+        for text in ("11/17", "23:55"):
+            with self.subTest(text=text):
+                result = self.parse(parsed(intent="update"), text, context=context)
+                self.assertIn("clarification", result.missing_fields)
+                self.assertIn("是否只限工作日？", result.raw["question"])
+                context.remind_at = result.remind_at
+                context.missing_fields = list(result.missing_fields)
+                context.parse_result = result.raw
+        self.assertEqual("是否只限工作日？", result.raw["question"])
+
+    def test_unrequested_or_changed_recurrence_requires_confirmation(self):
+        for text, recurrence in (
+            ("提醒我明天下午三點買湯", rule()),
+            ("提醒我明天下午三點每週一吃藥", rule()),
+        ):
+            with self.subTest(text=text):
+                result = self.parse(parsed(recurrence=recurrence), text)
+                self.assertIsNone(result.recurrence)
+                self.assertIn("clarification", result.missing_fields)
+                self.assertIn("週期", result.raw["question"])
+
+    def test_missing_recipients_are_not_guessed_from_multiple_candidates(self):
+        other = Participant("Alice", MentionKind.TEXT_MENTION, user_id=8)
+        result = self.parse(
+            parsed(date="2030-09-17", participant_indices=[]),
+            "提醒我09-17 23:55和 @alice 買湯",
+            participants=[PERSON, other],
+        )
+        self.assertIn("participants", result.missing_fields)
+        self.assertEqual((), result.participants)
+
+    def parse(self, data, text, *, context=None, now=NOW, participants=None, purpose="reminder"):
+        class Gateway:
+            def generate(self, *args):
+                return GeneratedResponse(data, "test", "variable-model")
+
+        return SemanticParser(Gateway()).parse(
+            text, 7, now, participants or [PERSON], context=context, purpose=purpose
+        )
+
+    def draft(self, **changes):
+        from remindly.reminders.models import ReminderDraft
+
+        values = dict(
+            id="guard",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我要領蝦幣",
+            title="要領蝦幣",
+            participants=[PERSON],
+            missing_fields=["time"],
+        )
+        values.update(changes)
+        return ReminderDraft(**values)
+
+    def test_explicit_date_is_independent_of_model_year(self):
+        for text in ("提醒我09-17 23:55領蝦幣", "9/17 23:55提醒我領蝦幣"):
+            for year in (2025, 2026, 2027, 2030):
+                with self.subTest(text=text, year=year):
+                    result = self.parse(parsed(date=f"{year}-10-24", time="09:00"), text)
+                    self.assertEqual(
+                        datetime(2027, 9, 17, 23, 55, tzinfo=NOW.tzinfo), result.remind_at
+                    )
+                    self.assertEqual((), result.missing_fields)
+                    self.assertEqual("rules", result.raw["time_validation"])
+
+    def test_date_then_clock_cannot_change_date_or_other_fields(self):
+        context = self.draft()
+        first = self.parse(
+            parsed(intent="update", date="2026-09-17", time="12:00"), "09-17", context=context
+        )
+        self.assertEqual(datetime(2027, 9, 17, tzinfo=NOW.tzinfo), first.remind_at)
+        self.assertIn("time", first.missing_fields)
+        context.remind_at = first.remind_at
+        other = Participant("Alice", MentionKind.TEXT_MENTION, user_id=8)
+        for day in ("2026-10-22", "2026-09-17", "2030-01-01"):
+            for intent in ("create", "update", "not_reminder"):
+                with self.subTest(day=day, intent=intent):
+                    result = self.parse(
+                        parsed(
+                            intent=intent,
+                            date=day,
+                            time="01:00",
+                            title="轉帳",
+                            recurrence=rule(),
+                            participant_indices=[1],
+                            question="改成今天嗎？",
+                        ),
+                        "23:55",
+                        context=context,
+                        participants=[PERSON, other],
+                    )
+                    self.assertEqual(
+                        datetime(2027, 9, 17, 23, 55, tzinfo=NOW.tzinfo), result.remind_at
+                    )
+                    self.assertEqual("要領蝦幣", result.title)
+                    self.assertEqual((PERSON,), result.participants)
+                    self.assertIsNone(result.recurrence)
+                    self.assertEqual("update", result.raw["intent"])
+                    self.assertEqual((), result.missing_fields)
+
+    def test_explicit_year_is_never_rolled_forward(self):
+        result = self.parse(parsed(date="2030-09-17"), "提醒我2026/09/17 23:55買湯")
+        self.assertEqual(datetime(2026, 9, 17, 23, 55, tzinfo=NOW.tzinfo), result.remind_at)
+        self.assertIn("time", result.missing_fields)
+
+    def test_invalid_date_cannot_be_replaced_with_valid_date(self):
+        for data in (
+            parsed(date="2030-09-30"),
+            parsed(
+                intent="not_reminder",
+                title=None,
+                date=None,
+                time=None,
+                question="九月沒有31日",
+                participant_indices=[],
+            ),
+        ):
+            with self.subTest(data=data):
+                result = self.parse(data, "提醒我09-31 23:55買湯")
+                self.assertIsNone(result.remind_at)
+                self.assertIn("time", result.missing_fields)
+                self.assertEqual("create", result.raw["intent"])
+                self.assertIsNotNone(result.raw["question"])
+        context = self.draft(
+            recurrence=RecurrenceRule(period=RecurrencePeriod.DAILY, hour=9, minute=0)
+        )
+        result = self.parse(parsed(recurrence=rule()), "09-31 23:55", context=context)
+        self.assertIsNone(result.remind_at)
+        self.assertIn("time", result.missing_fields)
+        self.assertEqual(context.recurrence, result.recurrence)
+
+    def test_subject_date_does_not_override_reminder_time(self):
+        result = self.parse(parsed(), "明天下午三點提醒我後天要交報告")
+        self.assertEqual(datetime(2026, 10, 23, 15, tzinfo=NOW.tzinfo), result.remind_at)
+        self.assertEqual("後天要交報告", result.title)
+        data = parsed(date=None, time=None, question="什麼時候提醒？")
+        result = self.parse(data, "提醒我買11/17要用的湯匙")
+        self.assertNotIn("time_validation", result.raw)
+
+    def test_relative_time_preserves_seconds_and_elapsed_time(self):
+        for now in (
+            NOW.replace(second=37),
+            datetime(2027, 3, 14, 1, 45, tzinfo=ZoneInfo("America/New_York")),
+            datetime(2027, 11, 7, 1, 45, tzinfo=ZoneInfo("America/New_York")),
+        ):
+            with self.subTest(now=now):
+                result = self.parse(
+                    parsed(date=None, time=None, relative_minutes=30), "半小時後提醒我買湯", now=now
+                )
+                self.assertEqual(1800, result.remind_at.timestamp() - now.timestamp())
+                self.assertEqual(now.second, result.remind_at.second)
+                self.assertEqual((), result.missing_fields)
+
+    def test_dst_ambiguity_is_still_blocked(self):
+        now = datetime(2027, 11, 6, 12, tzinfo=ZoneInfo("America/New_York"))
+        result = self.parse(parsed(date="2027-11-07", time="01:30"), "提醒我明天01:30買湯", now=now)
+        self.assertIn("time", result.missing_fields)
+        self.assertIn("日光節約", result.raw["question"])
+
+    def test_unresolved_condition_is_not_cleared_by_clock_reply(self):
+        context = self.draft(
+            missing_fields=["time", "clarification"], parse_result={"question": "是否只限工作日？"}
+        )
+        result = self.parse(parsed(intent="update"), "23:55", context=context)
+        self.assertIn("clarification", result.missing_fields)
+        self.assertEqual("是否只限工作日？", result.raw["question"])
+
+    def test_pending_recurrence_uses_original_weekdays(self):
+        context = self.draft(source_text="每週一提醒我吃藥", title="吃藥")
+        result = self.parse(
+            parsed(intent="update", date=None, time=None, recurrence=rule()),
+            "早上九點",
+            context=context,
+        )
+        self.assertEqual(RecurrencePeriod.WEEKLY, result.recurrence.period)
+        self.assertEqual((0,), result.recurrence.weekdays)
+        self.assertEqual(datetime(2026, 10, 26, 9, tzinfo=NOW.tzinfo), result.remind_at)
 
 
 class SemanticValidationTest(unittest.TestCase):

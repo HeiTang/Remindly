@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
 from remindly.reminders.models import (
@@ -275,6 +275,43 @@ class ReminderParser:
         reference = now.replace(tzinfo=zone) if now.tzinfo is None else now
         return self._parse_time(text, reference, zone, existing_date=existing_date)
 
+    def explicit_time(
+        self, text: str, now: datetime, existing_date: datetime | None = None
+    ) -> tuple[TimeParse, bool] | None:
+        """只認明確提醒的時間區或整句時間；不搜尋事項中的日期。"""
+        cleaned = normalize_spaces(text)
+        zone = now.tzinfo or ZoneInfo(self._default_timezone)
+        prompt = PROMPT_SPLIT_RE.search(cleaned)
+        if prompt:
+            left = cleaned[: prompt.start()].strip()
+            left_result = self._parse_datetime(left, now, zone) if left else None
+            if left_result and left_result[1] == len(left):
+                if not left_result[0].missing_time:
+                    return left_result[0], False
+            elif prompt.start() != 0:
+                return None
+            right = self._parse_datetime(
+                cleaned[prompt.end() :],
+                now,
+                zone,
+                existing_date=left_result[0].remind_at if left_result else None,
+            )
+            if right:
+                return right[0], False
+            return (left_result[0], False) if left_result else None
+        parsed = self._parse_datetime(cleaned, now, zone, existing_date=existing_date)
+        if parsed is None:
+            return None
+        value, end = parsed
+        if end == len(cleaned):
+            return value, True
+        if value.grain == "invalid":
+            remainder = cleaned[end:].strip()
+            tail = self._parse_datetime(remainder, now, zone)
+            if tail and tail[1] == len(remainder):
+                return value, True
+        return None
+
     def _try_split_parse(
         self,
         cleaned: str,
@@ -332,11 +369,11 @@ class ReminderParser:
         時區資訊由 `now.tzinfo` 帶著（`next_fire` 也用 `after.tzinfo`），
         不需要額外的 zone 參數。
 
-        若 `_detect_recurrence_marker` 回傳 `RecurrenceError`（marker 匹配但無效），
+        若 `recurrence_marker` 回傳 `RecurrenceError`（marker 匹配但無效），
         直接把 error 往上傳；`parse()` 會把它塞到 `ParseResult.recurrence_error` 讓
         router 做「單輪拒絕」的處理，不建 draft、不追問。
         """
-        marker = self._detect_recurrence_marker(cleaned)
+        marker = self.recurrence_marker(cleaned)
         if marker is None:
             return None
         if isinstance(marker, RecurrenceError):
@@ -394,7 +431,7 @@ class ReminderParser:
         title = self._clean_content_title(remaining, participants)
         return rule, remind_at, title
 
-    def _detect_recurrence_marker(
+    def recurrence_marker(
         self, cleaned: str
     ) -> tuple[str, RecurrencePeriod, dict[str, object]] | RecurrenceError | None:
         """依序試 monthly / yearly / weekly / daily。回傳：
@@ -512,7 +549,7 @@ class ReminderParser:
                 consumed,
                 grain,
                 missing_time=missing,
-                is_past=target is not None and target <= now,
+                is_past=target is not None and target.astimezone(UTC) <= now.astimezone(UTC),
                 consumed_spans=tuple(spans),
             ), end
 
@@ -773,10 +810,15 @@ def parse_relative_amount(value: str, unit: str) -> float:
 def apply_relative_offset(now: datetime, amount: float, unit: str) -> datetime:
     """RELATIVE_RE 命中的單位轉換為 delta 並套用。
     月份使用 calendar 加減，避免用 30 天近似造成的月底漂移。"""
+    elapsed = None
     if unit in {"分鐘", "分"}:
-        return now + timedelta(minutes=amount)
-    if "小時" in unit or "小时" in unit:
-        return now + timedelta(hours=amount)
+        elapsed = timedelta(minutes=amount)
+    elif "小時" in unit or "小时" in unit:
+        elapsed = timedelta(hours=amount)
+    if elapsed is not None:
+        return (
+            (now.astimezone(UTC) + elapsed).astimezone(now.tzinfo) if now.tzinfo else now + elapsed
+        )
     if unit in {"天", "日"}:
         return now + timedelta(days=amount)
     if unit in {"週", "周"} or "星期" in unit:

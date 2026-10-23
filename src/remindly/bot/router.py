@@ -128,6 +128,8 @@ class BotRouter:
             return
         parsed = self._reminder_service.parse_ai(text, message, now, context=draft)
         if parsed.raw.get("intent") == "not_reminder":
+            if (triggered or draft) and parsed.raw.get("question"):
+                self._client.send_message(message.chat.id, str(parsed.raw["question"]))
             return
         source = draft.source_text if draft and parsed.raw.get("intent") == "update" else text
         result = self._reminder_service.begin_create(source, message, now, parse_result=parsed)
