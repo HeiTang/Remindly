@@ -14,7 +14,12 @@ from remindly.reminders.models import (
     RecurrenceRule,
     ReminderDraft,
 )
-from remindly.reminders.parser import LEADING_ZAI_RE, RELATIVE_RE, ReminderParser
+from remindly.reminders.parser import (
+    LEADING_ZAI_RE,
+    RELATIVE_RE,
+    ReminderParser,
+    is_valid_local_time,
+)
 from remindly.reminders.recurrence import (
     INTERVAL_MIN_SECONDS,
     format_rule,
@@ -162,7 +167,11 @@ class SemanticParser:
             result = validate_result(response.data, now, participants)
             rules = ReminderParser(str(now.tzinfo))
             constraint = rules.explicit_time(text, now, context.remind_at if context else None)
-            if constraint and (context is not None or not constraint[1]):
+            if constraint and (
+                context is not None
+                or not constraint[1]
+                or constraint[0].grain in {"invalid", "ambiguous"}
+            ):
                 temporal, time_only = constraint
                 data = dict(response.data)
                 data.update(
@@ -211,7 +220,7 @@ class SemanticParser:
                         and marker[1] != RecurrencePeriod.INTERVAL
                         and temporal.remind_at
                         and not temporal.missing_time
-                        and temporal.grain != "invalid"
+                        and temporal.grain not in {"invalid", "ambiguous"}
                     ):
                         recurrence = RecurrenceRule(
                             period=marker[1],
@@ -230,6 +239,10 @@ class SemanticParser:
                     ]
                 if temporal.grain == "invalid":
                     data["question"] = "日期或時間無效，請重新輸入正確日期與時間。"
+                elif temporal.grain == "ambiguous":
+                    data["question"] = (
+                        "時間有歧義或遇到日光節約時間切換，請指定單一日期與24小時制時間。"
+                    )
                 elif temporal.is_past:
                     data["question"] = "這個時間已經過去，請重新輸入未來的日期與時間。"
                 elif temporal.missing_time:
@@ -284,7 +297,7 @@ class SemanticParser:
                             dict.fromkeys((*result.missing_fields, "clarification"))
                         ),
                     )
-                if temporal.grain == "invalid":
+                if temporal.grain in {"invalid", "ambiguous"}:
                     result = replace(
                         result,
                         remind_at=None,
@@ -362,13 +375,14 @@ def validate_result(
     if not participants:
         missing.append("participants")
     question = data["question"]
-    if remind_at and relative is None and "time" not in missing:
-        roundtrip = remind_at.astimezone(UTC).astimezone(now.tzinfo)
-        ambiguous = remind_at.utcoffset() != remind_at.replace(fold=1).utcoffset()
-        if roundtrip.replace(tzinfo=None) != remind_at.replace(tzinfo=None) or ambiguous:
-            if "time" not in missing:
-                missing.append("time")
-            question = "這個時間遇到日光節約時間切換，請指定另一個明確時間。"
+    if (
+        remind_at
+        and relative is None
+        and "time" not in missing
+        and not is_valid_local_time(remind_at)
+    ):
+        missing.append("time")
+        question = "這個時間遇到日光節約時間切換，請指定另一個明確時間。"
     indices = data["participant_indices"]
     if not isinstance(indices, list) or len(indices) > len(participants):
         raise ValueError("participants")

@@ -54,10 +54,10 @@ TIME_SUFFIX = r"(?:\s*(?:的\s*)?時候)?"
 
 TIME_RE = re.compile(
     r"(?P<period>凌晨|早上|上午|中午|下午|晚上|夜晚)?\s*"
-    r"(?P<hour>\d{1,2}|[零〇一二兩两三四五六七八九十]{1,3})"
-    r"\s*(?:點|点|:|：)"
-    r"\s*(?P<minute>\d{1,2}|半|[零〇一二兩两三四五六七八九十]{1,3})?"
-    r"\s*(?:分)?" + TIME_SUFFIX
+    r"(?P<hour>\d+|[零〇一二兩两三四五六七八九十]{1,3})"
+    r"\s*(?P<separator>點|点|:|：)"
+    r"\s*(?P<minute>\d+|半|[零〇一二兩两三四五六七八九十]{1,3})?"
+    r"\s*(?:分)?(?P<seconds>[:：]\s*\d*)?" + TIME_SUFFIX
 )
 
 RELATIVE_RE = re.compile(
@@ -69,20 +69,21 @@ RELATIVE_RE = re.compile(
 
 # 「N 分」（不含 分鐘），用於「19 分要...」= 當前小時 + N 分。
 # 若當前分鐘已過就滾到下一個整點。
-PARTIAL_MINUTE_RE = re.compile(r"(?P<minute>\d{1,2})\s*分(?![鐘钟])" + TIME_SUFFIX)
+PARTIAL_MINUTE_RE = re.compile(r"(?P<minute>\d+)\s*分(?![鐘钟])" + TIME_SUFFIX)
 
 ABSOLUTE_RE = re.compile(
-    r"(?P<year>\d{4})[-/](?P<month>\d{1,2})[-/](?P<day>\d{1,2})"
-    r"(?:\s+(?P<hour>\d{1,2})[:：](?P<minute>\d{1,2}))?" + TIME_SUFFIX
+    r"(?<![\d/-])(?P<year>\d+)[-/](?P<month>\d+)[-/](?P<day>\d+)" + TIME_SUFFIX
 )
 
+TIME_ALTERNATIVE_RE = re.compile(r"\s*(?:或者|或|還是)\s*")
+
 # 短日期 M/D 或 M-D，邊界排除日期分隔符，避免吃到完整年份日期的一部分。
-SHORT_DATE_RE = re.compile(r"(?<![\d/-])(?P<month>\d{1,2})[/-](?P<day>\d{1,2})(?![\d/-])")
+SHORT_DATE_RE = re.compile(r"(?<![\d/-])(?P<month>\d+)[/-](?P<day>\d+)(?![\d/-])")
 
 # 中文日期 M月D號 或 M月D日
 CHINESE_DATE_RE = re.compile(
-    r"(?P<month>\d{1,2}|[一二三四五六七八九十]+)月"
-    r"(?P<day>\d{1,2}|[一二三四五六七八九十]+)[號号日]"
+    r"(?P<month>\d+|[一二三四五六七八九十]+)月"
+    r"(?P<day>\d+|[一二三四五六七八九十]+)[號号日]"
 )
 
 
@@ -278,9 +279,17 @@ class ReminderParser:
     def explicit_time(
         self, text: str, now: datetime, existing_date: datetime | None = None
     ) -> tuple[TimeParse, bool] | None:
-        """只認明確提醒的時間區或整句時間；不搜尋事項中的日期。"""
+        """約束提醒時間區與無衝突的前緣時間，不用事項中的日期強制定案。"""
         cleaned = normalize_spaces(text)
         zone = now.tzinfo or ZoneInfo(self._default_timezone)
+        marker = self.recurrence_marker(cleaned)
+        prefix = PROMPT_SPLIT_RE.sub("", cleaned, count=1).lstrip()
+        if (
+            isinstance(marker, tuple)
+            and marker[1] != RecurrencePeriod.INTERVAL
+            and prefix.startswith(marker[0])
+        ):
+            return self.explicit_time(cleaned.replace(marker[0], "", 1), now, existing_date)
         prompt = PROMPT_SPLIT_RE.search(cleaned)
         if prompt:
             left = cleaned[: prompt.start()].strip()
@@ -310,6 +319,13 @@ class ReminderParser:
             tail = self._parse_datetime(remainder, now, zone)
             if tail and tail[1] == len(remainder):
                 return value, True
+        if (
+            not value.missing_time
+            and not cleaned[end:].lstrip().startswith("的")
+            and self._parse_time(cleaned, now, zone, existing_date=existing_date).remind_at
+            == value.remind_at
+        ):
+            return value, False
         return None
 
     def _try_split_parse(
@@ -333,13 +349,13 @@ class ReminderParser:
         right_result = self._parse_datetime(content_zone, now, zone)
 
         # 1. 左邊有完整時間（含時鐘或明確 period+day 標記）
-        if left_result and left_result[0].remind_at and not left_result[0].missing_time:
+        if left_result and not left_result[0].missing_time:
             time_parse = left_result[0]
             title = self._clean_content_title(content_zone, participants)
             return time_parse, title
 
         # 2. 右邊前緣有完整或部分時間
-        if right_result and right_result[0].remind_at:
+        if right_result:
             time_parse, consumed_len = right_result
             remaining = content_zone[consumed_len:]
             title = self._clean_content_title(remaining, participants)
@@ -412,7 +428,7 @@ class ReminderParser:
                 parsed_time, _ = self._parse_datetime(time_text[clock.start() :], now, now.tzinfo)
         if parsed_time is None:
             return None
-        if parsed_time.grain == "invalid":
+        if parsed_time.grain in {"invalid", "ambiguous"}:
             return RecurrenceError(marker_text=marker_text, reason="時間格式無效")
         if parsed_time.remind_at is None or parsed_time.missing_time:
             return None
@@ -420,6 +436,10 @@ class ReminderParser:
 
         rule = RecurrenceRule(period=period, hour=hour, minute=minute, **extras)
         remind_at = next_fire(rule, now)
+        if not is_valid_local_time(remind_at):
+            return RecurrenceError(
+                marker_text=marker_text, reason="時間遇到日光節約切換，請指定其他時間"
+            )
 
         # 標題：把 marker、時間片段、提醒(我/我們/大家)? 從 cleaned 挖掉，
         # 剩下的 participant / mention / 連接詞清理交給 `_clean_content_title`，
@@ -525,6 +545,7 @@ class ReminderParser:
         *,
         leading: bool = True,
         existing_date: datetime | None = None,
+        check_alternatives: bool = True,
     ) -> tuple[TimeParse, int] | None:
         """共用時間文法；leading 只控制從前緣比對或在文字中搜尋。"""
         anchor = LEADING_ZAI_RE.match(text)
@@ -535,8 +556,23 @@ class ReminderParser:
             return (pattern.match if leading else pattern.search)(text, pos)
 
         def result(
-            target: datetime | None, end: int, grain: str, *, missing: bool = False
+            target: datetime | None,
+            end: int,
+            grain: str,
+            *,
+            missing: bool = False,
+            elapsed: bool = False,
         ) -> tuple[TimeParse, int]:
+            alternative = TIME_ALTERNATIVE_RE.match(text, end) if check_alternatives else None
+            if alternative:
+                other = self._parse_datetime(
+                    text[alternative.end() :], now, zone, check_alternatives=False
+                )
+                if other:
+                    target, grain = None, "ambiguous"
+                    end = alternative.end() + other[1]
+            if target and not missing and not elapsed and not is_valid_local_time(target):
+                target, grain = None, "ambiguous"
             spans: list[tuple[int, int]] = []
             for begin, finish in sorted(part.span() for part in parts):
                 if spans and begin <= spans[-1][1]:
@@ -561,7 +597,13 @@ class ReminderParser:
                 target = apply_relative_offset(now, amount, relative.group("unit"))
             except (ValueError, OverflowError):
                 return result(None, relative.end(), "invalid")
-            return result(target, relative.end(), "minute")
+            return result(
+                target,
+                relative.end(),
+                "minute",
+                elapsed=relative.group("unit")
+                in {"分鐘", "分", "小時", "小时", "個小時", "个小时"},
+            )
 
         date_dt: datetime | None = None
         date_end = start
@@ -569,17 +611,16 @@ class ReminderParser:
         if absolute:
             parts.append(absolute)
             try:
+                if len(absolute.group("year")) != 4 or any(
+                    len(absolute.group(field)) > 2 for field in ("month", "day")
+                ):
+                    raise ValueError("invalid date token")
                 date_dt = datetime(
                     int(absolute.group("year")),
                     int(absolute.group("month")),
                     int(absolute.group("day")),
                     tzinfo=zone,
                 )
-                if absolute.group("hour") is not None:
-                    target = date_dt.replace(
-                        hour=int(absolute.group("hour")), minute=int(absolute.group("minute"))
-                    )
-                    return result(target, absolute.end(), "minute")
             except ValueError:
                 return result(None, absolute.end(), "invalid")
             date_end = absolute.end()
@@ -658,12 +699,15 @@ class ReminderParser:
                 parts.append(clock)
             if pod and (not clock or pod.start() < clock.start()):
                 parts.append(pod)
+            clock_period = (clock.group("period") or period) if clock else period
             try:
                 hour, minute = (
                     self._parse_clock(clock, period=period)
                     if clock
                     else DEFAULT_PERIOD_TIME[period]
                 )
+                if clock and hour == 12 and clock_period in {"晚上", "晚", "夜晚"}:
+                    return result(None, end, "ambiguous")
                 target = base.replace(hour=hour, minute=minute, second=0, microsecond=0)
             except ValueError:
                 return result(None, end, "invalid")
@@ -680,6 +724,8 @@ class ReminderParser:
         partial = match(PARTIAL_MINUTE_RE, cursor if leading else start)
         if partial and date_dt is None:
             parts.append(partial)
+            if len(partial.group("minute")) > 2:
+                return result(None, partial.end(), "invalid")
             minute = int(partial.group("minute"))
             if not 0 <= minute <= 59:
                 return result(None, partial.end(), "invalid")
@@ -718,6 +764,15 @@ class ReminderParser:
         return parsed[0] if parsed else TimeParse(None, "", "unknown")
 
     def _parse_clock(self, match: re.Match[str], *, period: str = "") -> tuple[int, int]:
+        if (
+            match.group("seconds") is not None
+            or (match.group("separator") in {":", "："} and not match.group("minute"))
+            or any(
+                value and value.isdigit() and len(value) > 2
+                for value in (match.group("hour"), match.group("minute"))
+            )
+        ):
+            raise ValueError("invalid clock token")
         hour = parse_number(match.group("hour"))
         minute_text = match.group("minute")
         minute = 0
@@ -731,7 +786,7 @@ class ReminderParser:
             hour += 12
         if period == "中午" and hour < 11:
             hour += 12
-        if period == "凌晨" and hour == 12:
+        if period in {"凌晨", "早上", "上午"} and hour == 12:
             hour = 0
 
         if not 0 <= hour <= 23 or not 0 <= minute <= 59:
@@ -771,6 +826,15 @@ class ReminderParser:
         title = PROMPT_SPLIT_RE.sub(" ", title)
         title = LEADING_ZAI_RE.sub("", title)
         return self._clean_content_title(title, participants)
+
+
+def is_valid_local_time(value: datetime) -> bool:
+    """拒絕不存在或重複的牆上時間；已知經過秒數的相對時間不受此限制。"""
+    roundtrip = value.astimezone(UTC).astimezone(value.tzinfo)
+    return (
+        roundtrip.replace(tzinfo=None) == value.replace(tzinfo=None)
+        and value.replace(fold=0).utcoffset() == value.replace(fold=1).utcoffset()
+    )
 
 
 def participant_from_user(user: TelegramUser) -> Participant:
@@ -866,6 +930,8 @@ def parse_number(value: str) -> int:
 
 
 def _short_date_to_datetime(match: re.Match[str], now: datetime, zone: tzinfo) -> datetime | None:
+    if any(len(match.group(field)) > 2 for field in ("month", "day")):
+        return None
     month = int(match.group("month"))
     day = int(match.group("day"))
     try:
@@ -881,6 +947,10 @@ def _short_date_to_datetime(match: re.Match[str], now: datetime, zone: tzinfo) -
 
 
 def _chinese_date_to_datetime(match: re.Match[str], now: datetime, zone: tzinfo) -> datetime | None:
+    if any(
+        match.group(field).isdigit() and len(match.group(field)) > 2 for field in ("month", "day")
+    ):
+        return None
     try:
         month = parse_number(match.group("month"))
         day = parse_number(match.group("day"))

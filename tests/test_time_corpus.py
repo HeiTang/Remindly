@@ -62,9 +62,12 @@ class TimeRegressionCorpusTest(unittest.TestCase):
         return service, repository, drafts
 
     def test_corpus_structure(self) -> None:
-        self.assertTrue(self.cases)
+        self.assertGreaterEqual(len(self.cases), 107, "既有 107 筆回歸案例不可縮減")
         ids = [case["id"] for case in self.cases]
         self.assertEqual(len(ids), len(set(ids)), "案例 id 不可重複")
+        required = CORPUS.with_suffix(".required_ids.txt").read_text().splitlines()
+        self.assertEqual(107, len(set(required)))
+        self.assertFalse(set(required) - set(ids), "原本的回歸案例不可被其他案例取代")
         fields = {
             "time": {"text", "at", "missing_time", "past", "existing_date", "cross_entry_points"},
             "reminder": {"text", "title", "at", "missing", "recurrence", "error", "participants"},

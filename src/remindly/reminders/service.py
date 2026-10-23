@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
@@ -299,11 +299,14 @@ class ReminderService:
         if not draft or draft.creator_user_id != user_id or draft.remind_at is None:
             return None
 
-        hour, minute = [int(part) for part in hour_minute.split(":", 1)]
-        remind_at = draft.remind_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        draft.remind_at = remind_at
+        parsed = self._parser.parse_time_only(
+            hour_minute, now.astimezone(ZoneInfo(draft.timezone)), existing_date=draft.remind_at
+        )
+        if parsed.remind_at:
+            draft.remind_at = parsed.remind_at
+        draft.parse_result["grain"] = parsed.grain
         draft.missing_fields = [field for field in draft.missing_fields if field != "time"]
-        if remind_at <= now.astimezone(remind_at.tzinfo):
+        if not parsed.remind_at or parsed.missing_time or parsed.is_past:
             draft.missing_fields.append("time")
 
         self._draft_store.save(draft, now)
@@ -315,7 +318,7 @@ class ReminderService:
         draft = self._draft_store.get_by_id(draft_id, now)
         if not draft or draft.creator_user_id != user_id or not draft.is_complete:
             return None
-        if require_datetime(draft.remind_at) <= now:
+        if require_datetime(draft.remind_at).astimezone(UTC) <= now.astimezone(UTC):
             draft.missing_fields = ["time"]
             self._draft_store.save(draft, now)
             return None
@@ -731,6 +734,7 @@ class ReminderService:
                 now.astimezone(ZoneInfo(draft.timezone)),
                 existing_date=draft.remind_at,
             )
+            draft.parse_result["grain"] = parsed_time.grain
             if parsed_time.remind_at and parsed_time.missing_time:
                 draft.remind_at = parsed_time.remind_at
             if parsed_time.remind_at and not parsed_time.missing_time and not parsed_time.is_past:
@@ -753,6 +757,8 @@ class ReminderService:
         if draft.parse_result.get("question"):
             return str(draft.parse_result["question"])
         if "time" in draft.missing_fields:
+            if draft.parse_result.get("grain") == "ambiguous":
+                return "時間有歧義或遇到日光節約時間切換，請指定單一日期與24小時制時間。"
             return "什麼時候提醒？" if draft.remind_at is None else "那天幾點？"
         if "title" in draft.missing_fields:
             return "要提醒什麼？"
