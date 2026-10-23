@@ -102,6 +102,198 @@ class ReminderParserTest(unittest.TestCase):
         self.assertEqual("開會", result.title)
         self.assertEqual((), result.missing_fields)
 
+    def test_parse_time_suffix_is_not_part_of_title(self) -> None:
+        for time_text in ("五點", "下午五點", "17:00", "三小時後", "明天五點"):
+            for suffix in ("的時候", " 的時候 ", "時候", " 的 時候 "):
+                with self.subTest(time_text=time_text, suffix=suffix):
+                    prefix = f"提醒我在{time_text}"
+                    expected = self.parser.parse(
+                        f"{prefix}買兩份清燉牛肉湯", self.message, self.now
+                    )
+                    result = self.parser.parse(
+                        f"{prefix}{suffix}買兩份清燉牛肉湯", self.message, self.now
+                    )
+
+                    self.assertEqual("買兩份清燉牛肉湯", result.title)
+                    self.assertEqual(expected.remind_at, result.remind_at)
+                    self.assertEqual((), result.missing_fields)
+                    self.assertTrue(result.raw["consumed_time_text"].endswith(suffix.strip()))
+
+    def test_time_suffix_is_consumed_across_parse_paths(self) -> None:
+        for text in (
+            "提醒我在2026-10-24 17:00的時候買湯",
+            "提醒我在今晚的時候買湯",
+            "提醒我在19分的時候買湯",
+            "下午五點的時候提醒我買湯",
+            "下午五點的時候買湯",
+            "每天下午五點的時候提醒我買湯",
+        ):
+            with self.subTest(text=text):
+                result = self.parser.parse(text, self.message, self.now)
+                self.assertEqual("買湯", result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_parse_preserves_time_suffix_inside_title(self) -> None:
+        title = "買喝湯的時候要用的湯匙"
+        result = self.parser.parse(f"提醒我在五點的時候{title}", self.message, self.now)
+
+        self.assertEqual(title, result.title)
+
+    def test_time_only_respects_explicit_month_day(self) -> None:
+        now = datetime(2026, 10, 23, 12, 0, tzinfo=self.zone)
+        for text in ("11/17 23:55", "11月17日 23:55", "十一月十七號 23:55"):
+            for existing_date in (None, now + timedelta(days=1)):
+                with self.subTest(text=text, existing_date=existing_date):
+                    result = self.parser.parse_time_only(text, now, existing_date)
+                    self.assertEqual(
+                        datetime(2026, 11, 17, 23, 55, tzinfo=self.zone), result.remind_at
+                    )
+                    self.assertFalse(result.missing_time)
+                    self.assertFalse(result.is_past)
+
+    def test_time_only_month_day_uses_existing_year_rollover_rule(self) -> None:
+        now = datetime(2026, 12, 23, 12, 0, tzinfo=self.zone)
+        result = self.parser.parse_time_only("11/17 23:55", now)
+        self.assertEqual(datetime(2027, 11, 17, 23, 55, tzinfo=self.zone), result.remind_at)
+
+    def test_datetime_formats_agree_across_entry_points(self) -> None:
+        now = datetime(2026, 10, 23, 12, 10, tzinfo=self.zone)
+        cases = (
+            ("11/17 23:55", (2026, 11, 17, 23, 55), False),
+            ("十一月十七號晚上九點", (2026, 11, 17, 21, 0), False),
+            ("2026-11-17 23:55", (2026, 11, 17, 23, 55), False),
+            ("2026/11/17 下午三點", (2026, 11, 17, 15, 0), False),
+            ("明天", (2026, 10, 24, 12, 10), True),
+            ("明日 23:55", (2026, 10, 24, 23, 55), False),
+            ("後天早上九點", (2026, 10, 25, 9, 0), False),
+            ("下週一下午三點", (2026, 10, 26, 15, 0), False),
+            ("下週一九點", (2026, 10, 26, 9, 0), False),
+            ("週五下午", (2026, 10, 23, 15, 0), True),
+            ("五點", (2026, 10, 24, 5, 0), False),
+            ("19 分", (2026, 10, 23, 12, 19), False),
+            ("三小時後", (2026, 10, 23, 15, 10), False),
+            ("明早九點", (2026, 10, 24, 9, 0), False),
+            ("明晚九點", (2026, 10, 24, 21, 0), False),
+            ("今晚九點", (2026, 10, 23, 21, 0), False),
+            ("明早", (2026, 10, 24, 8, 0), False),
+        )
+        for text, values, missing in cases:
+            expected = datetime(*values, tzinfo=self.zone)
+            with self.subTest(text=text, path="time_only"):
+                parsed = self.parser.parse_time_only(text, now)
+                self.assertEqual(expected, parsed.remind_at)
+                self.assertEqual(missing, parsed.missing_time)
+            for source in (f"{text}提醒我買湯", f"提醒我在{text}買湯", f"{text}買湯"):
+                with self.subTest(text=text, source=source):
+                    parsed = self.parser.parse(source, self.message, now)
+                    self.assertEqual(expected, parsed.remind_at)
+                    self.assertEqual(missing, "time" in parsed.missing_fields)
+                    self.assertEqual("買湯", parsed.title)
+
+    def test_invalid_datetime_never_falls_back_to_today(self) -> None:
+        for text in (
+            "13/17 23:55",
+            "11/31 23:55",
+            "二月三十日 23:55",
+            "2026-02-30 23:55",
+            "25:00",
+            "17:60",
+            "99 分",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(self.parser.parse_time_only(text, self.now).remind_at)
+                for source in (f"{text}提醒我買湯", f"提醒我在{text}買湯", f"{text}買湯"):
+                    parsed = self.parser.parse(source, self.message, self.now)
+                    self.assertIn("time", parsed.missing_fields)
+
+    def test_time_only_preserves_existing_date_without_rolling_forward(self) -> None:
+        for text, hour, minute in (("09:00", 9, 0), ("19 分", 8, 19)):
+            existing = self.now.replace(hour=8)
+            parsed = self.parser.parse_time_only(text, self.now, existing)
+            self.assertEqual(existing.replace(hour=hour, minute=minute), parsed.remind_at)
+            self.assertTrue(parsed.is_past)
+
+    def test_past_date_only_keeps_missing_clock_flag(self) -> None:
+        parsed = self.parser.parse_time_only("2026-06-02", self.now)
+        self.assertTrue(parsed.is_past)
+        self.assertTrue(parsed.missing_time)
+
+    def test_time_only_and_creation_use_callers_timezone(self) -> None:
+        zone = ZoneInfo("America/New_York")
+        now = datetime(2026, 10, 23, 23, 0, tzinfo=zone)
+        expected = datetime(2026, 10, 24, 9, 0, tzinfo=zone)
+        self.assertEqual(expected, self.parser.parse_time_only("明早九點", now).remind_at)
+        self.assertEqual(
+            expected, self.parser.parse("提醒我明早九點買湯", self.message, now).remind_at
+        )
+
+    def test_search_can_read_clock_before_date(self) -> None:
+        result = self.parser.parse_time_only("23:55 明天", self.now)
+        self.assertEqual(self.now.replace(day=4, hour=23, minute=55), result.remind_at)
+
+    def test_content_period_does_not_override_clock(self) -> None:
+        parsed = self.parser.parse("五點買晚上要用的湯匙", self.message, self.now)
+        self.assertEqual(5, parsed.remind_at.hour)
+        self.assertEqual("買晚上要用的湯匙", parsed.title)
+
+    def test_search_preserves_content_between_date_and_clock(self) -> None:
+        for text, title, hour, minute in (
+            ("明天買湯 23:55", "買湯", 23, 55),
+            ("23:55 買湯 明天", "買湯", 23, 55),
+            ("明天買晚餐 晚上九點", "買晚餐", 21, 0),
+        ):
+            with self.subTest(text=text):
+                parsed = self.parser.parse(text, self.message, self.now)
+                self.assertEqual(title, parsed.title)
+                self.assertEqual(
+                    (self.now + timedelta(days=1)).replace(hour=hour, minute=minute),
+                    parsed.remind_at,
+                )
+                self.assertEqual((), parsed.missing_fields)
+
+    def test_meal_names_do_not_supply_a_time(self) -> None:
+        for title in ("買早餐", "買晚餐", "買早上的麵包", "買晚上的車票"):
+            for prefix in ("提醒我", "每天提醒我"):
+                with self.subTest(title=title, prefix=prefix):
+                    parsed = self.parser.parse(prefix + title, self.message, self.now)
+                    self.assertIn("time", parsed.missing_fields)
+                    self.assertEqual(title, parsed.title)
+                    self.assertIsNone(parsed.recurrence)
+        parsed = self.parser.parse("提醒我明天早餐買湯", self.message, self.now)
+        self.assertEqual("早餐買湯", parsed.title)
+        self.assertIn("time", parsed.missing_fields)
+
+    def test_week_prefixes_use_calendar_weeks(self) -> None:
+        now = datetime(2026, 10, 23, 12, 0, tzinfo=self.zone)  # 週五
+        for text, day, month, past in (
+            ("週一九點", 26, 10, False),
+            ("下週一九點", 26, 10, False),
+            ("下下週一九點", 2, 11, False),
+            ("本週一九點", 19, 10, True),
+            ("這週一九點", 19, 10, True),
+        ):
+            with self.subTest(text=text):
+                parsed = self.parser.parse_time_only(text, now)
+                self.assertEqual(
+                    datetime(2026, month, day, 9, 0, tzinfo=self.zone), parsed.remind_at
+                )
+                self.assertEqual(past, parsed.is_past)
+
+    def test_recurrence_uses_shared_clock_and_period_rules(self) -> None:
+        for time_text, hour in (("早上", 8), ("晚上九點", 21), ("17:00", 17)):
+            for marker in ("每天", "每週一", "每月1號", "每年11/17"):
+                with self.subTest(time_text=time_text, marker=marker):
+                    parsed = self.parser.parse(
+                        f"{marker}{time_text}提醒我買湯", self.message, self.now
+                    )
+                    self.assertIsNotNone(parsed.recurrence)
+                    self.assertEqual(hour, parsed.recurrence.hour)
+                    self.assertEqual("買湯", parsed.title)
+        for time_text in ("25:00", "17:60"):
+            with self.subTest(time_text=time_text):
+                parsed = self.parser.parse(f"每天{time_text}提醒我買湯", self.message, self.now)
+                self.assertIsNotNone(parsed.recurrence_error)
+
     def test_parse_chinese_number(self) -> None:
         self.assertEqual(9, parse_number("九"))
         self.assertEqual(10, parse_number("十"))

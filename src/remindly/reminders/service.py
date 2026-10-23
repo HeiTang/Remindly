@@ -727,6 +727,8 @@ class ReminderService:
                 now.astimezone(ZoneInfo(draft.timezone)),
                 existing_date=draft.remind_at,
             )
+            if parsed_time.remind_at and parsed_time.missing_time:
+                draft.remind_at = parsed_time.remind_at
             if parsed_time.remind_at and not parsed_time.missing_time and not parsed_time.is_past:
                 draft.remind_at = parsed_time.remind_at
                 missing.remove("time")
