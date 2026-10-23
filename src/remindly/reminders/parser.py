@@ -76,8 +76,8 @@ ABSOLUTE_RE = re.compile(
     r"(?:\s+(?P<hour>\d{1,2})[:：](?P<minute>\d{1,2}))?" + TIME_SUFFIX
 )
 
-# 短日期 M/D 或 MM/DD，前後不接數字或 /，避免吃到 21:00 或年份的一部份
-SHORT_DATE_RE = re.compile(r"(?<![\d/])(?P<month>\d{1,2})/(?P<day>\d{1,2})(?![\d/])")
+# 短日期 M/D 或 M-D，邊界排除日期分隔符，避免吃到完整年份日期的一部分。
+SHORT_DATE_RE = re.compile(r"(?<![\d/-])(?P<month>\d{1,2})[/-](?P<day>\d{1,2})(?![\d/-])")
 
 # 中文日期 M月D號 或 M月D日
 CHINESE_DATE_RE = re.compile(

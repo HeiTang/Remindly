@@ -262,6 +262,9 @@ uv run python -m remindly
 make check
 ```
 
+時間解析的固定回歸案例放在 `tests/fixtures/time_regressions.jsonl`，會隨 `make check`
+與 CI 執行；新增格式、誤解析或對話案例請參考 [資料集說明](tests/fixtures/README.md)。
+
 等同於：
 
 ```sh

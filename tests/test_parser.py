@@ -156,40 +156,6 @@ class ReminderParserTest(unittest.TestCase):
         result = self.parser.parse_time_only("11/17 23:55", now)
         self.assertEqual(datetime(2027, 11, 17, 23, 55, tzinfo=self.zone), result.remind_at)
 
-    def test_datetime_formats_agree_across_entry_points(self) -> None:
-        now = datetime(2026, 10, 23, 12, 10, tzinfo=self.zone)
-        cases = (
-            ("11/17 23:55", (2026, 11, 17, 23, 55), False),
-            ("十一月十七號晚上九點", (2026, 11, 17, 21, 0), False),
-            ("2026-11-17 23:55", (2026, 11, 17, 23, 55), False),
-            ("2026/11/17 下午三點", (2026, 11, 17, 15, 0), False),
-            ("明天", (2026, 10, 24, 12, 10), True),
-            ("明日 23:55", (2026, 10, 24, 23, 55), False),
-            ("後天早上九點", (2026, 10, 25, 9, 0), False),
-            ("下週一下午三點", (2026, 10, 26, 15, 0), False),
-            ("下週一九點", (2026, 10, 26, 9, 0), False),
-            ("週五下午", (2026, 10, 23, 15, 0), True),
-            ("五點", (2026, 10, 24, 5, 0), False),
-            ("19 分", (2026, 10, 23, 12, 19), False),
-            ("三小時後", (2026, 10, 23, 15, 10), False),
-            ("明早九點", (2026, 10, 24, 9, 0), False),
-            ("明晚九點", (2026, 10, 24, 21, 0), False),
-            ("今晚九點", (2026, 10, 23, 21, 0), False),
-            ("明早", (2026, 10, 24, 8, 0), False),
-        )
-        for text, values, missing in cases:
-            expected = datetime(*values, tzinfo=self.zone)
-            with self.subTest(text=text, path="time_only"):
-                parsed = self.parser.parse_time_only(text, now)
-                self.assertEqual(expected, parsed.remind_at)
-                self.assertEqual(missing, parsed.missing_time)
-            for source in (f"{text}提醒我買湯", f"提醒我在{text}買湯", f"{text}買湯"):
-                with self.subTest(text=text, source=source):
-                    parsed = self.parser.parse(source, self.message, now)
-                    self.assertEqual(expected, parsed.remind_at)
-                    self.assertEqual(missing, "time" in parsed.missing_fields)
-                    self.assertEqual("買湯", parsed.title)
-
     def test_invalid_datetime_never_falls_back_to_today(self) -> None:
         for text in (
             "13/17 23:55",
