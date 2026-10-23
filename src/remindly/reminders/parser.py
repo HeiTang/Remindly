@@ -328,6 +328,26 @@ class ReminderParser:
             return value, False
         return None
 
+    def explicit_content(
+        self, text: str, now: datetime, participants: list[Participant]
+    ) -> tuple[TimeParse, str | None] | None:
+        """沿用時間／事項切段；None 表示尚無法可靠切出事項區。"""
+        cleaned = normalize_spaces(text)
+        marker = self.recurrence_marker(cleaned)
+        if marker is not None:
+            return None
+        split = self._try_split_parse(cleaned, now, now.tzinfo, participants)
+        if split:
+            return split if split[0].grain != "unknown" else None
+        parsed = self._parse_datetime(cleaned, now, now.tzinfo)
+        if parsed:
+            temporal, end = parsed
+            remaining = cleaned[end:].strip()
+            if re.match(r"(?:叫|通知)(?:我們|我|大家)", remaining):
+                return None
+            return temporal, self._clean_content_title(remaining, participants)
+        return None
+
     def _try_split_parse(
         self,
         cleaned: str,
@@ -589,6 +609,16 @@ class ReminderParser:
                 consumed_spans=tuple(spans),
             ), end
 
+        def invalid_date(end: int) -> tuple[TimeParse, int]:
+            clock_start = end
+            while clock_start < len(text) and text[clock_start].isspace():
+                clock_start += 1
+            clock = TIME_RE.match(text, clock_start)
+            if clock:
+                parts.append(clock)
+                end = clock.end()
+            return result(None, end, "invalid")
+
         relative = match(RELATIVE_RE)
         if relative:
             parts.append(relative)
@@ -622,7 +652,7 @@ class ReminderParser:
                     tzinfo=zone,
                 )
             except ValueError:
-                return result(None, absolute.end(), "invalid")
+                return invalid_date(absolute.end())
             date_end = absolute.end()
 
         if date_dt is None:
@@ -635,7 +665,7 @@ class ReminderParser:
                     parts.append(date_match)
                     date_dt = convert(date_match, now, zone)
                     if date_dt is None:
-                        return result(None, date_match.end(), "invalid")
+                        return invalid_date(date_match.end())
                     date_end = date_match.end()
                     break
 

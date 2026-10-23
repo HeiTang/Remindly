@@ -16,7 +16,10 @@ from remindly.reminders.models import (
 )
 from remindly.reminders.parser import (
     LEADING_ZAI_RE,
+    PROMPT_SPLIT_RE,
     RELATIVE_RE,
+    TIME_RE,
+    WEEKDAY_RE,
     ReminderParser,
     is_valid_local_time,
 )
@@ -59,6 +62,13 @@ purpose=edit_time 時只修改目前提醒的下一次時間，保留 title/recu
 
 RECURRENCE_INTEGERS = ("hour", "minute", "year_month", "year_day", "interval_seconds")
 RECURRENCE_ARRAYS = ("weekdays", "month_days")
+
+# 這些是未由時間文法驗證的條件；不能因時間已確定就清除語意追問。
+SEMANTIC_CONDITION_RE = re.compile(
+    r"(?:^|[,，;；]|但|且|並且)\s*"
+    r"(?P<qualifier>如果|假如|除非|若|只(?:在|限|有|要)|僅|限於|排除|不含|避開|"
+    r"工作日|平日|假日|週末|農曆|月底|下班|上班|之前|之後|左右)"
+)
 
 SCHEMA: dict[str, object] = {
     "type": "object",
@@ -174,6 +184,7 @@ class SemanticParser:
             ):
                 temporal, time_only = constraint
                 data = dict(response.data)
+                source_question = None
                 data.update(
                     date=temporal.remind_at.date().isoformat() if temporal.remind_at else None,
                     time=(
@@ -237,6 +248,49 @@ class SemanticParser:
                     data["participant_indices"] = [
                         i for i, p in enumerate(participants) if p.user_id == user_id
                     ]
+                if not time_only:
+                    content = rules.explicit_content(text, now, participants)
+                    if content is not None:
+                        title = (
+                            context.title
+                            if context
+                            and (
+                                purpose == "edit_time"
+                                or (data["intent"] == "update" and content[1] is None)
+                            )
+                            else content[1]
+                        )
+                        data["title"] = title
+                        condition = SEMANTIC_CONDITION_RE.search(title or "")
+                        unresolved_content = bool(
+                            condition
+                            or (title and TIME_RE.search(title))
+                            or (title and RELATIVE_RE.search(title))
+                            or (title and WEEKDAY_RE.search(title))
+                            or (title and re.search(r"[,，;；\n]", title))
+                            or (title and re.match(r"^(?:前|後|以前|以後|以內|內|起|至|到)", title))
+                            or len(PROMPT_SPLIT_RE.findall(text)) > 1
+                        )
+                        if unresolved_content:
+                            source_question = data["question"]
+                            if source_question is None and (
+                                (condition and condition.group("qualifier") != "若")
+                                or len(PROMPT_SPLIT_RE.findall(text)) > 1
+                            ):
+                                source_question = "請確認額外提醒條件，並一次提供一筆明確提醒。"
+                                data["question"] = source_question
+                        can_finalize = (
+                            len(participants) == 1
+                            and bool(data["participant_indices"])
+                            and not unresolved_content
+                            and not (
+                                context
+                                and data["intent"] == "update"
+                                and "clarification" in context.missing_fields
+                            )
+                        )
+                        if can_finalize:
+                            data["question"] = None
                 if temporal.grain == "invalid":
                     data["question"] = "日期或時間無效，請重新輸入正確日期與時間。"
                 elif temporal.grain == "ambiguous":
@@ -247,19 +301,30 @@ class SemanticParser:
                     data["question"] = "這個時間已經過去，請重新輸入未來的日期與時間。"
                 elif temporal.missing_time:
                     data["question"] = "那天幾點？"
-                pending_condition = bool(
-                    time_only and context and "clarification" in context.missing_fields
+                existing_condition = bool(
+                    context
+                    and "clarification" in context.missing_fields
+                    and (time_only or data["intent"] == "update")
                 )
+                pending_condition = existing_condition or source_question is not None
                 if pending_condition:
                     prior_question = str(
-                        context.parse_result.get("condition_question")
-                        or context.parse_result.get("question")
-                        or "請確認先前的條件。"
+                        (
+                            context.parse_result.get("condition_question")
+                            or context.parse_result.get("question")
+                            or "請確認先前的條件。"
+                        )
+                        if existing_condition
+                        else source_question
+                    )
+                    previous_question = (
+                        context.parse_result.get("question")
+                        if existing_condition
+                        else source_question
                     )
                     data["question"] = (
                         prior_question
-                        if not data["question"]
-                        or data["question"] == context.parse_result.get("question")
+                        if not data["question"] or data["question"] == previous_question
                         else f"{prior_question[:220]}\n{data['question'] or ''}".strip()[:300]
                     )
                 if not time_only and result.recurrence:

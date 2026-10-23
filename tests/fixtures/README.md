@@ -63,3 +63,15 @@ uv run python -B -m unittest discover -s tests -p 'test_time_corpus.py' -v
 `tests/test_time_boundaries.py` 另外以共用案例交叉驗證建立、追問、編輯與 AI 約束，
 並覆蓋跨午夜、草稿重載、確認時已過期與快捷時間。AI 使用刻意不一致的模型回應替身，
 驗證本機約束與確認流程；這些測試不呼叫 Gemini。
+
+## Gemini 原始回應回歸
+
+`gemini_content_regressions.jsonl` 保留 2026-10-24 使用 `gemini-3.5-flash-lite`
+三輪實測中失敗的 7 筆解析 JSON，包含模型實際產生的錯誤年份、事項與追問，
+不修改 `response` 欄位來配合程式。`expected` 引用已人工核對的時間資料集預期，
+不是把模型或解析器輸出當成答案。`tests/test_ai_content.py` 會離線重播原始回應，
+檢查事項、必要追問、確認前不建立，以及確認後保存的資料。
+
+本機只對可明確切出的時間／事項區定案；未辨識的口語仍交由語意解析。
+純事項區的多餘追問可清除；含條件、其他時間、週期或多個提醒的複雜內容採保守處理，
+保留未解追問。時間無效與語意條件同時存在時，兩者分別保存，補時分不會解除條件。
