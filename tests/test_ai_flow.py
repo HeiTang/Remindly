@@ -375,6 +375,17 @@ class AiFlowTest(unittest.TestCase):
         self.assertIsNotNone(self.service.peek_draft(CHAT.id, USER.id, NOW))
         self.assertEqual([], self.gemini.calls)
 
+    def test_ai_status_shows_saved_timeout_reason(self) -> None:
+        key_id = self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(ProviderError("timeout"))
+        self.send("明天下午三點提醒我倒垃圾")
+        self.assertIn("AI 請求逾時", self.telegram.messages[-1].text)
+        self.assertIn(key_id, self.telegram.messages[-1].text)
+        self.send("/ai")
+        self.assertIn("冷卻至", self.telegram.messages[-1].text)
+        self.assertIn("最近失敗：AI 請求逾時", self.telegram.messages[-1].text)
+        self.assertNotIn(SECRET, self.telegram.messages[-1].text)
+
     def test_ai_off_can_finish_preserved_ambiguous_draft_with_basic_parser(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.append(parsed(question="要不要排除假日？"))

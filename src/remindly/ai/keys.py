@@ -20,6 +20,7 @@ class ApiKey:
     status: str
     cooldown_until: str | None
     encrypted: bytes = field(repr=False)
+    last_error: str | None = None
 
 
 class ApiKeyStore:
@@ -67,13 +68,14 @@ class ApiKeyStore:
                 status=row["status"],
                 cooldown_until=row["cooldown_until"],
                 encrypted=bytes(row["encrypted_key"]),
+                last_error=row["last_error"],
             )
             for row in rows
         ]
 
     def add(self, user_id: int, key: str, *, provider: str) -> str:
         if self._cipher is None:
-            raise ValueError("管理員尚未設定 AI_ENCRYPTION_KEY，暫時無法保存 Key。")
+            raise ValueError("伺服器尚未設定 AI_ENCRYPTION_KEY，暫時無法保存 Key。")
         if not 1 <= len(key) <= 4096 or any(not 33 <= ord(c) <= 126 for c in key):
             raise ValueError("API Key 格式不正確，不可包含空白或控制字元。")
         fingerprint = hashlib.sha256(key.encode()).hexdigest()[:12]
@@ -129,19 +131,27 @@ class ApiKeyStore:
 
     def decrypt(self, key: ApiKey) -> str:
         if self._cipher is None:
-            raise AiUnavailable("AI 憑證加密尚未設定，請聯絡管理員。")
+            raise AiUnavailable("Bot 伺服器尚未設定 AI 憑證加密，請聯絡 Bot 維運者。")
         try:
             return self._cipher.decrypt(key.encrypted).decode()
         except InvalidToken:
             raise AiUnavailable("AI 憑證無法解密，請確認加密設定或重新新增 Key。") from None
 
-    def mark(self, user_id: int, key_id: str, status: str, seconds: int = 0) -> None:
+    def mark(
+        self,
+        user_id: int,
+        key_id: str,
+        status: str,
+        seconds: int = 0,
+        *,
+        last_error: str | None = None,
+    ) -> None:
         until = (datetime.now().astimezone() + timedelta(seconds=seconds)).isoformat()
         with self._repository.connect() as connection:
             connection.execute(
-                """update ai_keys set status = ?, cooldown_until = ?
+                """update ai_keys set status = ?, cooldown_until = ?, last_error = ?
                 where user_id = ? and id = ?""",
-                (status, until if seconds else None, user_id, key_id),
+                (status, until if seconds else None, last_error, user_id, key_id),
             )
 
     def available(self, user_id: int) -> list[ApiKey]:

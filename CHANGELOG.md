@@ -4,6 +4,8 @@ Remindly 的重要變更會記錄在這裡。
 
 ## Unreleased
 
+- 修正單組 AI Key 提前在 6 秒逾時：請求改用剩餘共用等待預算，仍最多嘗試三組 Key，預算 18 秒。
+- AI 供應商失敗原因依 Key 分類顯示並持久化（schema v9），供 `/ai` 查詢；成功後清除，不保存上游錯誤原文。
 - AI 供應商介面、共用備援與標準 JSON Schema；Gemini adapter 獨立負責 API 格式與錯誤轉換。
 - API Key 綁定供應商，支援 `/ai add [供應商] <Key>`；schema v7 保留既有 Key 及冷卻狀態。
 - 個人 Gemini 3.5 Flash-Lite 中文語意解析，支援建立、草稿追問／修正及修改下次時間，沿用確認建立流程。

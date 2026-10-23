@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from remindly.ai.contracts import PROVIDER_ERRORS
 from remindly.ai.gateway import AiGateway
 from remindly.reminders.text import command_body
 from remindly.telegram.client import TelegramApiError, TelegramClient
@@ -32,13 +33,13 @@ class AiCommands:
         if message.from_user is None:
             return True
         if self._keys is None:
-            self._send(message, "管理員尚未設定 AI_ENCRYPTION_KEY，目前使用基本解析。")
+            self._send(message, "伺服器尚未設定 AI_ENCRYPTION_KEY，目前使用基本解析。")
             return True
         user_id = message.from_user.id
         try:
             action = parts[0] if parts else "status"
             if not self._keys.configured and action in {"add", "on"}:
-                raise ValueError("管理員尚未設定 AI_ENCRYPTION_KEY，目前使用基本解析。")
+                raise ValueError("伺服器尚未設定 AI_ENCRYPTION_KEY，目前使用基本解析。")
             if action == "add" and len(parts) in {2, 3}:
                 provider = parts[1] if len(parts) == 3 else None
                 key_id = self._gateway.add_key(user_id, parts[-1], provider)
@@ -72,18 +73,22 @@ class AiCommands:
         lines = [f"AI 語意解析：{'開啟' if enabled else '關閉（使用基本解析）'}"]
         lines.extend(f"供應商：{p.id} · {p.name}" for p in self._gateway.providers.values())
         if not self._keys.configured:
-            lines.append("管理員尚未設定 AI_ENCRYPTION_KEY；可刪除已存的 Key，但無法使用 AI。")
+            lines.append("Bot 伺服器尚未設定 AI_ENCRYPTION_KEY；可刪除已存的 Key，但無法使用 AI。")
         for index, key in enumerate(self._keys.list(user_id), 1):
             status = "已設定（尚未驗證）"
             if key.status == "ready":
                 status = "最近呼叫成功"
             elif key.status == "invalid":
-                status = "憑證無效／權限不足，請刪除後重加"
+                status = "憑證無效／權限不足；修正後請刪除並重新新增"
             elif (
                 key.cooldown_until
                 and datetime.fromisoformat(key.cooldown_until) > datetime.now().astimezone()
             ):
                 status = f"冷卻至 {key.cooldown_until}"
+            if key.last_error in PROVIDER_ERRORS:
+                if key.status == "unchecked":
+                    status = "最近呼叫失敗"
+                status += f"；最近失敗：{PROVIDER_ERRORS[key.last_error]}"
             if key.provider not in self._gateway.providers:
                 status = "供應商尚未啟用"
             lines.append(f"{index}. {key.id} · {key.provider} · 指紋 {key.fingerprint} · {status}")

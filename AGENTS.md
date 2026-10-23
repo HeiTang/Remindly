@@ -26,6 +26,12 @@
    及設定畫面會使用同一份 mapping，不需另外維護供應商清單。
 
 備援、冷卻、Key 加密、中文 prompt、schema、驗證及確認流程均共用。
+請求使用剩餘的共用等待預算，不為每組 Key 固定切成 6 秒；最多三組 Key，
+預算由 `AI_TIME_BUDGET_SECONDS` 統一定義。`urllib` 的 socket timeout 並非嚴格的整次執行期限。
+錯誤分類與使用者文案共用 `PROVIDER_ERRORS`；只持久化錯誤代碼至 `ai_keys.last_error`，
+成功後清除，不保存供應商原始錯誤。HTTP 429 僅依結構化 quota 資訊區分每日額度與速率，
+無法辨識時保留 `quota`；不得從逾時推斷額度耗盡。憑證或權限錯誤停用該 Key，
+需在修正問題後刪除重加；額度、速率、逾時、連線及服務暫時異常則冷卻後可再嘗試。
 `AiGateway` 回傳實際使用的供應商、模型 ID 與顯示名稱，語意解析器依賴 `SemanticGenerator` Protocol，
 提醒 service 依賴 `SemanticParsing` Protocol；Bot 設定處理器由入口注入，不從解析器取出 Key store。
 
@@ -33,4 +39,5 @@
 同一個使用者不能把同一組 Key 重複綁定；要改所屬供應商須刪除後重加。
 Schema v7 只新增供應商欄位，原有 v6 Key 標記為 `gemini`，加密內容、排序及冷卻狀態保留。
 Schema v8 保存 AI 編輯時間的追問狀態；schema 與版本紀錄必須在同一交易內提交。
+Schema v9 新增 `ai_keys.last_error`；既有 Key 保留，舊紀錄的失敗原因預設為 `NULL`。
 第二供應商的隔離與備援透過測試替身驗證；不代表已正式支援另一個雲端服務。

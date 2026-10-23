@@ -3,7 +3,14 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 
-from remindly.ai.contracts import AiProvider, AiUnavailable, GeneratedResponse, ProviderError
+from remindly.ai.contracts import (
+    AI_TIME_BUDGET_SECONDS,
+    PROVIDER_ERRORS,
+    AiProvider,
+    AiUnavailable,
+    GeneratedResponse,
+    ProviderError,
+)
 from remindly.ai.keys import ApiKeyStore
 
 
@@ -29,7 +36,7 @@ class AiGateway:
     def generate(
         self, user_id: int, system: str, prompt: dict[str, object], schema: dict[str, object]
     ) -> GeneratedResponse:
-        deadline = time.monotonic() + 18
+        deadline = time.monotonic() + AI_TIME_BUDGET_SECONDS
         # shortcut: 未提供專案資訊時無法合併跨 Key 配額，最多嘗試三組避免重複轟炸。
         available = [k for k in self.keys.available(user_id) if k.provider in self.providers]
         for key in available[:3]:
@@ -39,16 +46,24 @@ class AiGateway:
             provider = self.providers[key.provider]
             secret = self.keys.decrypt(key)
             try:
-                result = provider.generate(
-                    secret, system, prompt, schema, timeout=min(6, remaining)
-                )
+                result = provider.generate(secret, system, prompt, schema, timeout=remaining)
             except ProviderError as exc:
-                if exc.kind == "invalid":
-                    self.keys.mark(user_id, key.id, "invalid")
-                elif exc.kind in {"quota", "temporary"}:
-                    self.keys.mark(user_id, key.id, "cooldown", exc.cooldown)
+                if exc.kind in {"invalid", "permission"}:
+                    self.keys.mark(user_id, key.id, "invalid", last_error=exc.kind)
+                elif exc.kind in {
+                    "quota",
+                    "daily_quota",
+                    "rate",
+                    "temporary",
+                    "connection",
+                    "timeout",
+                }:
+                    self.keys.mark(user_id, key.id, "cooldown", exc.cooldown, last_error=exc.kind)
                 else:
-                    raise AiUnavailable("AI 回應無法使用，請稍後重試；原草稿已保留。") from None
+                    self.keys.mark(user_id, key.id, "unchecked", last_error=exc.kind)
+                    raise AiUnavailable(
+                        f"Key {key.id}：{PROVIDER_ERRORS[exc.kind]}。草稿已保留。"
+                    ) from None
                 continue
             self.keys.mark(user_id, key.id, "ready")
             remaining = deadline - time.monotonic()
@@ -58,7 +73,21 @@ class AiGateway:
                 else None
             )
             return GeneratedResponse(result, provider.id, provider.model, display_name)
-        raise AiUnavailable(
-            "你的 AI Key 目前都無法使用（額度、速率、憑證、供應商未啟用或連線問題）。"
-            "草稿已保留；可稍後重試，或用 /ai off 改用基本解析後重送。"
+        lines = ["AI 解析未成功："]
+        for key in self.keys.list(user_id):
+            if key.provider not in self.providers:
+                reason = "供應商尚未啟用"
+            else:
+                reason = PROVIDER_ERRORS.get(
+                    key.last_error,
+                    "憑證無效／權限不足"
+                    if key.status == "invalid"
+                    else "未取得失敗原因（本次未嘗試或舊版紀錄）",
+                )
+            cooldown = f"；冷卻至 {key.cooldown_until}" if key.cooldown_until else ""
+            lines.append(f"Key {key.id}：{reason}{cooldown}")
+        lines.append(
+            f"每次最多嘗試三組 Key，共用 {AI_TIME_BUDGET_SECONDS} 秒等待預算。"
+            "草稿已保留；可稍後重試，或用 /ai off 後重送。"
         )
+        raise AiUnavailable("\n".join(lines))

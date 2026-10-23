@@ -169,6 +169,11 @@ MIGRATIONS = (
         name="ai_edit_context",
         sql="alter table edit_sessions add column ai_context text;",
     ),
+    Migration(
+        version=9,
+        name="ai_key_last_error",
+        sql="alter table ai_keys add column last_error text;",
+    ),
 )
 
 

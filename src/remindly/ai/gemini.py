@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from remindly.ai.contracts import ProviderError
+from remindly.ai.contracts import AI_TIME_BUDGET_SECONDS, ProviderError
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -55,7 +55,7 @@ class GeminiProvider:
         prompt: dict[str, object],
         schema: dict[str, object],
         *,
-        timeout: float = 6,
+        timeout: float = AI_TIME_BUDGET_SECONDS,
     ) -> dict[str, object]:
         payload = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -87,8 +87,10 @@ class GeminiProvider:
             error = body.get("error") if isinstance(body, dict) else None
             error = error if isinstance(error, dict) else {}
             status = error.get("status")
-            if exc.code in {401, 403} or status == "API_KEY_INVALID":
+            if exc.code == 401 or status == "API_KEY_INVALID":
                 raise ProviderError("invalid") from None
+            if exc.code == 403:
+                raise ProviderError("permission") from None
             if exc.code == 400:
                 details = error.get("details")
                 details = details if isinstance(details, list) else []
@@ -98,12 +100,29 @@ class GeminiProvider:
                     raise ProviderError("invalid") from None
                 raise ProviderError("request") from None
             if exc.code == 429:
+                details = error.get("details")
+                quotas = [
+                    str(v.get("quotaId", "")).lower().replace("_", "")
+                    for d in (details if isinstance(details, list) else [])
+                    if isinstance(d, dict) and isinstance(d.get("violations"), list)
+                    for v in d["violations"]
+                    if isinstance(v, dict)
+                ]
+                if any("perday" in q for q in quotas):
+                    raise ProviderError("daily_quota", quota_cooldown(body)) from None
+                if any("perminute" in q or "persecond" in q for q in quotas):
+                    raise ProviderError("rate", quota_cooldown(body)) from None
                 raise ProviderError("quota", quota_cooldown(body)) from None
             if exc.code >= 500:
                 raise ProviderError("temporary") from None
             raise ProviderError("request") from None
-        except (urllib.error.URLError, TimeoutError, OSError):
-            raise ProviderError("temporary") from None
+        except TimeoutError:
+            raise ProviderError("timeout") from None
+        except urllib.error.URLError as exc:
+            kind = "timeout" if isinstance(exc.reason, TimeoutError) else "connection"
+            raise ProviderError(kind) from None
+        except OSError:
+            raise ProviderError("connection") from None
         except (ValueError, UnicodeError):
             raise ProviderError("response") from None
         try:

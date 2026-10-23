@@ -30,7 +30,7 @@ class MigrationTest(unittest.TestCase):
                 tables = table_names(connection)
 
         self.assertEqual(expected_migration_rows(), rows)
-        self.assertEqual(8, latest_schema_version())
+        self.assertEqual(9, latest_schema_version())
         self.assertIn("reminders", tables)
         self.assertIn("reminder_drafts", tables)
         self.assertIn("edit_sessions", tables)
@@ -69,6 +69,7 @@ class MigrationTest(unittest.TestCase):
             migrate_sqlite_database(connection)
             after = dict(connection.execute("select * from ai_keys").fetchone())
             self.assertEqual("gemini", after.pop("provider"))
+            self.assertIsNone(after.pop("last_error"))
             self.assertEqual(before, after)
 
     def test_ledger_failure_rolls_back_schema_and_allows_retry(self) -> None:
@@ -114,6 +115,7 @@ def expected_migration_rows() -> list[tuple[int, str]]:
         (6, "personal_ai_keys"),
         (7, "ai_key_providers"),
         (8, "ai_edit_context"),
+        (9, "ai_key_last_error"),
     ]
 
 

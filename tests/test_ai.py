@@ -13,7 +13,13 @@ from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet
 
-from remindly.ai.contracts import AiUnavailable, GeneratedResponse, ProviderError
+from remindly.ai.contracts import (
+    AI_TIME_BUDGET_SECONDS,
+    PROVIDER_ERRORS,
+    AiUnavailable,
+    GeneratedResponse,
+    ProviderError,
+)
 from remindly.ai.gateway import AiGateway
 from remindly.ai.gemini import GeminiProvider, gemini_schema, quota_cooldown
 from remindly.ai.keys import ApiKeyStore
@@ -68,12 +74,14 @@ class ScriptedProvider:
         self.responses = responses
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.schemas: list[dict[str, object]] = []
+        self.timeouts: list[float] = []
 
     def model_display_name(self, key, *, timeout):
         return self.display_name
 
-    def generate(self, key, system, prompt, schema, *, timeout=6):
+    def generate(self, key, system, prompt, schema, *, timeout=AI_TIME_BUDGET_SECONDS):
         self.calls.append((key, prompt))
+        self.timeouts.append(timeout)
         self.schemas.append(schema)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
@@ -158,6 +166,33 @@ class KeyStoreTest(unittest.TestCase):
         self.assertEqual("invalid", self.keys.list(7)[0].status)
         self.assertEqual(1, len(self.keys.available(8)))
 
+    def test_failure_reasons_survive_reopen_and_success_clears_them(self) -> None:
+        key_id = self.keys.add(7, provider="gemini", key=SECRET)
+        for kind, label in PROVIDER_ERRORS.items():
+            with self.subTest(kind=kind):
+                self.keys.mark(7, key_id, "unchecked")
+                client = ScriptedProvider([ProviderError(kind, 60)])
+                gateway = AiGateway(self.keys, {"gemini": client}, default_provider="gemini")
+                with self.assertRaises(AiUnavailable) as error:
+                    gateway.generate(7, "system", {}, SCHEMA)
+                self.assertIn(label, str(error.exception))
+                self.assertNotIn(SECRET, str(error.exception))
+                reopened = ApiKeyStore(self.repo, self.master)
+                self.assertEqual(kind, reopened.list(7)[0].last_error)
+                if kind not in {"request", "response"}:
+                    with self.assertRaises(AiUnavailable) as retry:
+                        AiGateway(reopened, {"gemini": client}, default_provider="gemini").generate(
+                            7, "system", {}, SCHEMA
+                        )
+                    self.assertIn(label, str(retry.exception))
+                    self.assertEqual(1, len(client.calls))
+        self.keys.mark(7, key_id, "unchecked", last_error="timeout")
+        gateway = AiGateway(
+            self.keys, {"gemini": ScriptedProvider([parsed()])}, default_provider="gemini"
+        )
+        gateway.generate(7, "system", {}, SCHEMA)
+        self.assertIsNone(self.keys.list(7)[0].last_error)
+
     def test_attempts_are_bounded_and_bad_response_does_not_rotate(self) -> None:
         for i in range(5):
             self.keys.add(7, provider="gemini", key="AIza" + str(i) * 35)
@@ -186,6 +221,43 @@ class KeyStoreTest(unittest.TestCase):
                 7, "system", {}, SCHEMA
             )
         self.assertEqual(1, len(client.calls))
+
+    def test_single_key_can_wait_longer_than_six_seconds(self) -> None:
+        class SlowProvider(ScriptedProvider):
+            def generate(self, key, system, prompt, schema, *, timeout):
+                if timeout < 8:
+                    raise ProviderError("timeout")
+                return super().generate(key, system, prompt, schema, timeout=timeout)
+
+        self.keys.add(7, provider="gemini", key=SECRET)
+        client = SlowProvider([parsed()])
+        gateway = AiGateway(self.keys, {"gemini": client}, default_provider="gemini")
+        with patch("remindly.ai.gateway.time.monotonic", return_value=0):
+            self.assertEqual(parsed(), gateway.generate(7, "system", {}, SCHEMA).data)
+        self.assertEqual([18], client.timeouts)
+        self.assertEqual("ready", self.keys.list(7)[0].status)
+
+    def test_fallback_uses_only_remaining_shared_time(self) -> None:
+        self.keys.add(7, provider="gemini", key=SECRET)
+        self.keys.add(7, provider="gemini", key=SECOND)
+        client = ScriptedProvider([ProviderError("quota"), parsed()])
+        gateway = AiGateway(self.keys, {"gemini": client}, default_provider="gemini")
+        with patch("remindly.ai.gateway.time.monotonic", side_effect=[0, 0, 4, 9]):
+            self.assertEqual(parsed(), gateway.generate(7, "system", {}, SCHEMA).data)
+        self.assertEqual([18, 14], client.timeouts)
+        self.assertEqual([SECRET, SECOND], [call[0] for call in client.calls])
+
+    def test_short_remaining_time_is_not_extended_for_generation_or_metadata(self) -> None:
+        self.keys.add(7, provider="gemini", key=SECRET)
+        client = ScriptedProvider([parsed()])
+        gateway = AiGateway(self.keys, {"gemini": client}, default_provider="gemini")
+        with (
+            patch("remindly.ai.gateway.time.monotonic", side_effect=[0, 16, 18]),
+            patch.object(client, "model_display_name") as metadata,
+        ):
+            self.assertEqual(parsed(), gateway.generate(7, "system", {}, SCHEMA).data)
+            metadata.assert_not_called()
+        self.assertEqual([2], client.timeouts)
 
     def test_cooldown_expiry_makes_key_available(self) -> None:
         key_id = self.keys.add(7, provider="gemini", key=SECRET)
@@ -324,9 +396,19 @@ class GeminiClientTest(unittest.TestCase):
     def test_errors_do_not_echo_upstream_credentials(self) -> None:
         cases = [
             (401, {}, "invalid"),
-            (403, {}, "invalid"),
+            (403, {}, "permission"),
             (500, {}, "temporary"),
             (429, {}, "quota"),
+            (
+                429,
+                {"error": {"details": [{"violations": [{"quotaId": "RequestsPerDay"}]}]}},
+                "daily_quota",
+            ),
+            (
+                429,
+                {"error": {"details": [{"violations": [{"quotaId": "RequestsPerMinute"}]}]}},
+                "rate",
+            ),
             (400, {"error": {"details": [{"reason": "API_KEY_INVALID"}]}}, "invalid"),
             (400, {"error": None}, "request"),
         ]
@@ -365,7 +447,22 @@ class GeminiClientTest(unittest.TestCase):
 
         with self.assertRaises(ProviderError) as error:
             GeminiProvider(opener=timeout).generate(SECRET, "system", {}, SCHEMA)
-        self.assertEqual("temporary", error.exception.kind)
+        self.assertEqual("timeout", error.exception.kind)
+
+    def test_connection_and_wrapped_timeout_are_distinct(self) -> None:
+        for failure, kind in (
+            (urllib.error.URLError(TimeoutError(SECRET)), "timeout"),
+            (urllib.error.URLError(SECRET), "connection"),
+            (OSError(SECRET), "connection"),
+        ):
+
+            def opener(*args, failure=failure, **kwargs):
+                raise failure
+
+            with self.subTest(kind=kind), self.assertRaises(ProviderError) as error:
+                GeminiProvider(opener=opener).generate(SECRET, "system", {}, SCHEMA)
+            self.assertEqual(kind, error.exception.kind)
+            self.assertNotIn(SECRET, str(error.exception))
 
     def test_retry_and_daily_reset_are_distinguished(self) -> None:
         self.assertEqual(60, quota_cooldown({}))
