@@ -65,9 +65,21 @@ RECURRENCE_ARRAYS = ("weekdays", "month_days")
 
 # 這些是未由時間文法驗證的條件；不能因時間已確定就清除語意追問。
 SEMANTIC_CONDITION_RE = re.compile(
-    r"(?:^|[,，;；]|但|且|並且)\s*"
-    r"(?P<qualifier>如果|假如|除非|若|只(?:在|限|有|要)|僅|限於|排除|不含|避開|"
-    r"工作日|平日|假日|週末|農曆|月底|下班|上班|之前|之後|左右)"
+    r"(?:^|[,，;；（(]|但|且|並且)\s*"
+    r"(?:如果|假如|除非|只在|只限|僅在|限於|"
+    r"(?:若|只要|等|待|有空)(?=[^,，;；）)]*(?:就|才|再))|有空時|"
+    r"(?:排除|不含|避開)(?:國定假日|工作日|平日|假日|週末|農曆)(?!的)|"
+    r"(?:之前|之後|以前|以後|左右)(?!的))"
+)
+
+# 只清除可由已驗證欄位解決的追問；其餘語意問題採保守保留。
+RESOLVED_QUESTION_RE = re.compile(
+    r"時間|日期|幾點|哪天|今天|明天|多(?:個|筆)提醒|一次.*(?:一筆|一個)|"
+    r"要提醒(?:你|您)?什麼|要提醒誰|什麼事項|事項是什麼|提醒內容是什麼|提醒對象"
+)
+QUESTION_CONSTRAINT_RE = re.compile(
+    r"條件|限制|截止|期限|工作日|平日|假日|農曆|如果|假如|除非|只在|只限|"
+    r"之前|之後|以前|以後"
 )
 
 SCHEMA: dict[str, object] = {
@@ -268,21 +280,34 @@ class SemanticParser:
                             or (title and RELATIVE_RE.search(title))
                             or (title and WEEKDAY_RE.search(title))
                             or (title and re.search(r"[,，;；\n]", title))
-                            or (title and re.match(r"^(?:前|後|以前|以後|以內|內|起|至|到)", title))
                             or len(PROMPT_SPLIT_RE.findall(text)) > 1
                         )
                         if unresolved_content:
                             source_question = data["question"]
                             if source_question is None and (
-                                (condition and condition.group("qualifier") != "若")
-                                or len(PROMPT_SPLIT_RE.findall(text)) > 1
+                                condition or len(PROMPT_SPLIT_RE.findall(text)) > 1
                             ):
                                 source_question = "請確認額外提醒條件，並一次提供一筆明確提醒。"
                                 data["question"] = source_question
+                        question_resolved = not data["question"] or (
+                            not QUESTION_CONSTRAINT_RE.search(data["question"])
+                            and (
+                                RESOLVED_QUESTION_RE.search(data["question"])
+                                or TIME_RE.search(data["question"])
+                            )
+                        )
+                        if (
+                            not question_resolved
+                            and title is not None
+                            and len(participants) == 1
+                            and data["participant_indices"]
+                        ):
+                            source_question = data["question"]
                         can_finalize = (
                             len(participants) == 1
                             and bool(data["participant_indices"])
                             and not unresolved_content
+                            and question_resolved
                             and not (
                                 context
                                 and data["intent"] == "update"

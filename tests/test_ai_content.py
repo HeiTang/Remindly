@@ -98,12 +98,48 @@ class GeminiContentRegressionTest(unittest.TestCase):
                 self.assertIsNotNone(result.raw["question"])
 
     def test_literal_names_and_item_attributes_do_not_invent_conditions(self):
-        for title in ("寄若晴的包裹", "買只要五十元的湯", "買假日要用的湯匙"):
+        for title in (
+            "寄若晴的包裹",
+            "買只要五十元的湯",
+            "買假日要用的湯匙",
+            "前往車站",
+            "到家樂福買湯",
+            "內湖寄包裹",
+            "起司蛋糕",
+            "工作日行事曆",
+            "假日用的湯匙",
+            "週末報表",
+            "若晴的包裹",
+            "若晴的時鐘",
+            "等待回覆的信件",
+            "排除異常資料",
+            "不含麩質的麵包",
+            "之前的會議紀錄",
+        ):
             with self.subTest(title=title):
                 for question in (None, "要改成明天嗎？"):
                     result = self.parse(f"提醒我明天下午三點{title}", parsed(question=question))
                     self.assertEqual(title, result.title)
                     self.assertEqual((), result.missing_fields)
+
+    def test_unknown_and_conditional_questions_are_not_cleared(self):
+        for title, question in (
+            ("有空才交報告", "有空是什麼時間？"),
+            ("等收到帳單再繳費", "收到帳單的具體時間？"),
+            ("收衣服（如果下雨）", "是否只在下雨時提醒？"),
+            ("寄出報表", "請確認尚未釐清的限制。"),
+            ("前交報表", "這是截止時間嗎？"),
+        ):
+            with self.subTest(title=title):
+                result = self.parse(f"提醒我明天下午三點{title}", parsed(question=question))
+                self.assertIn("clarification", result.missing_fields)
+                self.assertEqual(question, result.raw["question"])
+
+    def test_explicit_waiting_and_nested_conditions_cannot_be_omitted(self):
+        for title in ("有空才交報告", "等收到帳單再繳費", "收衣服（如果下雨）"):
+            with self.subTest(title=title):
+                result = self.parse(f"提醒我明天下午三點{title}", parsed(question=None))
+                self.assertIn("clarification", result.missing_fields)
 
     def test_existing_condition_survives_explicit_update_and_edit_keeps_title(self):
         context = ReminderDraft(
@@ -157,6 +193,35 @@ class GeminiContentRegressionTest(unittest.TestCase):
         corrected = self.parse("23:55", parsed(intent="update", question=None), context=context)
         self.assertIn("clarification", corrected.missing_fields)
         self.assertEqual("是否只限週一至週五？", corrected.raw["question"])
+
+    def test_unknown_question_survives_invalid_time_and_followup(self):
+        source = "提醒我明天25:00寄出報表"
+        question = "請確認尚未釐清的限制。"
+        first = self.parse(source, parsed(question=question))
+        self.assertIn("time", first.missing_fields)
+        self.assertIn("clarification", first.missing_fields)
+        context = ReminderDraft(
+            id="unknown",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text=source,
+            title=first.title,
+            participants=[PERSON],
+            missing_fields=list(first.missing_fields),
+            parse_result=first.raw,
+        )
+        result = self.parse("23:55", parsed(intent="update", question=None), context=context)
+        self.assertIn("clarification", result.missing_fields)
+        self.assertEqual(question, result.raw["question"])
+
+    def test_resolved_title_question_does_not_become_pending_condition(self):
+        for question in ("請問要提醒您什麼事？", "這是什麼事項？"):
+            with self.subTest(question=question):
+                result = self.parse("提醒我明天下午三點寄出報表", parsed(question=question))
+                self.assertEqual((), result.missing_fields)
+                self.assertIsNone(result.raw["question"])
 
     def test_original_gemini_responses_keep_source_content_and_required_questions(self):
         self.assertGreaterEqual(len(self.rows), 7)
