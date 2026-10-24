@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Collection
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
@@ -21,6 +22,7 @@ from remindly.reminders.parser import (
     TIME_RE,
     WEEKDAY_RE,
     ReminderParser,
+    TimeParse,
     is_valid_local_time,
 )
 from remindly.reminders.recurrence import (
@@ -39,7 +41,8 @@ intent: create=新提醒、update=修改目前草稿、not_reminder=一般聊天
 只有時間和事項明確才完整輸出。時間區與事項區可各有不同日期：
 「明天下午三點提醒我後天要交報告」date/time=明天15:00，title=後天要交報告。
 「下班後」「月底前」「有空時」應 question 追問具體時間，不能自行填18:00。
-「工作日」須追問是否週一至週五，不自行推定假日。
+工作日等曆法用語只有作為提醒日期或重複條件時才須追問定義，不自行推定假日。
+事項中的名詞、名稱或用途描述，不因包含曆法用語就當成排程條件。
 date=YYYY-MM-DD、time=HH:MM(24小時)。日期明確但沒幾點，保留 date，time=null。
 相對時間如半小時後，用 relative_minutes=30，date/time=null，由本機計算。
 週期 recurrence 用 daily/weekly/monthly/yearly/interval；weekly weekdays=0星期一至6星期日；
@@ -78,8 +81,20 @@ RESOLVED_QUESTION_RE = re.compile(
     r"要提醒(?:你|您)?什麼|要提醒誰|什麼事項|事項是什麼|提醒內容是什麼|提醒對象"
 )
 QUESTION_CONSTRAINT_RE = re.compile(
-    r"條件|限制|截止|期限|工作日|平日|假日|農曆|如果|假如|除非|只在|只限|"
-    r"之前|之後|以前|以後"
+    r"條件|限制|截止|期限|如果|假如|除非|只在|只限|之前|之後|以前|以後"
+)
+CALENDAR_QUESTION_RE = re.compile(r"工作日|平日|假日|週末|農曆")
+CALENDAR_DEFINITION_QUESTION_RE = re.compile(r"(?:是指|指的是|定義).*(?:週[一二三四五六日天]|星期)")
+CORRECTION_RE = re.compile(
+    r"^(?:請\s*)?(?:(?:把\s*)?(?:提醒)?(?:時間|日期)\s*)?"
+    r"(?:改(?:成|到|為)|換(?:成|到)|調(?:到|整(?:成|到|為))|"
+    r"延(?:到|至)|(?:延後|提早|提前)(?:到|至|(?=\s*[\d半零〇一二兩两三四五六七八九十]))|"
+    r"不是|不對(?=$|[\s，,:：]))\s*"
+)
+VAGUE_TIME_RE = re.compile(
+    r"(?:(?:上|下)(?:班|課)|起床|睡覺)(?:之?前|之?後)|"
+    r"(?:月|年)(?:初|底|末)(?:之?前|之?後)?|"
+    r"(?:有空|方便)(?:時|的時候)|(?:這個|下個|本)?週末|工作日|平日|假日"
 )
 
 SCHEMA: dict[str, object] = {
@@ -189,6 +204,54 @@ class SemanticParser:
             result = validate_result(response.data, now, participants)
             rules = ReminderParser(str(now.tzinfo))
             constraint = rules.explicit_time(text, now, context.remind_at if context else None)
+            content_text = text
+            correction = (
+                CORRECTION_RE.match(text.strip())
+                if context and "title" in context.missing_fields
+                else None
+            )
+            vague_time = bool(
+                context
+                and "title" in context.missing_fields
+                and VAGUE_TIME_RE.fullmatch(text.strip())
+            )
+            if (correction or vague_time) and constraint is None:
+                content_text = text.strip()[correction.end() :] if correction else text
+                constraint = (
+                    rules.explicit_time(content_text, now, context.remind_at)
+                    if rules.recurrence_marker(content_text) is None
+                    else None
+                )
+                # 不明確的變更指令不能當成事項，也不能沿用舊時間直接定案。
+                if constraint is None:
+                    constraint = (TimeParse(None, "", "ambiguous", missing_time=True), True)
+            content_only = bool(
+                context
+                and "title" in context.missing_fields
+                and purpose != "edit_time"
+                and result.raw["intent"] != "not_reminder"
+                and text.strip()
+                and constraint is None
+                and not PROMPT_SPLIT_RE.search(text)
+                and rules.recurrence_marker(text) is None
+            )
+            if content_only:
+                # 沿用草稿時間，讓補事項也經過同一組內容與條件守衛。
+                at = context.remind_at.astimezone(now.tzinfo) if context.remind_at else None
+                constraint = (
+                    TimeParse(
+                        at,
+                        "",
+                        "context",
+                        missing_time="time" in context.missing_fields,
+                        is_past=bool(
+                            at
+                            and "time" not in context.missing_fields
+                            and at.astimezone(UTC) <= now.astimezone(UTC)
+                        ),
+                    ),
+                    False,
+                )
             if constraint and (
                 context is not None
                 or not constraint[1]
@@ -207,7 +270,7 @@ class SemanticParser:
                     relative_minutes=None,
                     intent=(
                         "update"
-                        if time_only and context
+                        if (time_only or content_only or correction) and context
                         else "create"
                         if data["intent"] == "not_reminder"
                         else data["intent"]
@@ -223,7 +286,7 @@ class SemanticParser:
                             time=None,
                             relative_minutes=int(elapsed.total_seconds() // 60),
                         )
-                if time_only and context:
+                if (time_only or content_only) and context:
                     data.update(
                         title=context.title,
                         participant_indices=[
@@ -232,13 +295,16 @@ class SemanticParser:
                             if p.stable_key in {c.stable_key for c in context.participants}
                         ],
                         recurrence=_recurrence_data(context.recurrence),
-                        question=context.parse_result.get("question")
+                        question=data["question"]
+                        if content_only
+                        else context.parse_result.get("question")
                         if "clarification" in context.missing_fields
                         else None,
                     )
                     marker = rules.recurrence_marker(context.source_text)
                     if (
-                        context.recurrence is None
+                        time_only
+                        and context.recurrence is None
                         and isinstance(marker, tuple)
                         and marker[1] != RecurrencePeriod.INTERVAL
                         and temporal.remind_at
@@ -261,7 +327,11 @@ class SemanticParser:
                         i for i, p in enumerate(participants) if p.user_id == user_id
                     ]
                 if not time_only:
-                    content = rules.explicit_content(text, now, participants)
+                    content = (
+                        (temporal, text.strip())
+                        if content_only
+                        else rules.explicit_content(content_text, now, participants)
+                    )
                     if content is not None:
                         title = (
                             context.title
@@ -292,8 +362,17 @@ class SemanticParser:
                         question_resolved = not data["question"] or (
                             not QUESTION_CONSTRAINT_RE.search(data["question"])
                             and (
-                                RESOLVED_QUESTION_RE.search(data["question"])
-                                or TIME_RE.search(data["question"])
+                                (
+                                    not CALENDAR_QUESTION_RE.search(data["question"])
+                                    and (
+                                        RESOLVED_QUESTION_RE.search(data["question"])
+                                        or TIME_RE.search(data["question"])
+                                    )
+                                )
+                                or (
+                                    not unresolved_content
+                                    and CALENDAR_DEFINITION_QUESTION_RE.search(data["question"])
+                                )
                             )
                         )
                         if (
@@ -395,7 +474,10 @@ class SemanticParser:
                     )
                 elif data["date"] is not None and data["time"] is not None:
                     result = replace(result, remind_at=temporal.remind_at)
-                result = replace(result, raw={**result.raw, "time_validation": "rules"})
+                result = replace(
+                    result,
+                    raw={**result.raw, "time_validation": "context" if content_only else "rules"},
+                )
             return replace(
                 result,
                 raw={
@@ -417,6 +499,20 @@ def _recurrence_data(rule: RecurrenceRule | None) -> dict[str, object] | None:
         **{name: [] for name in RECURRENCE_ARRAYS},
         **json.loads(serialize_rule(rule)),
     }
+
+
+def followup_question(missing_fields: Collection[str]) -> str:
+    # 模型文字無法可靠判斷是否為中文亂碼，對外追問只使用本機文案。
+    questions = []
+    if "time" in missing_fields:
+        questions.append("請提供明確且有效的未來日期與時間。")
+    if "title" in missing_fields:
+        questions.append("要提醒什麼？")
+    if "participants" in missing_fields:
+        questions.append("要提醒誰？請提供 @username。")
+    if "clarification" in missing_fields:
+        questions.append("還有提醒資訊未釐清，請改寫成單一時間、事項明確的提醒。")
+    return "\n".join(questions) or "請提供完整且明確的提醒時間、事項與對象。"
 
 
 def validate_result(

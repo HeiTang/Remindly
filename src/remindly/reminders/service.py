@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
-from remindly.ai.parser import SemanticParsing
+from remindly.ai.parser import SemanticParsing, followup_question
 from remindly.reminders.drafts import (
     EditSession,
     ReminderDraftStore,
@@ -557,9 +557,7 @@ class ReminderService:
                             "condition_question": parsed.raw.get("condition_question"),
                         }
                         self._edit_store.save(session, now)
-                    return EditPrompt(
-                        reminder, str(parsed.raw.get("question") or "請補充明確的新時間。")
-                    )
+                    return EditPrompt(reminder, followup_question(parsed.missing_fields))
                 updated = self._repository.update_remind_at(
                     message.chat.id, session.short_id, actor.id, parsed.remind_at, now
                 )
@@ -754,6 +752,8 @@ class ReminderService:
         draft.missing_fields = missing
 
     def _question_for(self, draft: ReminderDraft) -> str:
+        if draft.parse_result.get("grain") == "ai" or draft.parse_result.get("provider"):
+            return followup_question(draft.missing_fields)
         if draft.parse_result.get("question"):
             return str(draft.parse_result["question"])
         if "time" in draft.missing_fields:

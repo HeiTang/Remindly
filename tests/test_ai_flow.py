@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -32,6 +33,105 @@ from remindly.telegram.models import (
 
 
 class AiFlowTest(unittest.TestCase):
+    def test_pending_title_time_correction_then_literal_answer(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(title=None),
+                parsed(intent="update", title="模型誤填事項"),
+                parsed(intent="update", title="匄出報表", date="2027-01-01"),
+            ]
+        )
+        self.send("提醒我明天下午三點")
+        self.send("時間改到11/17 23:55")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertIsNone(draft.title)
+        self.assertEqual("要提醒什麼？", self.telegram.messages[-1].text)
+        self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
+        self.send("寄出報表")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertTrue(draft.is_complete)
+        self.confirm(draft.id)
+        saved = self.repo.list_pending(CHAT.id)[0]
+        self.assertEqual("寄出報表", saved.title)
+        self.assertEqual(
+            (2026, 11, 17, 23, 55),
+            (
+                saved.remind_at.year,
+                saved.remind_at.month,
+                saved.remind_at.day,
+                saved.remind_at.hour,
+                saved.remind_at.minute,
+            ),
+        )
+
+    def test_recorded_garbled_question_is_not_displayed(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "gemini_question_regressions.jsonl"
+        row = json.loads(fixture.read_text())
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(row["response"])
+        self.send(row["text"])
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual(row["response"]["question"], draft.parse_result["question"])
+        self.assertEqual(row["expected_question"], self.telegram.messages[-1].text)
+        self.assertIn("title", draft.missing_fields)
+        self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
+        self.gemini.responses.append(parsed(intent="update", title="寄出報表"))
+        self.send("寄出報表")
+        corrected = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertTrue(corrected.is_complete)
+        self.assertEqual("寄出報表", corrected.title)
+        self.assertNotIn(row["response"]["question"], self.telegram.messages[-1].text)
+
+    def test_garbled_question_cannot_leak_from_not_reminder_or_edit(self) -> None:
+        garbage = "\ufffd\u0001職耇與䐂蕩耇䐂略耇䐂耇䐂"
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(question=garbage),
+                parsed(intent="not_reminder", question=garbage),
+                parsed(),
+                parsed(intent="update", date=None, time=None, question=garbage),
+            ]
+        )
+        self.send("提醒我明天下午三點有空才交報告")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertIn("提醒資訊未釐清", self.telegram.messages[-1].text)
+        self.assertNotIn(garbage, self.telegram.messages[-1].text)
+        self.send("還沒確定")
+        self.assertEqual(draft.id, self.service.peek_draft(CHAT.id, USER.id, NOW).id)
+        self.assertNotIn(garbage, self.telegram.messages[-1].text)
+        self.send("提醒我明天下午三點寄報表")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.confirm(draft.id)
+        reminder = self.repo.list_pending(CHAT.id)[0]
+        self.service.begin_edit(CHAT.id, reminder.short_id, USER.id, "time", NOW)
+        self.send("等有空時")
+        self.assertNotIn(garbage, self.telegram.messages[-1].text)
+        self.assertIn("未來日期與時間", self.telegram.messages[-1].text)
+        self.assertEqual(reminder.remind_at, self.repo.list_pending(CHAT.id)[0].remind_at)
+        self.assertIsNotNone(self.service.peek_edit_session(CHAT.id, USER.id, NOW))
+
+    def test_missing_participant_uses_local_question_and_blocks_confirmation(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(parsed(participant_indices=[], question="\ufffd\u0001"))
+        self.send("提醒小明明天下午三點交報告")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertIn("participants", draft.missing_fields)
+        self.assertEqual("要提醒誰？請提供 @username。", self.telegram.messages[-1].text)
+        self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
+
+    def test_quick_time_keeps_condition_and_does_not_display_model_question(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(parsed(time=None, question="\ufffd\u0001"))
+        self.send("提醒我明天只在工作日喝水")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        result = self.service.apply_quick_time(draft.id, "23:55", USER.id, NOW)
+        self.assertIn("clarification", result.draft.missing_fields)
+        self.assertIn("提醒資訊未釐清", result.question)
+        self.assertNotIn("\ufffd", result.question)
+        self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
+
     def test_edit_condition_survives_date_clock_and_store_reload(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.extend(
@@ -51,7 +151,7 @@ class AiFlowTest(unittest.TestCase):
         self.send("11/17")
         self.service._edit_store = SqliteEditSessionStore(10, self.repo)
         self.send("23:55")
-        self.assertEqual("是否只限工作日？", self.telegram.messages[-1].text)
+        self.assertIn("提醒資訊未釐清", self.telegram.messages[-1].text)
         self.assertEqual(original.remind_at, self.repo.list_pending(CHAT.id)[0].remind_at)
         self.assertIsNotNone(self.service.peek_edit_session(CHAT.id, USER.id, NOW))
 
@@ -68,7 +168,7 @@ class AiFlowTest(unittest.TestCase):
             self.send(text)
         draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
         self.assertIn("clarification", draft.missing_fields)
-        self.assertIn("是否只限工作日？", self.telegram.messages[-1].text)
+        self.assertIn("提醒資訊未釐清", self.telegram.messages[-1].text)
         self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
         self.assertEqual([], self.repo.list_pending(CHAT.id))
 
@@ -115,7 +215,7 @@ class AiFlowTest(unittest.TestCase):
         draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
         self.assertIsNotNone(draft)
         self.assertFalse(draft.is_complete)
-        self.assertIn("日期或時間無效", self.telegram.messages[-1].text)
+        self.assertIn("未來日期與時間", self.telegram.messages[-1].text)
         self.assertEqual([], self.repo.list_pending(CHAT.id))
 
     def test_explicit_new_reminder_keeps_its_source(self) -> None:
@@ -147,7 +247,7 @@ class AiFlowTest(unittest.TestCase):
             )
         )
         self.send("下班的時候")
-        self.assertEqual("請提供明確的時間。", self.telegram.messages[-1].text)
+        self.assertIn("未來日期與時間", self.telegram.messages[-1].text)
         self.assertEqual(original.id, self.service.peek_draft(CHAT.id, USER.id, NOW).id)
 
     def setUp(self) -> None:
@@ -309,7 +409,7 @@ class AiFlowTest(unittest.TestCase):
             ]
         )
         self.send("下班後提醒我買牛奶")
-        self.assertIn("幾點下班", self.telegram.messages[-1].text)
+        self.assertIn("未來日期與時間", self.telegram.messages[-1].text)
         draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
         self.assertFalse(draft.is_complete)
         self.send("明天十八點")

@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from remindly.ai.contracts import AiUnavailable
+from remindly.ai.parser import followup_question
 from remindly.bot.ai_commands import AiCommands
 from remindly.bot.callback_handlers import CallbackHandlers
 from remindly.bot.command_handlers import CommandHandlers
@@ -129,7 +130,10 @@ class BotRouter:
         parsed = self._reminder_service.parse_ai(text, message, now, context=draft)
         if parsed.raw.get("intent") == "not_reminder":
             if (triggered or draft) and parsed.raw.get("question"):
-                self._client.send_message(message.chat.id, str(parsed.raw["question"]))
+                self._client.send_message(
+                    message.chat.id,
+                    followup_question(draft.missing_fields if draft else parsed.missing_fields),
+                )
             return
         source = draft.source_text if draft and parsed.raw.get("intent") == "update" else text
         result = self._reminder_service.begin_create(source, message, now, parse_result=parsed)

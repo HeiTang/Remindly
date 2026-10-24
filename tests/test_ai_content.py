@@ -135,6 +135,94 @@ class GeminiContentRegressionTest(unittest.TestCase):
                 self.assertIn("clarification", result.missing_fields)
                 self.assertEqual(question, result.raw["question"])
 
+    def test_calendar_definition_questions_require_source_condition(self):
+        for calendar in ("工作日", "平日", "假日", "週末"):
+            question = f"「{calendar}」是指週一至週五嗎？"
+            with self.subTest(calendar=calendar):
+                result = self.parse(
+                    f"提醒我明天下午三點買{calendar}用的筆記本", parsed(question=question)
+                )
+                self.assertEqual((), result.missing_fields)
+                result = self.parse(
+                    f"提醒我明天下午三點只在{calendar}喝水", parsed(question=question)
+                )
+                self.assertIn("clarification", result.missing_fields)
+                self.assertEqual(question, result.raw["question"])
+
+    def test_calendar_definition_cannot_clear_deadline_question(self):
+        question = "「前」是指週一之前嗎？這是截止時間嗎？"
+        result = self.parse("提醒我明天下午三點前交報表", parsed(question=question))
+        self.assertIn("clarification", result.missing_fields)
+        self.assertEqual(question, result.raw["question"])
+
+    def test_pending_title_does_not_consume_time_corrections(self):
+        context = ReminderDraft(
+            id="correction",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我明天下午三點",
+            title=None,
+            remind_at=NOW.replace(day=23, hour=15),
+            participants=[PERSON],
+            missing_fields=["title"],
+            parse_result={},
+        )
+        for text, expected in (
+            ("改成明天九點", NOW.replace(day=23, hour=9)),
+            ("時間改到11/17 23:55", NOW.replace(month=11, day=17, hour=23, minute=55)),
+            ("請把時間調整為後天18:30", NOW.replace(day=24, hour=18, minute=30)),
+            ("延後到後天18:30", NOW.replace(day=24, hour=18, minute=30)),
+        ):
+            with self.subTest(text=text):
+                result = self.parse(text, parsed(title="模型亂寫"), context=context)
+                self.assertIsNone(result.title)
+                self.assertIn("title", result.missing_fields)
+                self.assertEqual(expected, result.remind_at)
+        for title in (
+            "修改年度報表",
+            "更換印表機墨水",
+            "下班後要用的報表",
+            "月底前要交的資料",
+            "工作日行事曆",
+            "提早寄出報表",
+            "延後寄包裹",
+            "調整年度預算",
+            "不對稱花瓶",
+        ):
+            with self.subTest(title=title):
+                result = self.parse(title, parsed(title="模型亂寫"), context=context)
+                self.assertEqual(title, result.title)
+                self.assertEqual(context.remind_at, result.remind_at)
+                self.assertEqual((), result.missing_fields)
+        context.missing_fields.append("clarification")
+        context.parse_result = {"question": "是否只限工作日？"}
+        for text in (
+            "不是明天，是後天，時間一樣",
+            "改成下班後",
+            "時間改成有空時",
+            "改成每天下午三點",
+            "下班後",
+            "月底前",
+            "有空時",
+            "週末",
+            "延後半小時",
+            "提早30分鐘",
+            "不對，是明天",
+        ):
+            with self.subTest(text=text):
+                result = self.parse(text, parsed(title="模型亂寫"), context=context)
+                self.assertIsNone(result.title)
+                self.assertIn("time", result.missing_fields)
+                self.assertIn("title", result.missing_fields)
+                self.assertIn("clarification", result.missing_fields)
+                self.assertEqual("是否只限工作日？", result.raw["condition_question"])
+        result = self.parse("改成明天九點", parsed(title="模型亂寫"), context=context)
+        self.assertIsNone(result.title)
+        self.assertIn("clarification", result.missing_fields)
+        self.assertEqual("是否只限工作日？", result.raw["question"])
+
     def test_explicit_waiting_and_nested_conditions_cannot_be_omitted(self):
         for title in ("有空才交報告", "等收到帳單再繳費", "收衣服（如果下雨）"):
             with self.subTest(title=title):
@@ -247,6 +335,82 @@ class GeminiContentRegressionTest(unittest.TestCase):
                 else:
                     self.assertIn("time", result.missing_fields)
                     self.assertIsNotNone(result.raw["question"])
+
+    def test_title_only_followup_preserves_literal_answer_and_context(self):
+        fixture = Path(__file__).parent / "fixtures" / "gemini_followup_regressions.jsonl"
+        for line in fixture.read_text().splitlines():
+            row = json.loads(line)
+            now = datetime.fromisoformat(row["now"])
+            gateway = Mock()
+            parser = SemanticParser(gateway)
+            gateway.generate.return_value = GeneratedResponse(
+                row["context"]["response"], "test", "recorded"
+            )
+            first = parser.parse(row["context"]["text"], 7, now, [PERSON])
+            context = ReminderDraft(
+                id="missing-title",
+                chat_id=100,
+                chat_type="private",
+                creator_user_id=7,
+                timezone=row["timezone"],
+                source_text=row["context"]["text"],
+                title=first.title,
+                remind_at=first.remind_at,
+                participants=[PERSON],
+                missing_fields=list(first.missing_fields),
+                parse_result=first.raw,
+            )
+            for response in (
+                row["response"],
+                {
+                    **row["response"],
+                    "intent": "create",
+                    "title": None,
+                    "date": "2027-01-01",
+                    "time": "09:00",
+                    "participant_indices": [],
+                },
+            ):
+                with self.subTest(response=response):
+                    gateway.generate.return_value = GeneratedResponse(response, "test", "recorded")
+                    result = parser.parse(row["text"], 7, now, [PERSON], context=context)
+                    self.assertEqual(row["expected"]["title"], result.title)
+                    self.assertEqual(first.remind_at, result.remind_at)
+                    self.assertEqual((PERSON,), result.participants)
+                    self.assertEqual((), result.missing_fields)
+                    self.assertEqual("update", result.raw["intent"])
+            gateway.generate.return_value = GeneratedResponse(row["response"], "test", "recorded")
+            result = parser.parse("有空才交報告", 7, now, [PERSON], context=context)
+            self.assertEqual("有空才交報告", result.title)
+            self.assertIn("clarification", result.missing_fields)
+            result = parser.parse("11/17 23:55", 7, now, [PERSON], context=context)
+            self.assertIsNone(result.title)
+            self.assertIn("title", result.missing_fields)
+            self.assertEqual(
+                (11, 17, 23, 55),
+                (
+                    result.remind_at.month,
+                    result.remind_at.day,
+                    result.remind_at.hour,
+                    result.remind_at.minute,
+                ),
+            )
+            context.missing_fields = ["time", "title"]
+            context.remind_at = first.remind_at.replace(hour=0, minute=0)
+            result = parser.parse(row["text"], 7, now, [PERSON], context=context)
+            self.assertEqual(row["expected"]["title"], result.title)
+            self.assertEqual(context.remind_at, result.remind_at)
+            self.assertIn("time", result.missing_fields)
+            context.remind_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            result = parser.parse(row["text"], 7, now, [PERSON], context=context)
+            self.assertEqual(context.remind_at, result.remind_at)
+            self.assertIn("time", result.missing_fields)
+            self.assertNotIn("過去", result.raw["question"])
+            context.remind_at = None
+            result = parser.parse(row["text"], 7, now, [PERSON], context=context)
+            self.assertEqual(row["expected"]["title"], result.title)
+            self.assertIsNone(result.remind_at)
+            self.assertIn("time", result.missing_fields)
 
     def test_recorded_responses_obey_confirmation_and_saved_title(self):
         for row in self.rows:
