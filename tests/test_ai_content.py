@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from test_ai import NOW, PERSON, parsed, rule
 
-from remindly.ai.contracts import GeneratedResponse
+from remindly.ai.contracts import AiUnavailable, GeneratedResponse
 from remindly.ai.parser import SemanticParser
 from remindly.reminders.models import MentionKind, Participant, ReminderDraft
 from remindly.reminders.parser import ReminderParser
@@ -411,6 +411,179 @@ class GeminiContentRegressionTest(unittest.TestCase):
             self.assertEqual(row["expected"]["title"], result.title)
             self.assertIsNone(result.remind_at)
             self.assertIn("time", result.missing_fields)
+
+    def test_negated_time_cannot_be_used_as_replacement(self):
+        for title in (None, "寄報表"):
+            for condition in (False, True):
+                context = ReminderDraft(
+                    id="negated-time",
+                    chat_id=100,
+                    chat_type="private",
+                    creator_user_id=7,
+                    timezone="Asia/Taipei",
+                    source_text="提醒我明天15:00",
+                    title=title,
+                    remind_at=NOW.replace(day=23, hour=15),
+                    participants=[PERSON],
+                    missing_fields=(["title"] if title is None else [])
+                    + (["clarification"] if condition else []),
+                    parse_result={"question": "是否只限工作日？"} if condition else {},
+                )
+                for text in ("不是明天", "不是11/17 23:55", "請把時間不是明天九點"):
+                    for intent in ("create", "update", "not_reminder"):
+                        with self.subTest(
+                            title=title, condition=condition, text=text, intent=intent
+                        ):
+                            result = self.parse(
+                                text, parsed(intent=intent, title="模型改寫"), context=context
+                            )
+                            self.assertEqual(title, result.title)
+                            self.assertIsNone(result.remind_at)
+                            self.assertIn("time", result.missing_fields)
+                            self.assertEqual("update", result.raw["intent"])
+                            if condition:
+                                self.assertIn("clarification", result.missing_fields)
+                                self.assertEqual(
+                                    "是否只限工作日？", result.raw["condition_question"]
+                                )
+
+    def test_recorded_corrections_preserve_fields_questions_and_confirmation(self):
+        fixture = Path(__file__).parent / "fixtures" / "gemini_correction_regressions.jsonl"
+        for line in fixture.read_text().splitlines():
+            row = json.loads(line)
+            with self.subTest(case=row["id"]), tempfile.TemporaryDirectory() as directory:
+                repo = ReminderRepository(Path(directory) / "recorded.db")
+                repo.migrate()
+                generator = Mock()
+                generator.enabled.return_value = True
+                generator.generate.return_value = GeneratedResponse(
+                    row["response"], "gemini", "recorded"
+                )
+                service = ReminderService(
+                    repository=repo,
+                    parser=ReminderParser("Asia/Taipei"),
+                    draft_store=SqliteDraftStore(10, repo),
+                    edit_store=SqliteEditSessionStore(10, repo),
+                    default_timezone="Asia/Taipei",
+                    ai_parser=SemanticParser(generator),
+                )
+                now = datetime.fromisoformat(row["now"]).astimezone(ZoneInfo(row["timezone"]))
+                seed = row["seed"]
+                context = None
+                if seed:
+                    context = ReminderDraft(
+                        id="seed",
+                        chat_id=100,
+                        chat_type="private",
+                        creator_user_id=7,
+                        timezone=row["timezone"],
+                        source_text=seed["source"],
+                        title=seed["title"],
+                        remind_at=datetime.fromisoformat(seed["at"]),
+                        participants=[PERSON],
+                        missing_fields=seed["missing"]
+                        + (["clarification"] if seed["condition"] else []),
+                        parse_result={
+                            "grain": "ai",
+                            "question": seed["question"],
+                            "condition_question": seed["question"],
+                        },
+                    )
+                    service._draft_store.save(context, now)
+                message = TelegramMessage(
+                    id=1,
+                    chat=TelegramChat(id=100, type="private"),
+                    from_user=TelegramUser(id=7, first_name="HeiTang"),
+                    text=row["text"],
+                    entities=(),
+                )
+                if row.get("rejected"):
+                    with self.assertRaises(AiUnavailable):
+                        service.parse_ai(message.text, message, now, context=context)
+                    self.assertEqual(context, service.peek_draft(100, 7, now))
+                    self.assertEqual([], repo.list_pending(100))
+                    continue
+                result = service.parse_ai(message.text, message, now, context=context)
+                expected = row["expected"]
+                self.assertEqual(expected["title"], result.title)
+                self.assertEqual(
+                    datetime.fromisoformat(expected["at"]) if expected["at"] else None,
+                    result.remind_at,
+                )
+                self.assertTrue(set(expected["missing"]).issubset(result.missing_fields))
+                if seed and seed["condition"]:
+                    self.assertEqual(seed["question"], result.raw["condition_question"])
+                preview = service.begin_create(
+                    context.source_text if context else message.text,
+                    message,
+                    now,
+                    parse_result=result,
+                )
+                self.assertEqual([], repo.list_pending(100))
+                self.assertIsInstance(
+                    preview, Confirmation if expected["complete"] else DraftPrompt
+                )
+                confirmed = service.confirm(preview.draft.id, 7, now)
+                if expected["complete"]:
+                    self.assertIsNotNone(confirmed)
+                    self.assertEqual(expected["title"], confirmed.reminder.title)
+                else:
+                    self.assertIsNone(confirmed)
+                    self.assertEqual([], repo.list_pending(100))
+
+    def test_boundary_actions_and_compound_titles_are_distinct(self):
+        for title in ("前交報表", "前完成繳費", "後再領藥", "後寄包裹"):
+            with self.subTest(title=title):
+                result = self.parse(f"提醒我明天下午三點{title}", parsed(question=None))
+                self.assertIn("clarification", result.missing_fields)
+        for title in ("前往車站", "前進營地", "前置作業", "後續報表", "後製影片"):
+            with self.subTest(title=title):
+                result = self.parse(f"提醒我明天下午三點{title}", parsed(question=None))
+                self.assertEqual(title, result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_known_title_correction_uses_native_time_and_retains_question(self):
+        context = ReminderDraft(
+            id="known-title",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="只在工作日提醒我寄報表",
+            title="寄報表",
+            remind_at=NOW.replace(day=23, hour=15),
+            participants=[PERSON],
+            missing_fields=["clarification"],
+            parse_result={"question": "是否只限週一至週五？"},
+        )
+        result = self.parse(
+            "改成明天九點",
+            parsed(intent="update", title="模型誤改", date="2027-01-01", time="18:00"),
+            context=context,
+        )
+        self.assertEqual("寄報表", result.title)
+        self.assertEqual(NOW.replace(day=23, hour=9), result.remind_at)
+        self.assertEqual("是否只限週一至週五？", result.raw["question"])
+        self.assertIn("clarification", result.missing_fields)
+        for intent in ("update", "create", "not_reminder"):
+            with self.subTest(semantic_intent=intent):
+                result = self.parse(
+                    "不是明天，是後天，時間一樣",
+                    parsed(intent=intent, title="寄報表", question=None),
+                    context=context,
+                )
+                self.assertEqual("update", result.raw["intent"])
+                self.assertEqual("是否只限週一至週五？", result.raw["condition_question"])
+                self.assertIn("clarification", result.missing_fields)
+        for text in ("下班後", "改成有空時"):
+            with self.subTest(text=text):
+                result = self.parse(
+                    text, parsed(intent="update", title="模型誤改"), context=context
+                )
+                self.assertEqual("寄報表", result.title)
+                self.assertIsNone(result.remind_at)
+                self.assertIn("time", result.missing_fields)
+                self.assertIn("clarification", result.missing_fields)
 
     def test_recorded_responses_obey_confirmation_and_saved_title(self):
         for row in self.rows:

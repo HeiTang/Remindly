@@ -50,6 +50,7 @@ monthly month_days=1..31；yearly year_month/year_day；interval_seconds 最低6
 未使用欄位為null或空陣列。週期有明確起始日期時 date/time 表首次觸發，否則由本機計算。
 週期缺少幾點時 recurrence=null 並 question 追問；context.source_text 保留原始週期意圖。
 context 已解析欄位及後續修正優先於 source_text，不將它還原成原始值。
+追問事項時，未包含時間或變更指令的回覆用原文作為事項，不把事項中的動作副詞當成修改提醒時間。
 不支援的條件（農曆、排除國定假日等）question 說明需改成支援規則，不可默默丟棄條件。
 一句包含多個提醒時 question 請使用者一次建立一筆，不可只挑其中一筆而忽略其他事項。
 question 僅在有歧義、缺資訊或不支援時給簡短繁中追問，否則null。
@@ -74,10 +75,14 @@ SEMANTIC_CONDITION_RE = re.compile(
     r"(?:排除|不含|避開)(?:國定假日|工作日|平日|假日|週末|農曆)(?!的)|"
     r"(?:之前|之後|以前|以後|左右)(?!的))"
 )
+# 時間界線需接動作，避免把方向、製作等複合詞的前綴當成界線。
+BOUNDARY_ACTION_RE = re.compile(
+    r"^[前後](?:再|才|就|要)?(?:交|繳|寄|送|領|買|還|完成|提交|支付|付款|出門|出發|到達|取件)(?!的)"
+)
 
 # 只清除可由已驗證欄位解決的追問；其餘語意問題採保守保留。
 RESOLVED_QUESTION_RE = re.compile(
-    r"時間|日期|幾點|哪天|今天|明天|多(?:個|筆)提醒|一次.*(?:一筆|一個)|"
+    r"時間|日期|幾點|哪(?:一)?天|什麼時候|何時|今天|明天|多(?:個|筆)提醒|一次.*(?:一筆|一個)|"
     r"要提醒(?:你|您)?什麼|要提醒誰|什麼事項|事項是什麼|提醒內容是什麼|提醒對象"
 )
 QUESTION_CONSTRAINT_RE = re.compile(
@@ -202,19 +207,12 @@ class SemanticParser:
         )
         try:
             result = validate_result(response.data, now, participants)
+            source_question = None
             rules = ReminderParser(str(now.tzinfo))
             constraint = rules.explicit_time(text, now, context.remind_at if context else None)
             content_text = text
-            correction = (
-                CORRECTION_RE.match(text.strip())
-                if context and "title" in context.missing_fields
-                else None
-            )
-            vague_time = bool(
-                context
-                and "title" in context.missing_fields
-                and VAGUE_TIME_RE.fullmatch(text.strip())
-            )
+            correction = CORRECTION_RE.match(text.strip()) if context else None
+            vague_time = bool(context and VAGUE_TIME_RE.fullmatch(text.strip()))
             if (correction or vague_time) and constraint is None:
                 content_text = text.strip()[correction.end() :] if correction else text
                 constraint = (
@@ -222,14 +220,25 @@ class SemanticParser:
                     if rules.recurrence_marker(content_text) is None
                     else None
                 )
+                if correction and correction.group().rstrip().endswith("不是") and constraint:
+                    # 被否定的時間不是新時間；有明確替代句時仍交由完整語意解析。
+                    constraint = (TimeParse(None, "", "ambiguous", missing_time=True), True)
                 # 不明確的變更指令不能當成事項，也不能沿用舊時間直接定案。
-                if constraint is None:
+                if constraint is None and (
+                    "title" in context.missing_fields
+                    or vague_time
+                    or VAGUE_TIME_RE.fullmatch(content_text)
+                ):
+                    if (
+                        VAGUE_TIME_RE.fullmatch(content_text)
+                        and CALENDAR_QUESTION_RE.search(content_text)
+                    ) or rules.recurrence_marker(content_text) is not None:
+                        source_question = response.data["question"] or "請確認新的曆法或重複條件。"
                     constraint = (TimeParse(None, "", "ambiguous", missing_time=True), True)
             content_only = bool(
                 context
                 and "title" in context.missing_fields
                 and purpose != "edit_time"
-                and result.raw["intent"] != "not_reminder"
                 and text.strip()
                 and constraint is None
                 and not PROMPT_SPLIT_RE.search(text)
@@ -259,7 +268,6 @@ class SemanticParser:
             ):
                 temporal, time_only = constraint
                 data = dict(response.data)
-                source_question = None
                 data.update(
                     date=temporal.remind_at.date().isoformat() if temporal.remind_at else None,
                     time=(
@@ -343,7 +351,9 @@ class SemanticParser:
                             else content[1]
                         )
                         data["title"] = title
-                        condition = SEMANTIC_CONDITION_RE.search(title or "")
+                        condition = SEMANTIC_CONDITION_RE.search(
+                            title or ""
+                        ) or BOUNDARY_ACTION_RE.match(title or "")
                         unresolved_content = bool(
                             condition
                             or (title and TIME_RE.search(title))
@@ -405,32 +415,6 @@ class SemanticParser:
                     data["question"] = "這個時間已經過去，請重新輸入未來的日期與時間。"
                 elif temporal.missing_time:
                     data["question"] = "那天幾點？"
-                existing_condition = bool(
-                    context
-                    and "clarification" in context.missing_fields
-                    and (time_only or data["intent"] == "update")
-                )
-                pending_condition = existing_condition or source_question is not None
-                if pending_condition:
-                    prior_question = str(
-                        (
-                            context.parse_result.get("condition_question")
-                            or context.parse_result.get("question")
-                            or "請確認先前的條件。"
-                        )
-                        if existing_condition
-                        else source_question
-                    )
-                    previous_question = (
-                        context.parse_result.get("question")
-                        if existing_condition
-                        else source_question
-                    )
-                    data["question"] = (
-                        prior_question
-                        if not data["question"] or data["question"] == previous_question
-                        else f"{prior_question[:220]}\n{data['question'] or ''}".strip()[:300]
-                    )
                 if not time_only and result.recurrence:
                     marker = rules.recurrence_marker(text)
                     expected_rule = None
@@ -458,14 +442,6 @@ class SemanticParser:
                             ).strip()[:300],
                         )
                 result = validate_result(data, now, participants)
-                if pending_condition:
-                    result = replace(
-                        result,
-                        raw={**result.raw, "condition_question": prior_question},
-                        missing_fields=tuple(
-                            dict.fromkeys((*result.missing_fields, "clarification"))
-                        ),
-                    )
                 if temporal.grain in {"invalid", "ambiguous"}:
                     result = replace(
                         result,
@@ -477,6 +453,37 @@ class SemanticParser:
                 result = replace(
                     result,
                     raw={**result.raw, "time_validation": "context" if content_only else "rules"},
+                )
+            if correction and not PROMPT_SPLIT_RE.search(text):
+                result = replace(result, raw={**result.raw, "intent": "update"})
+            # 必要追問獨立於本機時間文法，語意更新也不能自行解除。
+            existing_condition = bool(
+                context
+                and "clarification" in context.missing_fields
+                and result.raw["intent"] == "update"
+            )
+            if existing_condition or source_question is not None:
+                prior_question = str(
+                    (
+                        context.parse_result.get("condition_question")
+                        or context.parse_result.get("question")
+                        or "請確認先前的條件。"
+                    )
+                    if existing_condition
+                    else source_question
+                )
+                previous_question = (
+                    context.parse_result.get("question") if existing_condition else source_question
+                )
+                question = result.raw.get("question")
+                if not question or question == previous_question:
+                    question = prior_question
+                elif not question.startswith(prior_question):
+                    question = f"{prior_question[:220]}\n{question}".strip()[:300]
+                result = replace(
+                    result,
+                    raw={**result.raw, "question": question, "condition_question": prior_question},
+                    missing_fields=tuple(dict.fromkeys((*result.missing_fields, "clarification"))),
                 )
             return replace(
                 result,

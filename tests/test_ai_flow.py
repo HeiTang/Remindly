@@ -375,6 +375,23 @@ class AiFlowTest(unittest.TestCase):
         self.confirm(draft.id)
         self.assertEqual("拿包裹", self.repo.list_pending(CHAT.id)[0].title)
 
+    def test_negated_time_replaces_confirmation_with_question(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [parsed(title="寄報表"), parsed(intent="update", title="寄報表")]
+        )
+        self.send("提醒我明天下午三點寄報表")
+        old = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.send("不是11/17 23:55")
+        new = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual("寄報表", new.title)
+        self.assertIsNone(new.remind_at)
+        self.assertIn("time", new.missing_fields)
+        self.assertIn("未來日期與時間", self.telegram.messages[-1].text)
+        self.confirm(old.id)
+        self.confirm(new.id)
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+
     def test_followup_replaces_confirmation_and_old_button_cannot_create(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.extend(
@@ -533,7 +550,7 @@ class AiFlowTest(unittest.TestCase):
         context = self.gemini.calls[-1][1]["context"]
         self.assertEqual("2026-10-24", context["remind_at"][:10])
         self.assertEqual(["time"], context["missing_fields"])
-        self.assertEqual("後天幾點？", context["question"])
+        self.assertEqual("那天幾點？", context["question"])
         updated = self.repo.list_pending(CHAT.id)[0]
         self.assertEqual((24, 9), (updated.remind_at.day, updated.remind_at.hour))
         self.assertIsNone(self.service.peek_edit_session(CHAT.id, USER.id, NOW))
