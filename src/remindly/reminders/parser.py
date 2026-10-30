@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
@@ -289,7 +289,26 @@ class ReminderParser:
             and marker[1] != RecurrencePeriod.INTERVAL
             and prefix.startswith(marker[0])
         ):
-            return self.explicit_time(cleaned.replace(marker[0], "", 1), now, existing_date)
+            constraint = self.explicit_time(cleaned.replace(marker[0], "", 1), now, existing_date)
+            if constraint:
+                temporal, time_only = constraint
+                consumed = LEADING_ZAI_RE.sub("", temporal.consumed_text).strip()
+                if (
+                    temporal.remind_at
+                    and not temporal.missing_time
+                    and (TIME_RE.match(consumed) or PART_OF_DAY_RE.match(consumed))
+                ):
+                    rule = RecurrenceRule(
+                        period=marker[1],
+                        hour=temporal.remind_at.hour,
+                        minute=temporal.remind_at.minute,
+                        **marker[2],
+                    )
+                    # 單純時鐘的日期由週期計算，不能沿用一次性提醒的今天／明天。
+                    return replace(
+                        temporal, remind_at=next_fire(rule, now), is_past=False
+                    ), time_only
+            return constraint
         prompt = PROMPT_SPLIT_RE.search(cleaned)
         if prompt:
             left = cleaned[: prompt.start()].strip()

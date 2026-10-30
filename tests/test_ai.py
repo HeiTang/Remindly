@@ -681,6 +681,44 @@ class SemanticTimeGuardTest(unittest.TestCase):
         self.assertEqual((0,), result.recurrence.weekdays)
         self.assertEqual(datetime(2026, 10, 26, 9, tzinfo=NOW.tzinfo), result.remind_at)
 
+    def test_weekly_first_fire_is_not_overwritten_by_clock_rollover(self):
+        now = datetime(2026, 10, 30, 12, tzinfo=NOW.tzinfo)
+        for text in (
+            "每週一、三、五早上九點提醒我吃藥",
+            "提醒我每週一、三、五早上九點吃藥",
+            "每週一、三、五09:00提醒我吃藥",
+        ):
+            with self.subTest(text=text):
+                result = self.parse(
+                    parsed(
+                        title="吃藥",
+                        date="2026-11-02",
+                        time="09:00",
+                        recurrence=rule(period="weekly", weekdays=[0, 2, 4]),
+                    ),
+                    text,
+                    now=now,
+                )
+                self.assertEqual(datetime(2026, 11, 2, 9, tzinfo=NOW.tzinfo), result.remind_at)
+                self.assertEqual((0, 2, 4), result.recurrence.weekdays)
+                self.assertEqual("吃藥", result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_weekly_explicit_start_date_is_preserved(self):
+        now = datetime(2026, 10, 30, 12, tzinfo=NOW.tzinfo)
+        result = self.parse(
+            parsed(
+                title="吃藥",
+                date="2026-11-02",
+                time="09:00",
+                recurrence=rule(period="weekly", weekdays=[0, 2, 4]),
+            ),
+            "每週一、三、五11/4早上九點提醒我吃藥",
+            now=now,
+        )
+        self.assertEqual(datetime(2026, 11, 4, 9, tzinfo=NOW.tzinfo), result.remind_at)
+        self.assertEqual((), result.missing_fields)
+
 
 class SemanticValidationTest(unittest.TestCase):
     def test_separate_dates_title_and_absolute_time(self) -> None:

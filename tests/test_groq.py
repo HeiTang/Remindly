@@ -48,6 +48,7 @@ class GroqProviderTest(unittest.TestCase):
             self.assertEqual("POST", request.get_method())
             self.assertEqual("https://api.groq.com/openai/v1/chat/completions", request.full_url)
             self.assertEqual(f"Bearer {SECRET}", request.get_header("Authorization"))
+            self.assertEqual("Remindly", request.get_header("User-agent"))
             self.assertNotIn(SECRET, request.full_url)
             body = json.loads(request.data)
             self.assertNotIn(SECRET, request.data.decode())

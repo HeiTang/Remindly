@@ -52,7 +52,11 @@ class GroqProvider:
             "https://api.groq.com/openai/v1/chat/completions",
             data=json.dumps(payload).encode(),
             method="POST",
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}",
+                "User-Agent": "Remindly",
+            },
         )
         try:
             with self._opener(request, timeout=timeout) as response:
