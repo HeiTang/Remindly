@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfoNotFoundError
 
 from remindly.bot.groupmode import GROUP_CHAT_TYPES, GroupModeAuthorizer
 from remindly.bot.response_sender import ResponseSender
-from remindly.reminders.service import ReminderService
+from remindly.reminders.service import RecurrenceRejected, ReminderService
 from remindly.reminders.text import command_body, html_escape
 from remindly.telegram.client import TelegramClient
 from remindly.telegram.models import TelegramMessage
@@ -83,6 +83,7 @@ class CommandHandlers:
                     "/cancel <id> - 取消提醒",
                     "/timezone <IANA timezone> - 設定時區",
                     "/groupmode on|off|status - 群組自然語言模式",
+                    "/ai - 個人 AI Key 與語意解析設定（私聊）",
                 ]
             ),
         )
@@ -96,7 +97,15 @@ class CommandHandlers:
             )
             return
 
+        actor = message.from_user
+        if actor is None:
+            return
+        draft = self._reminder_service.peek_draft(message.chat.id, actor.id, now)
+        editing = self._reminder_service.peek_edit_session(message.chat.id, actor.id, now)
         result = self._reminder_service.begin_create(body, message, now)
+        if not isinstance(result, RecurrenceRejected):
+            cancelled = self._reminder_service.discard_conversation(draft, editing)
+            self._responses.dismiss_prompts(cancelled)
         self._responses.send_draft_result(message.chat.id, result)
 
     def _list(self, message: TelegramMessage, body: str, now: datetime) -> None:

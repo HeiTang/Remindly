@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
+from remindly.ai.parser import SemanticParsing, followup_question
 from remindly.reminders.drafts import (
     EditSession,
     ReminderDraftStore,
@@ -19,7 +20,7 @@ from remindly.reminders.models import (
     ReminderDraft,
     ReminderStatus,
 )
-from remindly.reminders.parser import ReminderParser
+from remindly.reminders.parser import ReminderParser, dedupe_participants
 from remindly.reminders.recurrence import next_fire
 from remindly.reminders.repositories import ReminderRepository
 from remindly.telegram.models import (
@@ -95,6 +96,7 @@ class SnoozeResult:
 @dataclass(frozen=True)
 class ExpiredPrompt:
     """Sweep 掃出來的過期互動訊息，交給 scheduler 用 editMessageText 標記。"""
+
     chat_id: int
     message_id: int
     text: str
@@ -120,12 +122,45 @@ class ReminderService:
         draft_store: ReminderDraftStore,
         edit_store: ReminderEditSessionStore,
         default_timezone: str,
+        ai_parser: SemanticParsing | None = None,
     ) -> None:
         self._repository = repository
         self._parser = parser
         self._draft_store = draft_store
         self._edit_store = edit_store
         self._default_timezone = default_timezone
+        self.ai_parser = ai_parser
+
+    def ai_enabled(self, user_id: int) -> bool:
+        return self.ai_parser is not None and self.ai_parser.enabled(user_id)
+
+    def parse_ai(
+        self,
+        text: str,
+        message: TelegramMessage,
+        now: datetime,
+        *,
+        context: ReminderDraft | None = None,
+        purpose: str = "reminder",
+    ) -> ParseResult:
+        creator = require_user(message)
+        timezone = (
+            context.timezone
+            if context
+            else self._repository.get_user_timezone(creator.id, self._default_timezone)
+        )
+        candidates = self._parser.extract_participants("提醒我 " + text, message)
+        if context:
+            candidates = dedupe_participants(candidates + context.participants)
+        result = self.ai_parser.parse(
+            text,
+            creator.id,
+            now.astimezone(ZoneInfo(timezone)),
+            candidates,
+            context=context,
+            purpose=purpose,
+        )
+        return result
 
     def record_message_context(self, message: TelegramMessage, now: datetime) -> None:
         self._repository.upsert_chat(
@@ -178,6 +213,8 @@ class ReminderService:
         `begin_create` 也可以透過 `parse_result` kwarg 重用此結果避免重複解析。"""
         creator = require_user(message)
         timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
+        if self.ai_enabled(creator.id):
+            return self.parse_ai(text, message, now)
         return self._parser.parse(text, message, now=now.astimezone(ZoneInfo(timezone)))
 
     def begin_create(
@@ -191,11 +228,11 @@ class ReminderService:
         creator = require_user(message)
         timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
         if parse_result is None:
-            parse_result = self._parser.parse(
-                text, message, now=now.astimezone(ZoneInfo(timezone))
-            )
+            parse_result = self.preview_parse(text, message, now)
         if parse_result.recurrence_error is not None:
             return RecurrenceRejected(error=parse_result.recurrence_error)
+        if parse_result.raw.get("grain") == "ai":
+            timezone = str(parse_result.raw["timezone"])
         draft = ReminderDraft(
             id=new_id("draft"),
             chat_id=message.chat.id,
@@ -210,6 +247,9 @@ class ReminderService:
             parse_result=parse_result.raw,
             recurrence=parse_result.recurrence,
         )
+        if parse_result.raw.get("intent") == "not_reminder":
+            draft.missing_fields = ["title", "time"]
+            draft.parse_result["question"] = "請描述要建立的提醒，例如明天 15:00 叫我拿包裹。"
 
         if draft.is_complete:
             self._draft_store.save(draft, now)
@@ -219,7 +259,11 @@ class ReminderService:
         return DraftPrompt(
             draft=draft,
             question=self._question_for(draft),
-            wants_quick_time=draft.missing_fields == ["time"] and draft.remind_at is not None,
+            wants_quick_time=(
+                draft.missing_fields == ["time"]
+                and draft.remind_at is not None
+                and draft.parse_result.get("grain") != "ai"
+            ),
         )
 
     def continue_draft(
@@ -255,11 +299,14 @@ class ReminderService:
         if not draft or draft.creator_user_id != user_id or draft.remind_at is None:
             return None
 
-        hour, minute = [int(part) for part in hour_minute.split(":", 1)]
-        remind_at = draft.remind_at.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        draft.remind_at = remind_at
+        parsed = self._parser.parse_time_only(
+            hour_minute, now.astimezone(ZoneInfo(draft.timezone)), existing_date=draft.remind_at
+        )
+        if parsed.remind_at:
+            draft.remind_at = parsed.remind_at
+        draft.parse_result["grain"] = parsed.grain
         draft.missing_fields = [field for field in draft.missing_fields if field != "time"]
-        if remind_at <= now.astimezone(remind_at.tzinfo):
+        if not parsed.remind_at or parsed.missing_time or parsed.is_past:
             draft.missing_fields.append("time")
 
         self._draft_store.save(draft, now)
@@ -270,6 +317,10 @@ class ReminderService:
     def confirm(self, draft_id: str, user_id: int, now: datetime) -> CreateResult | None:
         draft = self._draft_store.get_by_id(draft_id, now)
         if not draft or draft.creator_user_id != user_id or not draft.is_complete:
+            return None
+        if require_datetime(draft.remind_at).astimezone(UTC) <= now.astimezone(UTC):
+            draft.missing_fields = ["time"]
+            self._draft_store.save(draft, now)
             return None
 
         reminder = Reminder(
@@ -288,8 +339,8 @@ class ReminderService:
             updated_at=now,
             recurrence=draft.recurrence,
         )
-        self._repository.create_reminder(reminder, draft.participants)
-        self._draft_store.delete(draft_id)
+        if not self._draft_store.confirm(draft, reminder):
+            return None
         return CreateResult(reminder)
 
     def discard_draft(self, draft_id: str, user_id: int, now: datetime) -> bool:
@@ -299,25 +350,19 @@ class ReminderService:
         self._draft_store.delete(draft_id)
         return True
 
-    def peek_draft(
-        self, chat_id: int, user_id: int, now: datetime
-    ) -> ReminderDraft | None:
+    def peek_draft(self, chat_id: int, user_id: int, now: datetime) -> ReminderDraft | None:
         """純讀當前未完成 draft，不做任何合併或狀態改變。"""
         return self._draft_store.get_for_context(chat_id, user_id, now)
 
-    def peek_edit_session(
-        self, chat_id: int, user_id: int, now: datetime
-    ) -> EditSession | None:
+    def peek_edit_session(self, chat_id: int, user_id: int, now: datetime) -> EditSession | None:
         """純讀當前未完成 edit session，不做狀態改變。"""
         return self._edit_store.get_for_context(chat_id, user_id, now)
 
-    def clear_pending_conversation(
-        self, chat_id: int, user_id: int
+    def discard_conversation(
+        self, draft: ReminderDraft | None, existing_edit: EditSession | None
     ) -> list[ExpiredPrompt]:
-        """建立新提醒前呼叫：清掉舊 draft/edit session。
-        回傳每個仍需 editMessage 標記的舊 prompt（含 prompt_message_id 的才會回傳）。"""
+        """清理指定的舊對話，允許先保存替代草稿再清理舊按鈕。"""
         cancelled: list[ExpiredPrompt] = []
-        draft = self._draft_store.get_for_context(chat_id, user_id, self._min_datetime())
         if draft:
             if draft.prompt_message_id is not None:
                 cancelled.append(
@@ -328,8 +373,6 @@ class ReminderService:
                     )
                 )
             self._draft_store.delete(draft.id)
-        # peek EditSession 是否存在 — 用 min 時間避開過期檢查
-        existing_edit = self._edit_store.get_for_context(chat_id, user_id, self._min_datetime())
         if existing_edit:
             if existing_edit.prompt_message_id is not None:
                 cancelled.append(
@@ -339,16 +382,14 @@ class ReminderService:
                         text=CANCELLED_BY_NEW_EDIT_TEXT,
                     )
                 )
-            self._edit_store.delete(chat_id, user_id)
+            self._edit_store.delete(existing_edit.chat_id, existing_edit.user_id)
         return cancelled
 
     def set_draft_prompt_message_id(self, draft_id: str, message_id: int) -> None:
         """在 Telegram 送出追問/確認訊息後綁定 message_id，供 sweep 時 editMessage 用。"""
         self._draft_store.set_prompt_message_id(draft_id, message_id)
 
-    def set_edit_prompt_message_id(
-        self, chat_id: int, user_id: int, message_id: int
-    ) -> None:
+    def set_edit_prompt_message_id(self, chat_id: int, user_id: int, message_id: int) -> None:
         self._edit_store.set_prompt_message_id(chat_id, user_id, message_id)
 
     def sweep_expired_prompts(self, now: datetime) -> list[ExpiredPrompt]:
@@ -376,10 +417,6 @@ class ReminderService:
                 )
             self._edit_store.delete(session.chat_id, session.user_id)
         return expired
-
-    def _min_datetime(self) -> datetime:
-        """給 store 用的極小 datetime，避免因 TTL 過期而讀不到 pending 資料。"""
-        return datetime.min.replace(tzinfo=ZoneInfo(self._default_timezone))
 
     def get_details(self, chat_id: int, short_id: str) -> ReminderDetails | None:
         reminder = self._repository.get_by_short_id(chat_id, short_id)
@@ -483,6 +520,49 @@ class ReminderService:
             return self._edit_result(updated, "已更新提醒內容。")
 
         if session.field == "time":
+            if self.ai_enabled(actor.id):
+                context = ReminderDraft(
+                    id=reminder.id,
+                    chat_id=reminder.chat_id,
+                    chat_type=reminder.chat_type,
+                    creator_user_id=actor.id,
+                    timezone=reminder.timezone,
+                    source_text=reminder.source_text,
+                    title=reminder.title,
+                    remind_at=reminder.remind_at,
+                    recurrence=reminder.recurrence,
+                    participants=self._repository.list_participants(reminder.id),
+                )
+                if session.ai_context is not None:
+                    pending = session.ai_context
+                    context.remind_at = (
+                        datetime.fromisoformat(str(pending["remind_at"]))
+                        if pending["remind_at"]
+                        else None
+                    )
+                    context.missing_fields = list(pending["missing_fields"])
+                    context.parse_result = {
+                        "question": pending["question"],
+                        "condition_question": pending.get("condition_question"),
+                    }
+                parsed = self.parse_ai(
+                    message.text, message, now, context=context, purpose="edit_time"
+                )
+                if parsed.missing_fields or parsed.raw.get("intent") == "not_reminder":
+                    if parsed.raw.get("intent") != "not_reminder":
+                        session.ai_context = {
+                            "remind_at": parsed.remind_at.isoformat() if parsed.remind_at else None,
+                            "missing_fields": list(parsed.missing_fields),
+                            "question": parsed.raw.get("question"),
+                            "condition_question": parsed.raw.get("condition_question"),
+                        }
+                        self._edit_store.save(session, now)
+                    return EditPrompt(reminder, followup_question(parsed.missing_fields))
+                updated = self._repository.update_remind_at(
+                    message.chat.id, session.short_id, actor.id, parsed.remind_at, now
+                )
+                self._edit_store.delete(message.chat.id, actor.id)
+                return self._edit_result(updated, "已更新下次提醒時間。")
             parsed_time = self._parser.parse_time_only(
                 message.text,
                 now.astimezone(ZoneInfo(reminder.timezone)),
@@ -638,7 +718,8 @@ class ReminderService:
         message: TelegramMessage,
         now: datetime,
     ) -> None:
-        missing = list(draft.missing_fields)
+        missing = [field for field in draft.missing_fields if field != "clarification"]
+        draft.parse_result.pop("question", None)
         parsed_answer = self._parser.parse(
             answer,
             message,
@@ -651,6 +732,9 @@ class ReminderService:
                 now.astimezone(ZoneInfo(draft.timezone)),
                 existing_date=draft.remind_at,
             )
+            draft.parse_result["grain"] = parsed_time.grain
+            if parsed_time.remind_at and parsed_time.missing_time:
+                draft.remind_at = parsed_time.remind_at
             if parsed_time.remind_at and not parsed_time.missing_time and not parsed_time.is_past:
                 draft.remind_at = parsed_time.remind_at
                 missing.remove("time")
@@ -668,7 +752,13 @@ class ReminderService:
         draft.missing_fields = missing
 
     def _question_for(self, draft: ReminderDraft) -> str:
+        if draft.parse_result.get("grain") == "ai" or draft.parse_result.get("provider"):
+            return followup_question(draft.missing_fields)
+        if draft.parse_result.get("question"):
+            return str(draft.parse_result["question"])
         if "time" in draft.missing_fields:
+            if draft.parse_result.get("grain") == "ambiguous":
+                return "時間有歧義或遇到日光節約時間切換，請指定單一日期與24小時制時間。"
             return "什麼時候提醒？" if draft.remind_at is None else "那天幾點？"
         if "title" in draft.missing_fields:
             return "要提醒什麼？"

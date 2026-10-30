@@ -16,6 +16,7 @@ services:
       SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-10}
       DRAFT_TTL_MINUTES: ${DRAFT_TTL_MINUTES:-10}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AI_ENCRYPTION_KEY: ${AI_ENCRYPTION_KEY:-}
     volumes:
       - remindly-data:/app/data
     restart: unless-stopped

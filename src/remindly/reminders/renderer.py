@@ -18,7 +18,10 @@ from remindly.reminders.text import html_escape
 class ReminderRenderer:
     def render_confirmation(self, draft: ReminderDraft) -> str:
         participants = self.render_participants(draft.participants)
+        used_ai = draft.parse_result.get("grain") == "ai"
         lines = ["確認建立提醒？"]
+        if used_ai:
+            lines.append(f"時區：{html_escape(draft.timezone)}")
         if draft.recurrence is not None:
             lines.append(f"重複：{html_escape(format_rule(draft.recurrence))}")
             lines.append(f"下次：{format_datetime(draft.remind_at)}")
@@ -26,6 +29,10 @@ class ReminderRenderer:
             lines.append(f"時間：{format_datetime(draft.remind_at)}")
         lines.append(f"對象：{participants}")
         lines.append(f"事項：{html_escape(draft.title or '')}")
+        parser_name = (
+            str(draft.parse_result.get("model_display_name") or "AI") if used_ai else "內建規則"
+        )
+        lines.extend(["", f"<code>使用 {html_escape(parser_name)} 解析</code>"])
         return "\n".join(lines)
 
     def render_created(self, reminder: Reminder) -> str:
