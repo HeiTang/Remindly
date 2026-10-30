@@ -4,6 +4,12 @@ Remindly 的重要變更會記錄在這裡。
 
 ## Unreleased
 
+- 修正週期提醒的本機時間約束：只有時鐘時依週期計算首次日期，避免每週一、三、五被覆寫成週六；保留明確起始日期。
+
+- Groq 請求明確設定 User-Agent，避免預設 Python urllib 被 Cloudflare 以 HTTP 403／1010 擋下。
+
+- 新增 Groq adapter，固定 GPT-OSS 120B 與 strict JSON Schema；沿用個人 Key、冷卻、確認及 18 秒共用預算，Gemini 仍為預設供應商。
+
 - 修正單組 AI Key 提前在 6 秒逾時：請求改用剩餘共用等待預算，仍最多嘗試三組 Key，預算 18 秒。
 - AI 供應商失敗原因依 Key 分類顯示並持久化（schema v9），供 `/ai` 查詢；成功後清除，不保存上游錯誤原文。
 - AI 供應商介面、共用備援與標準 JSON Schema；Gemini adapter 獨立負責 API 格式與錯誤轉換。

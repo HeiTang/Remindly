@@ -354,6 +354,50 @@ class AiFlowTest(unittest.TestCase):
         self.assertEqual(SECOND, other.calls[0][0])
         self.assertEqual([], self.gemini.calls)
 
+    def test_groq_fallback_uses_remaining_budget_and_requires_confirmation(self) -> None:
+        import io
+        import json
+
+        from remindly.ai.groq import GroqProvider
+
+        calls = []
+
+        def opener(request, *, timeout):
+            calls.append((request.get_header("Authorization"), timeout))
+            return io.BytesIO(
+                json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "finish_reason": "stop",
+                                "message": {"content": json.dumps(parsed(title="拿包裹"))},
+                            }
+                        ]
+                    }
+                ).encode()
+            )
+
+        self.gateway.providers["groq"] = GroqProvider(opener=opener)
+        self.send(f"/ai add gemini {SECRET}")
+        self.send(f"/ai add groq {SECOND}")
+        self.assertIn("groq · Groq", self.telegram.messages[-1].text)
+        self.gemini.responses.append(ProviderError("timeout"))
+        with patch("remindly.ai.gateway.time.monotonic", side_effect=[100, 100, 105, 106]):
+            self.send("明天下午三點叫我去拿包裹")
+        self.assertEqual([(f"Bearer {SECOND}", 13)], calls)
+        self.assertEqual([18], self.gemini.timeouts)
+        first, second = self.keys.list(USER.id)
+        self.assertEqual(("cooldown", "timeout"), (first.status, first.last_error))
+        self.assertEqual(("ready", None), (second.status, second.last_error))
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual("groq", draft.parse_result["provider"])
+        self.assertEqual("openai/gpt-oss-120b", draft.parse_result["model"])
+        self.assertIn("<code>使用 AI 解析</code>", self.telegram.messages[-1].text)
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+        self.confirm(draft.id)
+        self.assertEqual("拿包裹", self.repo.list_pending(CHAT.id)[0].title)
+        self.assertNotIn(SECOND, repr(self.telegram.messages))
+
     def test_failed_key_message_deletion_is_reported_without_echoing(self) -> None:
         with patch.object(
             self.telegram, "delete_message", side_effect=TelegramApiError("deleteMessage", "no")
