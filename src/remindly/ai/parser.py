@@ -78,13 +78,17 @@ RECURRENCE_ARRAYS = ("weekdays", "month_days")
 # 只清除可由已驗證欄位解決的追問；其餘語意問題採保守保留。
 RESOLVED_QUESTION_RE = re.compile(
     r"時間|日期|幾點|哪(?:一)?天|什麼時候|何時|今天|明天|多(?:個|筆)提醒|一次.*(?:一筆|一個)|"
-    r"要提醒(?:你|您)?什麼|要提醒誰|什麼事項|事項是什麼|提醒內容是什麼|提醒對象"
+    r"(?:要|想)?提醒(?:你|您)?的?(?:內容|事項)?(?:是)?什麼|"
+    r"要提醒誰|什麼事項|事項是什麼|提醒對象"
 )
 QUESTION_CONSTRAINT_RE = re.compile(
     r"條件|限制|截止|期限|如果|假如|除非|只在|只限|之前|之後|以前|以後"
 )
 CALENDAR_QUESTION_RE = re.compile(r"工作日|平日|假日|週末|農曆")
-CALENDAR_DEFINITION_QUESTION_RE = re.compile(r"(?:是指|指的是|定義).*(?:週[一二三四五六日天]|星期)")
+CALENDAR_RESOLVED_QUESTION_RE = re.compile(
+    r"(?:是指|指的是|定義).*(?:週[一二三四五六日天]|星期)|"
+    r"(?:是否|要|需|設定).*(?:重複|每.+提醒)"
+)
 SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -373,7 +377,8 @@ class SemanticParser:
                                 )
                                 or (
                                     not unresolved_content
-                                    and CALENDAR_DEFINITION_QUESTION_RE.search(data["question"])
+                                    and title is not None
+                                    and CALENDAR_RESOLVED_QUESTION_RE.search(data["question"])
                                 )
                             )
                         )

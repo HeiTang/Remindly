@@ -155,6 +155,85 @@ class GeminiContentRegressionTest(unittest.TestCase):
         self.assertIn("clarification", result.missing_fields)
         self.assertEqual(question, result.raw["question"])
 
+    def test_calendar_recurrence_proposal_does_not_override_literal_content(self):
+        for calendar in ("工作日", "平日", "假日", "週末"):
+            for question in (
+                f"請問「{calendar}資料」是要設定為每個{calendar}重複嗎？",
+                f"是否需要每個{calendar}都提醒？",
+            ):
+                with self.subTest(calendar=calendar, question=question):
+                    result = self.parse(
+                        f"提醒我後天下午四點整理{calendar}資料", parsed(question=question)
+                    )
+                    self.assertEqual(f"整理{calendar}資料", result.title)
+                    self.assertEqual((), result.missing_fields)
+                    self.assertIsNone(result.raw["question"])
+                    self.assertIsNone(result.recurrence)
+                    for title in (
+                        f"只在{calendar}整理資料",
+                        f"每個{calendar}整理資料",
+                        f"逢{calendar}整理資料",
+                        f"整理資料，{calendar}再寄出",
+                    ):
+                        result = self.parse(f"提醒我後天下午四點{title}", parsed(question=question))
+                        self.assertIn("clarification", result.missing_fields)
+
+    def test_content_questions_resolve_only_when_source_supplies_the_title(self):
+        context = ReminderDraft(
+            id="missing-title",
+            chat_id=100,
+            chat_type="private",
+            creator_user_id=7,
+            timezone="Asia/Taipei",
+            source_text="提醒我明天下午三點",
+            title=None,
+            remind_at=NOW.replace(day=23, hour=15),
+            participants=[PERSON],
+            missing_fields=["title"],
+            parse_result={},
+        )
+        for question in ("請提供要提醒的內容是什麼？", "想提醒您的事項是什麼？"):
+            for title in ("提早寄出文件", "整理年度預算"):
+                with self.subTest(question=question, title=title):
+                    response = parsed(intent="update", title=None, question=question)
+                    result = self.parse(title, response, context=context)
+                    self.assertEqual(title, result.title)
+                    self.assertEqual(context.remind_at, result.remind_at)
+                    self.assertEqual((), result.missing_fields)
+                    self.assertIsNone(result.raw["question"])
+            result = self.parse("提醒我明天下午三點", parsed(question=question))
+            self.assertIsNone(result.title)
+            self.assertIn("title", result.missing_fields)
+            result = self.parse("提醒我明天下午三點如果下雨才收衣服", parsed(question=question))
+            self.assertIn("clarification", result.missing_fields)
+
+    def test_resolved_content_questions_do_not_bypass_remaining_guards(self):
+        for question in ("請提供要提醒的內容是什麼？", "是否要設定為每個工作日重複？"):
+            with self.subTest(question=question):
+                result = self.parse("提醒我明天整理資料", parsed(question=question))
+                self.assertIn("time", result.missing_fields)
+                result = self.parse("提醒我明天25:00整理資料", parsed(question=question))
+                self.assertIn("time", result.missing_fields)
+                result = self.parse(
+                    "提醒我明天下午三點和 @alice 整理資料",
+                    parsed(question=question, participant_indices=[]),
+                    participants=[
+                        PERSON,
+                        Participant("Alice", MentionKind.TEXT_MENTION, user_id=8),
+                    ],
+                )
+                self.assertIn("participants", result.missing_fields)
+                result = self.parse(
+                    "提醒我明天下午三點整理資料",
+                    parsed(question=question, recurrence=rule()),
+                )
+                self.assertIn("clarification", result.missing_fields)
+                result = self.parse(
+                    "提醒我明天下午三點整理資料，後天九點提醒我寄信",
+                    parsed(question=question),
+                )
+                self.assertIn("clarification", result.missing_fields)
+
     def test_pending_title_does_not_consume_time_corrections(self):
         context = ReminderDraft(
             id="correction",

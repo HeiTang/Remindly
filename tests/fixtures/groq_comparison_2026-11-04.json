@@ -1,0 +1,1447 @@
+{
+  "code_commit": "1aa825039566d58529f684f407ce5eef7cbe6c6d",
+  "date": "2026-11-04",
+  "comparison": "same frozen inputs, expectations, clocks; prior raw responses replayed through current code",
+  "suites": [
+    {
+      "suite": "regression",
+      "cases_file": "groq_live_cases.jsonl",
+      "cases_sha256": "ee3074ca336433993271d9abdac555d3242c10d0d13dde228dd0ceb2855d13e0",
+      "results_file": "groq_live_results_2026-11-04.jsonl",
+      "supplemental_results_file": null,
+      "supplemental_run_mapping": null,
+      "cases": 36,
+      "trials": 52,
+      "repeated_case_ids": [
+        "content-morning-twelve-round-1",
+        "content-alternative-in-subject-round-1",
+        "content-recorded-calendar-noun-question",
+        "content-recorded-literal-title-rewritten-round-1",
+        "followup-recorded-garbled-context-title-rewrite",
+        "correction-ordinary-7-round-1",
+        "correction-known-title-existing-condition-round-1",
+        "correction-deadline-definition-round-1"
+      ],
+      "scores": {
+        "off": {
+          "passed_trials": 51,
+          "passed_all_repeats_cases": 35,
+          "passed_case_ids": [
+            "content-alternative-in-subject-round-1",
+            "content-chinese-date-extra-day-digit-round-2",
+            "content-exact-current-clock-rolls-round-2",
+            "content-morning-twelve-round-1",
+            "content-recorded-calendar-noun-question",
+            "content-recorded-literal-title-rewritten-round-1",
+            "correction-deadline-definition-round-1",
+            "correction-known-title-existing-condition-round-1",
+            "correction-ordinary-7-round-1",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-beef-soup-report",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-suffix-in-title",
+            "reminder-title-date-slash",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-invalid-hour",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-next-next-monday",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        },
+        "raw": {
+          "passed_trials": 28,
+          "passed_all_repeats_cases": 24,
+          "passed_case_ids": [
+            "content-chinese-date-extra-day-digit-round-2",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-title-date-slash",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-invalid-hour",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        },
+        "local": {
+          "passed_trials": 50,
+          "passed_all_repeats_cases": 34,
+          "passed_case_ids": [
+            "content-alternative-in-subject-round-1",
+            "content-chinese-date-extra-day-digit-round-2",
+            "content-exact-current-clock-rolls-round-2",
+            "content-morning-twelve-round-1",
+            "content-recorded-literal-title-rewritten-round-1",
+            "correction-deadline-definition-round-1",
+            "correction-known-title-existing-condition-round-1",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-beef-soup-report",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-suffix-in-title",
+            "reminder-title-date-slash",
+            "reminder-title-period",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-invalid-hour",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-next-next-monday",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        }
+      },
+      "previous_recorded_scores": {
+        "raw": {
+          "passed_trials": 26,
+          "passed_all_repeats_cases": 22,
+          "passed_case_ids": [
+            "content-recorded-calendar-noun-question",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        },
+        "local": {
+          "passed_trials": 52,
+          "passed_all_repeats_cases": 36,
+          "passed_case_ids": [
+            "content-alternative-in-subject-round-1",
+            "content-chinese-date-extra-day-digit-round-2",
+            "content-exact-current-clock-rolls-round-2",
+            "content-morning-twelve-round-1",
+            "content-recorded-calendar-noun-question",
+            "content-recorded-literal-title-rewritten-round-1",
+            "correction-deadline-definition-round-1",
+            "correction-known-title-existing-condition-round-1",
+            "correction-ordinary-7-round-1",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-beef-soup-report",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-suffix-in-title",
+            "reminder-title-date-slash",
+            "reminder-title-period",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-invalid-hour",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-next-next-monday",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        }
+      },
+      "previous_raw_replayed_current_code_scores": {
+        "off": {
+          "passed_trials": 51,
+          "passed_all_repeats_cases": 35,
+          "passed_case_ids": [
+            "content-alternative-in-subject-round-1",
+            "content-chinese-date-extra-day-digit-round-2",
+            "content-exact-current-clock-rolls-round-2",
+            "content-morning-twelve-round-1",
+            "content-recorded-calendar-noun-question",
+            "content-recorded-literal-title-rewritten-round-1",
+            "correction-deadline-definition-round-1",
+            "correction-known-title-existing-condition-round-1",
+            "correction-ordinary-7-round-1",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-beef-soup-report",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-suffix-in-title",
+            "reminder-title-date-slash",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-invalid-hour",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-next-next-monday",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        },
+        "raw": {
+          "passed_trials": 26,
+          "passed_all_repeats_cases": 22,
+          "passed_case_ids": [
+            "content-recorded-calendar-noun-question",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        },
+        "local": {
+          "passed_trials": 52,
+          "passed_all_repeats_cases": 36,
+          "passed_case_ids": [
+            "content-alternative-in-subject-round-1",
+            "content-chinese-date-extra-day-digit-round-2",
+            "content-exact-current-clock-rolls-round-2",
+            "content-morning-twelve-round-1",
+            "content-recorded-calendar-noun-question",
+            "content-recorded-literal-title-rewritten-round-1",
+            "correction-deadline-definition-round-1",
+            "correction-known-title-existing-condition-round-1",
+            "correction-ordinary-7-round-1",
+            "followup-recorded-garbled-context-title-rewrite",
+            "reminder-beef-soup-report",
+            "reminder-breakfast",
+            "reminder-daily",
+            "reminder-interval",
+            "reminder-missing-title",
+            "reminder-monthly",
+            "reminder-multiple-participants",
+            "reminder-suffix-in-title",
+            "reminder-title-date-slash",
+            "reminder-title-period",
+            "reminder-weekly",
+            "reminder-yearly",
+            "time-chinese-date",
+            "time-explicit-past",
+            "time-half-hour-clock",
+            "time-invalid-day",
+            "time-invalid-hour",
+            "time-iso-date",
+            "time-leap-day",
+            "time-new-york",
+            "time-next-next-monday",
+            "time-relative-half-hour",
+            "time-relative-hours",
+            "time-slash-date",
+            "time-tomorrow-alias",
+            "time-year-rollover"
+          ]
+        }
+      },
+      "regressions_vs_previous_raw_replay": [
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 1,
+          "text": "提醒我明天15:00工作日行事曆",
+          "failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 1,
+          "text": "延後寄包裹",
+          "failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        }
+      ],
+      "raw_regressions_vs_previous_raw": [
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 1,
+          "failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        },
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 3,
+          "failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        }
+      ],
+      "model_correct_but_local_broke": [],
+      "all_local_failures": [
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 1,
+          "text": "提醒我明天15:00工作日行事曆",
+          "raw": {
+            "intent": "create",
+            "title": "工作日行事曆",
+            "date": "2026-10-25",
+            "time": "15:00",
+            "relative_minutes": null,
+            "question": "請問「工作日行事曆」是要設定為每個工作日重複嗎？",
+            "recurrence": null,
+            "participant_indices": [
+              0
+            ]
+          },
+          "local_result": {
+            "title": "工作日行事曆",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請問「工作日行事曆」是要設定為每個工作日重複嗎？",
+            "intent": "create"
+          },
+          "failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 1,
+          "text": "延後寄包裹",
+          "raw": {
+            "intent": "update",
+            "title": null,
+            "date": "2026-10-26",
+            "time": "15:00",
+            "relative_minutes": null,
+            "question": "請提供要提醒的內容是什麼？",
+            "recurrence": null,
+            "participant_indices": [
+              0
+            ]
+          },
+          "local_result": {
+            "title": "延後寄包裹",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請提供要提醒的內容是什麼？",
+            "intent": "update"
+          },
+          "failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        }
+      ],
+      "off_failures": [
+        {
+          "id": "reminder-title-period",
+          "run": 1,
+          "failures": {
+            "title": {
+              "expected": "買晚上要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "participants": {
+              "expected": [
+                "user:7"
+              ],
+              "actual": []
+            },
+            "intent": {
+              "expected": "create",
+              "actual": "not_reminder"
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "ignore"
+            }
+          }
+        }
+      ],
+      "gains_off_fail_raw_and_local_pass": [],
+      "raw_errors_repaired": [
+        "content-alternative-in-subject-round-1",
+        "content-exact-current-clock-rolls-round-2",
+        "content-morning-twelve-round-1",
+        "content-recorded-calendar-noun-question",
+        "content-recorded-literal-title-rewritten-round-1",
+        "correction-deadline-definition-round-1",
+        "correction-known-title-existing-condition-round-1",
+        "correction-ordinary-7-round-1",
+        "reminder-beef-soup-report",
+        "reminder-suffix-in-title",
+        "reminder-title-period",
+        "time-next-next-monday"
+      ],
+      "retry_events": [
+        {
+          "event": "retry",
+          "id": "time-relative-hours",
+          "run": 1,
+          "kind": "quota",
+          "cooldown": 60,
+          "retry_at": 1793804099.6532888,
+          "seconds": 0.203
+        },
+        {
+          "event": "retry",
+          "id": "reminder-beef-soup-report",
+          "run": 1,
+          "kind": "quota",
+          "cooldown": 60,
+          "retry_at": 1793804167.8201191,
+          "seconds": 0.192
+        },
+        {
+          "event": "retry",
+          "id": "reminder-missing-title",
+          "run": 1,
+          "kind": "quota",
+          "cooldown": 60,
+          "retry_at": 1793804233.924407,
+          "seconds": 0.237
+        },
+        {
+          "event": "retry",
+          "id": "content-morning-twelve-round-1",
+          "run": 3,
+          "kind": "quota",
+          "cooldown": 60,
+          "retry_at": 1793804305.173291,
+          "seconds": 0.285
+        },
+        {
+          "event": "retry",
+          "id": "content-recorded-literal-title-rewritten-round-1",
+          "run": 3,
+          "kind": "quota",
+          "cooldown": 60,
+          "retry_at": 1793804394.911183,
+          "seconds": 0.203
+        },
+        {
+          "event": "retry",
+          "id": "correction-deadline-definition-round-1",
+          "run": 3,
+          "kind": "quota",
+          "cooldown": 60,
+          "retry_at": 1793804477.990295,
+          "seconds": 0.212
+        }
+      ],
+      "fatal_events": [],
+      "seconds": {
+        "mean": 1.578,
+        "min": 0.547,
+        "max": 9.536
+      }
+    },
+    {
+      "suite": "exploration",
+      "cases_file": "groq_exploration_2026-10-31.jsonl",
+      "cases_sha256": "7cfc8ba038fe77bd42046ffc005ead263b84fd14ac2d4d004f1fc86ff4b5be9b",
+      "results_file": "groq_exploration_results_2026-11-04.jsonl",
+      "supplemental_results_file": "groq_targeted_drift_results_2026-11-04.jsonl",
+      "supplemental_run_mapping": "supplemental run 1/2 = aggregate run 2/3; original run 1 retained",
+      "cases": 20,
+      "trials": 34,
+      "repeated_case_ids": [
+        "quarter-to-three",
+        "one-zhongtou",
+        "one-quarter",
+        "this-sunday",
+        "move-one-hour",
+        "replace-title",
+        "replace-draft"
+      ],
+      "scores": {
+        "off": {
+          "passed_trials": 12,
+          "passed_all_repeats_cases": 8,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "missing-time-control",
+            "monday-control",
+            "replace-draft",
+            "thanks-ignore",
+            "this-sunday",
+            "weather-ignore"
+          ]
+        },
+        "raw": {
+          "passed_trials": 32,
+          "passed_all_repeats_cases": 18,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "daily-colloquial",
+            "dusk",
+            "missing-time-control",
+            "monday-control",
+            "move-one-hour",
+            "one-quarter",
+            "one-zhongtou",
+            "quarter-to-three",
+            "replace-draft",
+            "replace-title",
+            "ten-past-eight",
+            "thanks-ignore",
+            "three-quarters",
+            "tomorrow-de-evening",
+            "two-half-zhongtou",
+            "weather-ignore"
+          ]
+        },
+        "local": {
+          "passed_trials": 34,
+          "passed_all_repeats_cases": 20,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "daily-colloquial",
+            "dusk",
+            "missing-time-control",
+            "monday-control",
+            "move-one-hour",
+            "one-quarter",
+            "one-zhongtou",
+            "quarter-to-three",
+            "replace-draft",
+            "replace-title",
+            "ten-past-eight",
+            "thanks-ignore",
+            "this-sunday",
+            "three-quarters",
+            "tomorrow-de-evening",
+            "two-half-zhongtou",
+            "two-reminders",
+            "weather-ignore"
+          ]
+        }
+      },
+      "previous_recorded_scores": {
+        "raw": {
+          "passed_trials": 28,
+          "passed_all_repeats_cases": 18,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "daily-colloquial",
+            "dusk",
+            "missing-time-control",
+            "monday-control",
+            "move-one-hour",
+            "one-quarter",
+            "one-zhongtou",
+            "quarter-to-three",
+            "replace-title",
+            "ten-past-eight",
+            "thanks-ignore",
+            "three-quarters",
+            "tomorrow-de-evening",
+            "two-half-zhongtou",
+            "two-reminders",
+            "weather-ignore"
+          ]
+        },
+        "local": {
+          "passed_trials": 22,
+          "passed_all_repeats_cases": 14,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "daily-colloquial",
+            "missing-time-control",
+            "monday-control",
+            "move-one-hour",
+            "one-quarter",
+            "one-zhongtou",
+            "replace-title",
+            "thanks-ignore",
+            "three-quarters",
+            "two-half-zhongtou",
+            "two-reminders",
+            "weather-ignore"
+          ]
+        }
+      },
+      "previous_raw_replayed_current_code_scores": {
+        "off": {
+          "passed_trials": 8,
+          "passed_all_repeats_cases": 8,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "missing-time-control",
+            "monday-control",
+            "replace-draft",
+            "thanks-ignore",
+            "this-sunday",
+            "weather-ignore"
+          ]
+        },
+        "raw": {
+          "passed_trials": 28,
+          "passed_all_repeats_cases": 18,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "daily-colloquial",
+            "dusk",
+            "missing-time-control",
+            "monday-control",
+            "move-one-hour",
+            "one-quarter",
+            "one-zhongtou",
+            "quarter-to-three",
+            "replace-title",
+            "ten-past-eight",
+            "thanks-ignore",
+            "three-quarters",
+            "tomorrow-de-evening",
+            "two-half-zhongtou",
+            "two-reminders",
+            "weather-ignore"
+          ]
+        },
+        "local": {
+          "passed_trials": 30,
+          "passed_all_repeats_cases": 20,
+          "passed_case_ids": [
+            "chinese-date-control",
+            "control-half-hour",
+            "daily-colloquial",
+            "dusk",
+            "missing-time-control",
+            "monday-control",
+            "move-one-hour",
+            "one-quarter",
+            "one-zhongtou",
+            "quarter-to-three",
+            "replace-draft",
+            "replace-title",
+            "ten-past-eight",
+            "thanks-ignore",
+            "this-sunday",
+            "three-quarters",
+            "tomorrow-de-evening",
+            "two-half-zhongtou",
+            "two-reminders",
+            "weather-ignore"
+          ]
+        }
+      },
+      "regressions_vs_previous_raw_replay": [],
+      "raw_regressions_vs_previous_raw": [
+        {
+          "id": "two-reminders",
+          "run": 1,
+          "failures": {
+            "intent": {
+              "expected": "create",
+              "actual": "not_reminder"
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "ignore"
+            }
+          }
+        }
+      ],
+      "model_correct_but_local_broke": [],
+      "all_local_failures": [],
+      "off_failures": [
+        {
+          "id": "quarter-to-three",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 2,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 3,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "ten-past-eight",
+          "run": 1,
+          "failures": {
+            "title": {
+              "expected": "把衣服拿去洗",
+              "actual": "過十分鐘把衣服拿去洗"
+            },
+            "at": {
+              "expected": "2026-11-01T20:10:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          }
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 2,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 3,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "one-quarter",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "one-quarter",
+          "run": 2,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "one-quarter",
+          "run": 3,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "three-quarters",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把衣服晾起來",
+              "actual": "三刻鐘後把衣服晾起來"
+            },
+            "at": {
+              "expected": "2026-10-31T12:45:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "two-half-zhongtou",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去接小孩",
+              "actual": "兩個半鐘頭後去接小孩"
+            },
+            "at": {
+              "expected": "2026-10-31T14:30:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "dusk",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "倒垃圾",
+              "actual": "傍晚六點半倒垃圾"
+            },
+            "at": {
+              "expected": "2026-11-01T18:30:00+08:00",
+              "actual": "2026-11-01T12:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "tomorrow-de-evening",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿包裹",
+              "actual": "的晚上八點去拿包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T20:00:00+08:00",
+              "actual": "2026-11-01T12:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "daily-colloquial",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "吃藥",
+              "actual": "以後 到了 就吃藥"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            }
+          }
+        },
+        {
+          "id": "move-one-hour",
+          "run": 1,
+          "failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          }
+        },
+        {
+          "id": "move-one-hour",
+          "run": 2,
+          "failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          }
+        },
+        {
+          "id": "move-one-hour",
+          "run": 3,
+          "failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          }
+        },
+        {
+          "id": "replace-title",
+          "run": 1,
+          "failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          }
+        },
+        {
+          "id": "replace-title",
+          "run": 2,
+          "failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          }
+        },
+        {
+          "id": "replace-title",
+          "run": 3,
+          "failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          }
+        },
+        {
+          "id": "two-reminders",
+          "run": 1,
+          "failures": {
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            }
+          }
+        }
+      ],
+      "gains_off_fail_raw_and_local_pass": [
+        "daily-colloquial",
+        "dusk",
+        "move-one-hour",
+        "one-quarter",
+        "one-zhongtou",
+        "quarter-to-three",
+        "replace-title",
+        "ten-past-eight",
+        "three-quarters",
+        "tomorrow-de-evening",
+        "two-half-zhongtou"
+      ],
+      "raw_errors_repaired": [
+        "this-sunday",
+        "two-reminders"
+      ],
+      "retry_events": [
+        {
+          "event": "retry",
+          "id": "chinese-date-control",
+          "run": 1,
+          "kind": "quota",
+          "cooldown": 60,
+          "retry_at": 1793804569.920554,
+          "seconds": 0.225
+        }
+      ],
+      "fatal_events": [],
+      "seconds": {
+        "mean": 1.094,
+        "min": 0.55,
+        "max": 2.917
+      }
+    }
+  ],
+  "same_new_raw_parent_vs_current": {
+    "parent": "5ca733f59c51e443a6464ae84c4cea0dfb516b16",
+    "current": "1aa825039566d58529f684f407ce5eef7cbe6c6d",
+    "note": "Identical new raw JSON replayed on each code version; isolates local processing changes, not prompt effects.",
+    "before_pass": 83,
+    "after_pass": 84,
+    "regressions": [],
+    "improvements": [
+      {
+        "suite": "groq_targeted_drift_results_2026-11-04.jsonl",
+        "id": "this-sunday",
+        "run": 1,
+        "before_failures": {
+          "at": {
+            "expected": "2026-11-01T19:00:00+08:00",
+            "actual": "2026-11-06T19:00:00+08:00"
+          }
+        },
+        "after_failures": {}
+      }
+    ],
+    "remaining_failures": [
+      {
+        "suite": "groq_live_results_2026-11-04.jsonl",
+        "id": "content-recorded-calendar-noun-question",
+        "run": 1,
+        "before_failures": {
+          "complete": {
+            "expected": true,
+            "actual": false
+          },
+          "missing": {
+            "expected": [],
+            "actual": [
+              "clarification"
+            ]
+          },
+          "route": {
+            "expected": "confirmation",
+            "actual": "prompt"
+          }
+        },
+        "after_failures": {
+          "complete": {
+            "expected": true,
+            "actual": false
+          },
+          "missing": {
+            "expected": [],
+            "actual": [
+              "clarification"
+            ]
+          },
+          "route": {
+            "expected": "confirmation",
+            "actual": "prompt"
+          }
+        }
+      },
+      {
+        "suite": "groq_live_results_2026-11-04.jsonl",
+        "id": "correction-ordinary-7-round-1",
+        "run": 1,
+        "before_failures": {
+          "complete": {
+            "expected": true,
+            "actual": false
+          },
+          "missing": {
+            "expected": [],
+            "actual": [
+              "clarification"
+            ]
+          },
+          "route": {
+            "expected": "confirmation",
+            "actual": "prompt"
+          }
+        },
+        "after_failures": {
+          "complete": {
+            "expected": true,
+            "actual": false
+          },
+          "missing": {
+            "expected": [],
+            "actual": [
+              "clarification"
+            ]
+          },
+          "route": {
+            "expected": "confirmation",
+            "actual": "prompt"
+          }
+        }
+      }
+    ]
+  }
+}

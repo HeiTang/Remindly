@@ -14,6 +14,45 @@ from scripts import groq_live_eval as evaluation
 
 
 class GroqLiveEvaluationTest(unittest.TestCase):
+    def test_new_live_recordings_replay_without_unnecessary_questions(self):
+        for case_file, recording_file, count in (
+            ("groq_live_cases.jsonl", "groq_live_results_2026-11-04.jsonl", 52),
+            (
+                "groq_exploration_2026-10-31.jsonl",
+                "groq_exploration_results_2026-11-04.jsonl",
+                30,
+            ),
+            (
+                "groq_exploration_2026-10-31.jsonl",
+                "groq_targeted_drift_results_2026-11-04.jsonl",
+                4,
+            ),
+        ):
+            cases = {
+                case["id"]: case
+                for case in map(
+                    json.loads, evaluation.CASES.with_name(case_file).read_text().splitlines()
+                )
+            }
+            rows = [
+                row
+                for row in map(
+                    json.loads,
+                    evaluation.CASES.with_name(recording_file).read_text().splitlines(),
+                )
+                if row["event"] == "result"
+            ]
+            self.assertEqual(count, len(rows))
+            for row in rows:
+                with self.subTest(recording=recording_file, case=row["id"], run=row["run"]):
+                    self.assertEqual(cases[row["id"]]["expected"], row["expected"])
+                    generator = evaluation.RecordingGenerator("fake-key")
+                    with patch.object(generator.provider, "generate", return_value=row["raw"]):
+                        result = evaluation.evaluate(cases[row["id"]], generator)
+                    self.assertEqual({}, result["local_failures"])
+                    self.assertEqual(row["raw"], result["raw"])
+                    self.assertEqual(row["raw_failures"], result["raw_failures"])
+
     def test_exploration_inputs_and_expectations_remain_frozen(self):
         fixture = evaluation.CASES.with_name("groq_exploration_2026-10-31.jsonl")
         self.assertEqual(
