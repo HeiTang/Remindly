@@ -188,6 +188,35 @@ class GroqLiveEvaluationTest(unittest.TestCase):
         self.assertEqual(target_ids, covered)
         self.assertEqual(28, checked)
 
+    def test_recorded_weekday_and_new_reminder_intent_are_constrained(self):
+        cases = {
+            case["id"]: case
+            for case in map(
+                json.loads,
+                evaluation.CASES.with_name("groq_exploration_2026-10-31.jsonl")
+                .read_text()
+                .splitlines(),
+            )
+        }
+        covered = set()
+        for row in map(
+            json.loads,
+            evaluation.CASES.with_name("groq_exploration_results_2026-10-31.jsonl")
+            .read_text()
+            .splitlines(),
+        ):
+            if row["event"] != "result" or row["id"] not in {"this-sunday", "replace-draft"}:
+                continue
+            with self.subTest(case=row["id"]):
+                generator = evaluation.RecordingGenerator("fake-key")
+                with patch.object(generator.provider, "generate", return_value=row["raw"]):
+                    result = evaluation.evaluate(cases[row["id"]], generator)
+                self.assertEqual({}, result["local_failures"])
+                self.assertEqual(row["raw"], result["raw"])
+                self.assertTrue(result["raw_failures"])
+                covered.add(row["id"])
+        self.assertEqual({"this-sunday", "replace-draft"}, covered)
+
     def test_recorded_live_responses_satisfy_local_regression_expectations(self):
         cases = {
             case["id"]: case for case in map(json.loads, evaluation.CASES.read_text().splitlines())

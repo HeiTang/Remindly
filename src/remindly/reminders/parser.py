@@ -27,7 +27,12 @@ from remindly.reminders.recurrence import (
     is_valid_month_day,
     next_fire,
 )
-from remindly.reminders.text import normalize_spaces
+from remindly.reminders.text import (
+    PROMPT_SPLIT_RE,
+    WEEKDAY_RE,
+    new_reminder_text,
+    normalize_spaces,
+)
 from remindly.telegram.models import TelegramMessage, TelegramUser
 
 WEEKDAY_MAP = {
@@ -110,12 +115,6 @@ PART_OF_DAY_RE = re.compile(
     r"[\d零〇一二兩两三四五六七八九十]+\s*[點点:：])))" + TIME_SUFFIX
 )
 
-WEEKDAY_RE = re.compile(
-    r"(?P<prefix>(?:下)+|這|本)?"
-    r"(?:週|周|禮拜|礼拜|星期)"
-    r"(?P<weekday>[一二三四五六日天])"
-)
-
 REL_DAY_RE = re.compile(r"(?P<kw>後天|明天|明日|今天|今日)")
 
 # 週期性提醒 marker：以 "每" 開頭。
@@ -159,9 +158,6 @@ _INTERVAL_UNIT_SECONDS: dict[str, int] = {
     "週": 7 * 24 * 3600,
     "周": 7 * 24 * 3600,
 }
-
-# 切割 '提醒我/我們/大家' 的錨點；用於「以動詞切段」策略
-PROMPT_SPLIT_RE = re.compile(r"提醒(?:我們|我|大家)?")
 
 # 內容區前綴清理：連接詞 / 主詞代名詞
 LEADING_CONNECTOR_RE = re.compile(r"^\s*(?:和|跟|與|我們|我|大家)\s*")
@@ -233,7 +229,7 @@ class ReminderParser:
         if reference.tzinfo is None:
             reference = reference.replace(tzinfo=zone)
 
-        cleaned = normalize_spaces(text)
+        cleaned = normalize_spaces(new_reminder_text(text) or text)
         participants = self.extract_participants(cleaned, message)
 
         # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。

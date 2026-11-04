@@ -496,6 +496,63 @@ class GeminiClientTest(unittest.TestCase):
 
 
 class SemanticTimeGuardTest(unittest.TestCase):
+    def test_weekday_aliases_share_calendar_constraints_and_week_boundaries(self):
+        now = datetime(2026, 10, 31, 12, tzinfo=NOW.tzinfo)
+        for weekday, day, past in (
+            ("這個星期天", "2026-11-01", False),
+            ("這個禮拜日", "2026-11-01", False),
+            ("這週日", "2026-11-01", False),
+            ("本星期天", "2026-11-01", False),
+            ("下個星期一", "2026-11-02", False),
+            ("下下個禮拜天", "2026-11-15", False),
+            ("這個星期一", "2026-10-26", True),
+        ):
+            with self.subTest(weekday=weekday):
+                text = f"提醒我{weekday}晚上七點付停車費"
+                result = self.parse(
+                    parsed(title="付停車費", date="2026-11-06", time="19:00"), text, now=now
+                )
+                native = ReminderParser("Asia/Taipei").parse_time_only(weekday + "晚上七點", now)
+                self.assertEqual(day, result.remind_at.date().isoformat())
+                self.assertEqual(native.remind_at, result.remind_at)
+                self.assertEqual(past, "time" in result.missing_fields)
+                self.assertEqual("付停車費", result.title)
+        sunday = datetime(2026, 11, 1, 20, tzinfo=NOW.tzinfo)
+        result = self.parse(
+            parsed(date="2026-11-08", time="19:00"), "提醒我這個星期天晚上七點買湯", now=sunday
+        )
+        self.assertEqual("2026-11-01", result.remind_at.date().isoformat())
+        self.assertIn("time", result.missing_fields)
+
+    def test_explicit_new_request_does_not_inherit_old_draft_state(self):
+        context = self.draft(
+            source_text="每天九點提醒我只在工作日吃藥",
+            remind_at=NOW.replace(day=23, hour=9),
+            missing_fields=["clarification"],
+            parse_result={"question": "是否只限週一至週五？"},
+            recurrence=RecurrenceRule(RecurrencePeriod.DAILY, hour=9, minute=0),
+        )
+        for prefix in ("另外", "另", "再", "新增", "另開一筆", "請另外建立一個"):
+            for intent in ("update", "not_reminder"):
+                text = f"前一件先擱著；{prefix}提醒我後天早上九點繳水費"
+                with self.subTest(prefix=prefix, intent=intent):
+                    result = self.parse(
+                        parsed(intent=intent, title="繳水費"), text, context=context
+                    )
+                    self.assertEqual("create", result.raw["intent"])
+                    self.assertEqual("2026-10-24T09:00:00+08:00", result.remind_at.isoformat())
+                    self.assertEqual("繳水費", result.title)
+                    self.assertIsNone(result.recurrence)
+                    self.assertEqual((), result.missing_fields)
+
+    def test_new_intent_constraint_cannot_repair_invalid_provider_schema(self):
+        with self.assertRaises(AiUnavailable):
+            self.parse(
+                {**parsed(), "unexpected": True},
+                "另外提醒我後天早上九點繳水費",
+                context=self.draft(),
+            )
+
     def test_unparsed_time_components_preserve_complete_model_results(self):
         now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
         for source, day, clock, title in (

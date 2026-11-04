@@ -33,6 +33,29 @@ from remindly.telegram.models import (
 
 
 class AiFlowTest(unittest.TestCase):
+    def test_explicit_additional_request_is_created_even_when_model_says_update(self):
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(title="拿包裹"),
+                parsed(intent="update", title="繳水費", date="2026-10-24", time="09:00"),
+            ]
+        )
+        self.send("提醒我明天下午三點拿包裹")
+        old = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        source = "那件事取消，另外提醒我後天早上九點繳水費"
+        self.send(source)
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual("create", draft.parse_result["intent"])
+        self.assertEqual(source, draft.source_text)
+        self.assertEqual("繳水費", draft.title)
+        self.assertIsNone(self.gemini.calls[-1][1]["context"])
+        self.assertEqual("提醒我後天早上九點繳水費", self.gemini.calls[-1][1]["text"])
+        self.assertIsNone(self.service.confirm(old.id, USER.id, NOW))
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+        self.confirm(draft.id)
+        self.assertEqual("繳水費", self.repo.list_pending(CHAT.id)[0].title)
+
     def test_pending_title_time_correction_then_literal_answer(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.extend(
