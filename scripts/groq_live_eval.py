@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import tempfile
 import time
 from dataclasses import asdict
 from datetime import datetime
@@ -13,8 +14,20 @@ from zoneinfo import ZoneInfo
 from remindly.ai.contracts import AiUnavailable, GeneratedResponse, ProviderError
 from remindly.ai.groq import GroqProvider
 from remindly.ai.parser import SCHEMA, SYSTEM, SemanticParser, validate_result
+from remindly.bot.router import BotRouter
 from remindly.reminders.models import MentionKind, ParseResult, Participant, ReminderDraft
+from remindly.reminders.parser import ReminderParser
+from remindly.reminders.renderer import ReminderRenderer
+from remindly.reminders.service import ReminderService
 from remindly.settings import load_dotenv
+from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
+from remindly.storage.sqlite import ReminderRepository
+from remindly.telegram.models import TelegramChat, TelegramMessage, TelegramUser
+
+if __package__:
+    from .smoke_flow import FakeTelegramClient
+else:
+    from smoke_flow import FakeTelegramClient
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "tests/fixtures/groq_live_cases.jsonl"
@@ -23,17 +36,28 @@ ALICE = Participant("Alice", MentionKind.TEXT_MENTION, user_id=8, username="alic
 
 
 def summarize(result: ParseResult) -> dict:
+    intent = result.raw.get("intent", "create")
+    complete = bool(
+        result.title and result.remind_at and not result.missing_fields and intent != "not_reminder"
+    )
     return {
         "title": result.title,
         "at": result.remind_at.isoformat() if result.remind_at else None,
         "missing": sorted(result.missing_fields),
-        "complete": bool(result.title and result.remind_at and not result.missing_fields),
+        "complete": complete,
+        "route": "ignore"
+        if intent == "not_reminder"
+        else "reject"
+        if result.recurrence_error
+        else "confirmation"
+        if complete
+        else "prompt",
         "participants": sorted(p.stable_key for p in result.participants),
         "recurrence": json.loads(json.dumps(asdict(result.recurrence)))
         if result.recurrence
         else None,
         "question": result.raw.get("question"),
-        "intent": result.raw.get("intent"),
+        "intent": intent,
     }
 
 
@@ -87,28 +111,91 @@ class RecordingGenerator:
         return GeneratedResponse(self.raw, self.provider.id, self.provider.model)
 
 
+def run_pipeline(case: dict, generator: RecordingGenerator | None = None) -> dict:
+    now = datetime.fromisoformat(case["now"]).astimezone(ZoneInfo(case["timezone"]))
+    with tempfile.TemporaryDirectory() as directory:
+        repo = ReminderRepository(Path(directory) / "eval.db")
+        repo.migrate()
+        repo.set_user_timezone(7, case["timezone"])
+        drafts = SqliteDraftStore(10, repo)
+        service = ReminderService(
+            repo,
+            ReminderParser(case["timezone"]),
+            drafts,
+            SqliteEditSessionStore(10, repo),
+            case["timezone"],
+            SemanticParser(generator) if generator else None,
+        )
+        context = context_for(case)
+        if context:
+            context.parse_result["grain"] = "ai" if generator else "minute"
+            drafts.save(context, now)
+        client = FakeTelegramClient()
+        router = BotRouter(
+            client,
+            service,
+            ReminderRenderer(),
+            bot_username="ReminderBot",
+            default_timezone=case["timezone"],
+        )
+        message = TelegramMessage(
+            1, TelegramChat(100, "private"), TelegramUser(7, "Orange", "orange"), case["text"], ()
+        )
+        router._handle_message(message, now)
+        draft = service.peek_draft(100, 7, now)
+        if not client.messages:
+            actual = summarize(ParseResult(None, None, (), (), 0, {"intent": "not_reminder"}))
+        elif draft:
+            actual = summarize(
+                ParseResult(
+                    draft.title,
+                    draft.remind_at,
+                    tuple(draft.participants),
+                    tuple(draft.missing_fields),
+                    0,
+                    draft.parse_result,
+                    draft.recurrence,
+                )
+            )
+            actual["route"] = "confirmation" if draft.is_complete else "prompt"
+        else:
+            actual = {"route": "reject", "intent": "create", "complete": False}
+        if repo.list_pending(100):
+            raise AssertionError("Evaluation created a reminder without confirmation")
+    actual["participants"] = [
+        {"username:alice": "user:8"}.get(p, p) for p in actual.get("participants", [])
+    ]
+    return actual
+
+
 def evaluate(case: dict, generator: RecordingGenerator) -> dict:
     now = datetime.fromisoformat(case["now"]).astimezone(ZoneInfo(case["timezone"]))
-    participants = [PERSON, ALICE] if case.get("alice") else [PERSON]
+    # Use the same candidate identities as the actual service, including username mentions.
+    message = TelegramMessage(
+        1, TelegramChat(100, "private"), TelegramUser(7, "Orange", "orange"), case["text"], ()
+    )
+    participants = ReminderParser(case["timezone"]).extract_participants(
+        "提醒我 " + case["text"], message
+    )
     generator.raw = None
     local_error = None
     try:
-        local = summarize(
-            SemanticParser(generator).parse(
-                case["text"], 7, now, participants, context=context_for(case)
-            )
-        )
+        local = run_pipeline(case, generator)
     except AiUnavailable:
         local, local_error = None, "validation"
     raw_error = None
     try:
         raw = summarize(validate_result(generator.raw, now, participants))
+        raw["participants"] = [{"username:alice": "user:8"}.get(p, p) for p in raw["participants"]]
     except (ValueError, TypeError, KeyError, OverflowError):
         raw, raw_error = None, "validation"
+    off = run_pipeline(case)
     return {
         "raw": generator.raw,
+        "off_result": off,
         "raw_result": raw,
         "local_result": local,
+        "off_failures": differences(off, case["expected"]),
         "raw_failures": differences(raw, case["expected"]) if raw else {"error": raw_error},
         "local_failures": differences(local, case["expected"]) if local else {"error": local_error},
     }
@@ -124,6 +211,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Groq live regression evaluation; uses personal quota"
     )
+    parser.add_argument("--cases", type=Path, default=CASES)
     parser.add_argument(
         "--output", type=Path, required=True, help="Append-only JSONL; resumes this run"
     )
@@ -132,15 +220,19 @@ def main() -> None:
     key = os.environ.get("GROQ_API_KEY", "").strip()
     if not key:
         raise SystemExit("GROQ_API_KEY missing")
-    cases = [json.loads(line) for line in CASES.read_text().splitlines() if line.strip()]
-    digest = hashlib.sha256(CASES.read_bytes() + SYSTEM.encode() + json.dumps(SCHEMA).encode())
+    cases = [json.loads(line) for line in args.cases.read_text().splitlines() if line.strip()]
+    digest = hashlib.sha256(args.cases.read_bytes() + SYSTEM.encode() + json.dumps(SCHEMA).encode())
     for relative in (
         "ai/groq.py",
         "ai/parser.py",
         "reminders/parser.py",
         "reminders/recurrence.py",
+        "reminders/guards.py",
+        "reminders/service.py",
+        "bot/router.py",
     ):
         digest.update((ROOT / "src/remindly" / relative).read_bytes())
+    digest.update(Path(__file__).read_bytes())
     meta = {
         "event": "meta",
         "signature": digest.hexdigest(),

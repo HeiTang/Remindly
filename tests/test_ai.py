@@ -25,6 +25,7 @@ from remindly.ai.gemini import GeminiProvider, gemini_schema, quota_cooldown
 from remindly.ai.keys import ApiKeyStore
 from remindly.ai.parser import SCHEMA, SemanticParser, validate_result
 from remindly.reminders.models import MentionKind, Participant, RecurrencePeriod, RecurrenceRule
+from remindly.reminders.parser import ReminderParser
 from remindly.storage.sqlite import ReminderRepository
 
 NOW = datetime(2026, 10, 22, 12, tzinfo=ZoneInfo("Asia/Taipei"))
@@ -495,6 +496,63 @@ class GeminiClientTest(unittest.TestCase):
 
 
 class SemanticTimeGuardTest(unittest.TestCase):
+    def test_unparsed_time_components_preserve_complete_model_results(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source, day, clock, title in (
+            ("提醒我後天上午差十分九點繳電話費", "2026-11-06", "08:50", "繳電話費"),
+            ("提醒我11/9晚上九點過二十分鐘寄包裹", "2026-11-09", "21:20", "寄包裹"),
+            ("提醒我明天清晨五點買早餐", "2026-11-05", "05:00", "買早餐"),
+            ("提醒我明天的下午兩點看牙醫", "2026-11-05", "14:00", "看牙醫"),
+        ):
+            with self.subTest(source=source):
+                constraint = ReminderParser("Asia/Taipei").explicit_time(source, now)
+                self.assertFalse(constraint[0].is_complete)
+                result = self.parse(parsed(title=title, date=day, time=clock), source, now=now)
+                self.assertEqual(f"{day}T{clock}:00+08:00", result.remind_at.isoformat())
+                self.assertEqual(title, result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_partial_time_keeps_source_calendar_date_and_past_check(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source, day, missing in (
+            ("提醒我後天清晨五點買早餐", "2026-11-06", False),
+            ("提醒我2026/11/3清晨五點買早餐", "2026-11-03", True),
+        ):
+            with self.subTest(source=source):
+                result = self.parse(
+                    parsed(title="買早餐", date="2026-11-05", time="05:00"), source, now=now
+                )
+                self.assertEqual(day, result.remind_at.date().isoformat())
+                self.assertEqual(missing, "time" in result.missing_fields)
+
+    def test_partial_time_cannot_bypass_invalid_or_ambiguous_source(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source in (
+            "提醒我11/31清晨五點買早餐",
+            "提醒我明天下午三點或四點買早餐",
+        ):
+            with self.subTest(source=source):
+                result = self.parse(
+                    parsed(title="買早餐", date="2026-11-05", time="05:00"), source, now=now
+                )
+                self.assertIn("time", result.missing_fields)
+                self.assertIsNone(result.remind_at)
+
+    def test_time_words_in_subject_do_not_disable_verified_time_guard(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source, title in (
+            ("提醒我明天晚上八點過去拿包裹", "過去拿包裹"),
+            ("提醒我明天晚上八點準備十五分鐘的簡報", "準備十五分鐘的簡報"),
+            ("明天晚上八點提醒我晚上九點播出的節目", "晚上九點播出的節目"),
+        ):
+            with self.subTest(source=source):
+                result = self.parse(
+                    parsed(title="錯誤改寫", date="2026-11-06", time="09:00"), source, now=now
+                )
+                self.assertEqual("2026-11-05T20:00:00+08:00", result.remind_at.isoformat())
+                self.assertEqual(title, result.title)
+                self.assertEqual((), result.missing_fields)
+
     def test_date_then_clock_cannot_clear_pending_condition(self):
         context = self.draft(
             missing_fields=["time", "clarification"],

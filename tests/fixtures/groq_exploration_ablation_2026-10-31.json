@@ -1,0 +1,679 @@
+{
+  "method": "diagnostic synthetic schema from native result fed through unchanged AI pipeline; no API calls; not a shipped mode",
+  "summary": {
+    "native_plus_guards_pass": 8,
+    "attributable_gains": [
+      {
+        "id": "one-zhongtou",
+        "text": "提醒我再過一個鐘頭把烤箱關掉"
+      },
+      {
+        "id": "one-quarter",
+        "text": "提醒我一刻鐘後去拿外送"
+      },
+      {
+        "id": "three-quarters",
+        "text": "提醒我三刻鐘後把衣服晾起來"
+      },
+      {
+        "id": "two-half-zhongtou",
+        "text": "提醒我兩個半鐘頭後去接小孩"
+      },
+      {
+        "id": "daily-colloquial",
+        "text": "提醒我以後每天到了晚上八點就吃藥"
+      },
+      {
+        "id": "move-one-hour",
+        "text": "往後挪一個鐘頭，其他照舊"
+      },
+      {
+        "id": "replace-title",
+        "text": "時間不變，改成去郵局寄掛號"
+      }
+    ],
+    "native_success_ai_regressions": [
+      {
+        "id": "replace-draft",
+        "text": "那件事取消，另外提醒我後天早上九點繳水費",
+        "local_failures": {
+          "intent": {
+            "expected": "create",
+            "actual": "update"
+          }
+        }
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "control-half-hour",
+      "text": "提醒我明天早上十點半把護照帶去公司",
+      "native_plus_guards": {
+        "title": "把護照帶去公司",
+        "at": "2026-11-01T10:30:00+08:00",
+        "missing": [],
+        "complete": true,
+        "route": "confirmation",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {},
+      "attributable_gain": false
+    },
+    {
+      "id": "quarter-to-three",
+      "text": "提醒我明天下午差一刻三點去領包裹",
+      "native_plus_guards": {
+        "title": "差一刻三點去領包裹",
+        "at": "2026-11-01T00:00:00+08:00",
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": "那天幾點？",
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "去領包裹",
+          "actual": "差一刻三點去領包裹"
+        },
+        "at": {
+          "expected": "2026-11-01T14:45:00+08:00",
+          "actual": "2026-11-01T00:00:00+08:00"
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": false
+    },
+    {
+      "id": "ten-past-eight",
+      "text": "提醒我明天晚上八點過十分鐘把衣服拿去洗",
+      "native_plus_guards": {
+        "title": "過十分鐘把衣服拿去洗",
+        "at": "2026-11-01T20:00:00+08:00",
+        "missing": [],
+        "complete": true,
+        "route": "confirmation",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {
+        "title": {
+          "expected": "把衣服拿去洗",
+          "actual": "過十分鐘把衣服拿去洗"
+        },
+        "at": {
+          "expected": "2026-11-01T20:10:00+08:00",
+          "actual": "2026-11-01T20:00:00+08:00"
+        }
+      },
+      "attributable_gain": false
+    },
+    {
+      "id": "one-zhongtou",
+      "text": "提醒我再過一個鐘頭把烤箱關掉",
+      "native_plus_guards": {
+        "title": "再過一個鐘頭把烤箱關掉",
+        "at": null,
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "把烤箱關掉",
+          "actual": "再過一個鐘頭把烤箱關掉"
+        },
+        "at": {
+          "expected": "2026-10-31T13:00:00+08:00",
+          "actual": null
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": true
+    },
+    {
+      "id": "one-quarter",
+      "text": "提醒我一刻鐘後去拿外送",
+      "native_plus_guards": {
+        "title": "一刻鐘後去拿外送",
+        "at": null,
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "去拿外送",
+          "actual": "一刻鐘後去拿外送"
+        },
+        "at": {
+          "expected": "2026-10-31T12:15:00+08:00",
+          "actual": null
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": true
+    },
+    {
+      "id": "three-quarters",
+      "text": "提醒我三刻鐘後把衣服晾起來",
+      "native_plus_guards": {
+        "title": "三刻鐘後把衣服晾起來",
+        "at": null,
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "把衣服晾起來",
+          "actual": "三刻鐘後把衣服晾起來"
+        },
+        "at": {
+          "expected": "2026-10-31T12:45:00+08:00",
+          "actual": null
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": true
+    },
+    {
+      "id": "two-half-zhongtou",
+      "text": "提醒我兩個半鐘頭後去接小孩",
+      "native_plus_guards": {
+        "title": "兩個半鐘頭後去接小孩",
+        "at": null,
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "去接小孩",
+          "actual": "兩個半鐘頭後去接小孩"
+        },
+        "at": {
+          "expected": "2026-10-31T14:30:00+08:00",
+          "actual": null
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": true
+    },
+    {
+      "id": "dusk",
+      "text": "提醒我明天傍晚六點半倒垃圾",
+      "native_plus_guards": {
+        "title": "傍晚六點半倒垃圾",
+        "at": "2026-11-01T00:00:00+08:00",
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": "那天幾點？",
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "倒垃圾",
+          "actual": "傍晚六點半倒垃圾"
+        },
+        "at": {
+          "expected": "2026-11-01T18:30:00+08:00",
+          "actual": "2026-11-01T00:00:00+08:00"
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": false
+    },
+    {
+      "id": "tomorrow-de-evening",
+      "text": "提醒我明天的晚上八點去拿包裹",
+      "native_plus_guards": {
+        "title": "的晚上八點去拿包裹",
+        "at": "2026-11-01T00:00:00+08:00",
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": "那天幾點？",
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "去拿包裹",
+          "actual": "的晚上八點去拿包裹"
+        },
+        "at": {
+          "expected": "2026-11-01T20:00:00+08:00",
+          "actual": "2026-11-01T00:00:00+08:00"
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": false
+    },
+    {
+      "id": "monday-control",
+      "text": "提醒我禮拜一早上九點帶健保卡",
+      "native_plus_guards": {
+        "title": "帶健保卡",
+        "at": "2026-11-02T09:00:00+08:00",
+        "missing": [],
+        "complete": true,
+        "route": "confirmation",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {},
+      "attributable_gain": false
+    },
+    {
+      "id": "this-sunday",
+      "text": "提醒我這個星期天晚上七點付停車費",
+      "native_plus_guards": {
+        "title": "這個星期天晚上七點付停車費",
+        "at": null,
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "付停車費",
+          "actual": "這個星期天晚上七點付停車費"
+        },
+        "at": {
+          "expected": "2026-11-01T19:00:00+08:00",
+          "actual": null
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "time"
+          ]
+        }
+      },
+      "attributable_gain": false
+    },
+    {
+      "id": "daily-colloquial",
+      "text": "提醒我以後每天到了晚上八點就吃藥",
+      "native_plus_guards": {
+        "title": "以後 到了 就吃藥",
+        "at": "2026-10-31T20:00:00+08:00",
+        "missing": [
+          "clarification"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": {
+          "period": "daily",
+          "hour": 20,
+          "minute": 0,
+          "weekdays": [],
+          "month_days": [],
+          "year_month": null,
+          "year_day": null,
+          "interval_seconds": null
+        },
+        "question": "請確認額外提醒條件，並一次提供一筆明確提醒。",
+        "intent": "create"
+      },
+      "failures": {
+        "route": {
+          "expected": "confirmation",
+          "actual": "prompt"
+        },
+        "complete": {
+          "expected": true,
+          "actual": false
+        },
+        "title": {
+          "expected": "吃藥",
+          "actual": "以後 到了 就吃藥"
+        },
+        "missing": {
+          "expected": [],
+          "actual": [
+            "clarification"
+          ]
+        }
+      },
+      "attributable_gain": true
+    },
+    {
+      "id": "chinese-date-control",
+      "text": "提醒我十一月二號下午兩點打電話給牙醫",
+      "native_plus_guards": {
+        "title": "打電話給牙醫",
+        "at": "2026-11-02T14:00:00+08:00",
+        "missing": [],
+        "complete": true,
+        "route": "confirmation",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {},
+      "attributable_gain": false
+    },
+    {
+      "id": "move-one-hour",
+      "text": "往後挪一個鐘頭，其他照舊",
+      "native_plus_guards": {
+        "title": "拿包裹",
+        "at": "2026-11-01T20:00:00+08:00",
+        "missing": [],
+        "complete": true,
+        "route": "confirmation",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "update"
+      },
+      "failures": {
+        "at": {
+          "expected": "2026-11-01T21:00:00+08:00",
+          "actual": "2026-11-01T20:00:00+08:00"
+        }
+      },
+      "attributable_gain": true
+    },
+    {
+      "id": "replace-title",
+      "text": "時間不變，改成去郵局寄掛號",
+      "native_plus_guards": {
+        "title": "拿包裹",
+        "at": "2026-11-01T20:00:00+08:00",
+        "missing": [],
+        "complete": true,
+        "route": "confirmation",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "update"
+      },
+      "failures": {
+        "title": {
+          "expected": "去郵局寄掛號",
+          "actual": "拿包裹"
+        }
+      },
+      "attributable_gain": true
+    },
+    {
+      "id": "replace-draft",
+      "text": "那件事取消，另外提醒我後天早上九點繳水費",
+      "native_plus_guards": {
+        "title": "繳水費",
+        "at": "2026-11-02T09:00:00+08:00",
+        "missing": [],
+        "complete": true,
+        "route": "confirmation",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {},
+      "attributable_gain": false
+    },
+    {
+      "id": "missing-time-control",
+      "text": "提醒我買一杯半糖少冰的奶茶",
+      "native_plus_guards": {
+        "title": "買一杯半糖少冰的奶茶",
+        "at": null,
+        "missing": [
+          "time"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": null,
+        "intent": "create"
+      },
+      "failures": {},
+      "attributable_gain": false
+    },
+    {
+      "id": "thanks-ignore",
+      "text": "多謝啦，剛剛那個先不用改",
+      "native_plus_guards": {
+        "title": null,
+        "at": null,
+        "missing": [],
+        "complete": false,
+        "route": "ignore",
+        "participants": [],
+        "recurrence": null,
+        "question": null,
+        "intent": "not_reminder"
+      },
+      "failures": {},
+      "attributable_gain": false
+    },
+    {
+      "id": "weather-ignore",
+      "text": "今天真的熱到不行",
+      "native_plus_guards": {
+        "title": null,
+        "at": null,
+        "missing": [],
+        "complete": false,
+        "route": "ignore",
+        "participants": [],
+        "recurrence": null,
+        "question": null,
+        "intent": "not_reminder"
+      },
+      "failures": {},
+      "attributable_gain": false
+    },
+    {
+      "id": "two-reminders",
+      "text": "提醒我下週一早上九點買牛奶，再提醒我晚上七點倒垃圾",
+      "native_plus_guards": {
+        "title": "買牛奶，再提醒我晚上七點倒垃圾",
+        "at": "2026-11-02T09:00:00+08:00",
+        "missing": [
+          "clarification"
+        ],
+        "complete": false,
+        "route": "prompt",
+        "participants": [
+          "user:7"
+        ],
+        "recurrence": null,
+        "question": "請確認額外提醒條件，並一次提供一筆明確提醒。",
+        "intent": "create"
+      },
+      "failures": {},
+      "attributable_gain": false
+    }
+  ]
+}

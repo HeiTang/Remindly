@@ -665,15 +665,17 @@ class AiFlowTest(unittest.TestCase):
         self.assertIn("最近失敗：AI 請求逾時", self.telegram.messages[-1].text)
         self.assertNotIn(SECRET, self.telegram.messages[-1].text)
 
-    def test_ai_off_can_finish_preserved_ambiguous_draft_with_basic_parser(self) -> None:
+    def test_ai_off_cannot_clear_preserved_condition_by_only_supplying_time(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.append(parsed(question="要不要排除假日？"))
         self.send("工作日提醒我喝水")
         self.send("/ai off")
         self.send("明天下午三點")
         draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
-        self.assertTrue(draft.is_complete)
-        self.assertNotIn("question", draft.parse_result)
+        self.assertFalse(draft.is_complete)
+        self.assertIn("clarification", draft.missing_fields)
+        self.assertTrue(draft.parse_result["question"])
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
 
     def test_update_keeps_other_participants_and_original_timezone(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
