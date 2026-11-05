@@ -128,8 +128,18 @@ class ReminderRepository:
             return str(row["first_name"])
         return None
 
-    def create_reminder(self, reminder: Reminder, participants: list[Participant]) -> None:
+    def create_reminder(
+        self, reminder: Reminder, participants: list[Participant], *, draft_id: str | None = None
+    ) -> bool:
         with self.connect() as connection:
+            if draft_id is not None:
+                consumed = connection.execute(
+                    """delete from reminder_drafts
+                    where id = ? and chat_id = ? and creator_user_id = ?""",
+                    (draft_id, reminder.chat_id, reminder.creator_user_id),
+                )
+                if consumed.rowcount != 1:
+                    return False
             connection.execute(
                 """
                 insert into reminders (
@@ -176,6 +186,7 @@ class ReminderRepository:
                     for index, participant in enumerate(participants)
                 ],
             )
+        return True
 
     def list_pending(self, chat_id: int, limit: int = 10) -> list[Reminder]:
         with self.connect() as connection:

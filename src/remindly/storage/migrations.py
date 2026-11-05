@@ -136,6 +136,44 @@ MIGRATIONS = (
     Migration(version=3, name="prompt_message_id", sql=PROMPT_MESSAGE_ID_SQL),
     Migration(version=4, name="recurrence", sql=RECURRENCE_SQL),
     Migration(version=5, name="draft_recurrence", sql=DRAFT_RECURRENCE_SQL),
+    Migration(
+        version=6,
+        name="personal_ai_keys",
+        sql="""
+        create table ai_settings (
+            user_id integer primary key,
+            enabled integer not null default 1
+        );
+        create table ai_keys (
+            id text primary key,
+            user_id integer not null,
+            encrypted_key blob not null,
+            fingerprint text not null,
+            position integer not null,
+            status text not null default 'ready',
+            cooldown_until text,
+            unique(user_id, fingerprint)
+        );
+        create index idx_ai_keys_user on ai_keys(user_id, position);
+    """,
+    ),
+    Migration(
+        version=7,
+        name="ai_key_providers",
+        sql="""
+        alter table ai_keys add column provider text not null default 'gemini';
+    """,
+    ),
+    Migration(
+        version=8,
+        name="ai_edit_context",
+        sql="alter table edit_sessions add column ai_context text;",
+    ),
+    Migration(
+        version=9,
+        name="ai_key_last_error",
+        sql="alter table ai_keys add column last_error text;",
+    ),
 )
 
 
@@ -169,15 +207,28 @@ def load_applied_versions(connection: sqlite3.Connection) -> set[int]:
 
 
 def apply_migration(connection: sqlite3.Connection, migration: Migration) -> None:
-    """執行單一 migration，成功後寫入 ledger。"""
-    connection.executescript(migration.sql)
-    connection.execute(
-        """
-        insert into schema_migrations (version, name, applied_at)
-        values (?, ?, ?)
-        """,
-        (migration.version, migration.name, datetime.now().astimezone().isoformat()),
-    )
+    """Schema 與 ledger 同時成功或回滾，且不隱式提交呼叫端的交易。"""
+    connection.execute("savepoint schema_migration")
+    try:
+        statement = ""
+        # executescript 會先 commit，改用 SQLite 自己判斷 statement 邊界。
+        for char in migration.sql:
+            statement += char
+            if char == ";" and sqlite3.complete_statement(statement):
+                connection.execute(statement)
+                statement = ""
+        if statement.strip():
+            connection.execute(statement)
+        connection.execute(
+            """insert into schema_migrations (version, name, applied_at)
+            values (?, ?, ?)""",
+            (migration.version, migration.name, datetime.now().astimezone().isoformat()),
+        )
+    except Exception:
+        connection.execute("rollback to schema_migration")
+        raise
+    finally:
+        connection.execute("release schema_migration")
 
 
 def latest_schema_version() -> int:

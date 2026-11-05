@@ -6,6 +6,9 @@ ENV PYTHONPATH=/app/src
 
 WORKDIR /app
 
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+
 RUN addgroup --system app \
     && adduser --system --ingroup app app \
     && mkdir -p /app/data \

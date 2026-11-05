@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -17,6 +17,7 @@ class Settings:
     draft_ttl_minutes: int
     confirming_ttl_minutes: int
     log_level: str
+    ai_encryption_key: str = field(default="", repr=False)
 
     @property
     def default_zone(self) -> ZoneInfo:
@@ -55,4 +56,5 @@ def load_settings() -> Settings:
         draft_ttl_minutes=int(os.getenv("DRAFT_TTL_MINUTES", "10")),
         confirming_ttl_minutes=int(os.getenv("CONFIRMING_TTL_MINUTES", "15")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
+        ai_encryption_key=os.getenv("AI_ENCRYPTION_KEY", "").strip(),
     )

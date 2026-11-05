@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from remindly.reminders.models import ReminderDraft
+from remindly.reminders.models import Reminder, ReminderDraft
+from remindly.reminders.repositories import ReminderRepository
 
 
 class ReminderDraftStore(Protocol):
     def save(self, draft: ReminderDraft, now: datetime) -> ReminderDraft: ...
+
+    def confirm(self, draft: ReminderDraft, reminder: Reminder) -> bool: ...
 
     def get_by_id(self, draft_id: str, now: datetime) -> ReminderDraft | None: ...
 
@@ -36,20 +39,17 @@ class EditSession:
     field: str
     expires_at: datetime | None = None
     prompt_message_id: int | None = None
+    ai_context: dict[str, object] | None = None
 
 
 class ReminderEditSessionStore(Protocol):
     def save(self, session: EditSession, now: datetime) -> EditSession: ...
 
-    def get_for_context(
-        self, chat_id: int, user_id: int, now: datetime
-    ) -> EditSession | None: ...
+    def get_for_context(self, chat_id: int, user_id: int, now: datetime) -> EditSession | None: ...
 
     def delete(self, chat_id: int, user_id: int) -> None: ...
 
-    def set_prompt_message_id(
-        self, chat_id: int, user_id: int, message_id: int
-    ) -> None: ...
+    def set_prompt_message_id(self, chat_id: int, user_id: int, message_id: int) -> None: ...
 
     def list_expired(self, now: datetime) -> list[EditSession]: ...
 
@@ -58,9 +58,11 @@ class DraftStore:
     def __init__(
         self,
         ttl_minutes: int,
+        repository: ReminderRepository,
         *,
         confirming_ttl_minutes: int | None = None,
     ) -> None:
+        self._repository = repository
         self._asking_ttl = timedelta(minutes=ttl_minutes)
         self._confirming_ttl = timedelta(
             minutes=confirming_ttl_minutes if confirming_ttl_minutes is not None else ttl_minutes
@@ -76,6 +78,14 @@ class DraftStore:
         self._drafts_by_id[draft.id] = draft
         self._draft_ids_by_context[(draft.chat_id, draft.creator_user_id)] = draft.id
         return draft
+
+    def confirm(self, draft: ReminderDraft, reminder: Reminder) -> bool:
+        if draft.id not in self._drafts_by_id:
+            return False
+        if not self._repository.create_reminder(reminder, draft.participants):
+            return False
+        self.delete(draft.id)
+        return True
 
     def get_by_id(self, draft_id: str, now: datetime) -> ReminderDraft | None:
         draft = self._drafts_by_id.get(draft_id)
@@ -138,9 +148,7 @@ class EditSessionStore:
     def delete(self, chat_id: int, user_id: int) -> None:
         self._sessions_by_context.pop((chat_id, user_id), None)
 
-    def set_prompt_message_id(
-        self, chat_id: int, user_id: int, message_id: int
-    ) -> None:
+    def set_prompt_message_id(self, chat_id: int, user_id: int, message_id: int) -> None:
         session = self._sessions_by_context.get((chat_id, user_id))
         if session is not None:
             session.prompt_message_id = message_id

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,7 +37,7 @@ class ReminderServiceListGroupingTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -178,7 +179,7 @@ class ReminderServiceSnoozeTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -336,7 +337,7 @@ class ReminderServiceRecurringCreateTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -396,9 +397,7 @@ class ReminderServiceRecurringCreateTest(unittest.TestCase):
         )
         self.assertIsInstance(result, RecurrenceRejected)
         self.assertIn("太頻繁", result.error.reason)
-        self.assertIsNone(
-            self.service._draft_store.get_for_context(100, 7, self.now)
-        )
+        self.assertIsNone(self.service._draft_store.get_for_context(100, 7, self.now))
 
     def test_begin_create_returns_recurrence_rejected_for_invalid_marker(self) -> None:
         """/remind 之類的 entry point 不走 router preview_parse，begin_create 也要能
@@ -448,7 +447,7 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
         self.service = ReminderService(
             repository=self.repository,
             parser=ReminderParser("Asia/Taipei"),
-            draft_store=DraftStore(ttl_minutes=10),
+            draft_store=DraftStore(ttl_minutes=10, repository=self.repository),
             edit_store=EditSessionStore(ttl_minutes=10),
             default_timezone="Asia/Taipei",
         )
@@ -530,9 +529,7 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
 
     def test_skip_next_rejects_non_creator(self) -> None:
         self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
-        self.assertIsNone(
-            self.service.skip_next_occurrence(100, "R-P4A", 999, self.now)
-        )
+        self.assertIsNone(self.service.skip_next_occurrence(100, "R-P4A", 999, self.now))
 
     def test_cancel_series_marks_cancelled(self) -> None:
         self._persist_recurring(datetime(2026, 7, 18, 9, 0, tzinfo=self.zone))
@@ -556,9 +553,7 @@ class ReminderServiceRecurringActionsTest(unittest.TestCase):
                 ("firing", "rmd_p4a"),
             )
 
-        self.assertIsNone(
-            self.service.skip_next_occurrence(100, "R-P4A", 7, self.now)
-        )
+        self.assertIsNone(self.service.skip_next_occurrence(100, "R-P4A", 7, self.now))
         # 原本的 remind_at 沒被更改
         stored = self.repository.get_by_short_id(100, "R-P4A")
         self.assertEqual(
@@ -632,6 +627,136 @@ class ReminderServiceSweepExpiredPromptsTest(unittest.TestCase):
             missing_fields=["title", "time"],
             parse_result={},
         )
+
+    def test_create_follow_up_and_edit_share_datetime_formats(self) -> None:
+        from remindly.reminders.service import Confirmation, EditResult
+
+        now = datetime(2026, 10, 23, 12, 10, tzinfo=self.zone)
+        message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="提醒我買湯",
+            entities=(),
+        )
+        for text, values in (
+            ("11/17 23:55", (2026, 11, 17, 23, 55)),
+            ("2026/11/17 下午三點", (2026, 11, 17, 15, 0)),
+            ("十一月十七號晚上九點", (2026, 11, 17, 21, 0)),
+            ("明早九點", (2026, 10, 24, 9, 0)),
+            ("19 分", (2026, 10, 23, 12, 19)),
+            ("下週一下午三點", (2026, 10, 26, 15, 0)),
+        ):
+            with self.subTest(text=text):
+                expected = datetime(*values, tzinfo=self.zone)
+                direct = self.service.begin_create(f"提醒我{text}買湯", message, now)
+                self.assertIsInstance(direct, Confirmation)
+                self.assertEqual(expected, direct.draft.remind_at)
+                self.service.begin_create(message.text, message, now)
+                answer = replace(message, text=text)
+                follow_up = self.service.continue_draft(answer, now)
+                self.assertIsInstance(follow_up, Confirmation)
+                self.assertEqual(expected, follow_up.draft.remind_at)
+                created = self.service.confirm(follow_up.draft.id, 7, now).reminder
+                self.service.begin_edit(100, created.short_id, 7, "time", now)
+                edited = self.service.continue_edit(answer, now)
+                self.assertIsInstance(edited, EditResult)
+                self.assertEqual(expected, edited.details.reminder.remind_at)
+
+    def test_invalid_or_past_edit_preserves_original_time(self) -> None:
+        from remindly.reminders.service import EditPrompt
+
+        message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="提醒我明天九點買湯",
+            entities=(),
+        )
+        draft = self.service.begin_create(message.text, message, self.now).draft
+        original = self.service.confirm(draft.id, 7, self.now).reminder
+        self.service.begin_edit(100, original.short_id, 7, "time", self.now)
+        for text in ("11/31 23:55", "25:00", "2026-06-02 09:00"):
+            with self.subTest(text=text):
+                result = self.service.continue_edit(replace(message, text=text), self.now)
+                self.assertIsInstance(result, EditPrompt)
+                saved = self.repository.get_by_short_id(100, original.short_id)
+                self.assertEqual(original.remind_at, saved.remind_at)
+
+    def test_date_then_clock_follow_up_retains_date(self) -> None:
+        from remindly.reminders.service import Confirmation, DraftPrompt
+
+        message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="提醒我買湯",
+            entities=(),
+        )
+        self.service.begin_create(message.text, message, self.now)
+        prompt = self.service.continue_draft(replace(message, text="11/17"), self.now)
+        self.assertIsInstance(prompt, DraftPrompt)
+        self.assertEqual("那天幾點？", prompt.question)
+        result = self.service.continue_draft(replace(message, text="23:55"), self.now)
+        self.assertIsInstance(result, Confirmation)
+        self.assertEqual(datetime(2026, 11, 17, 23, 55, tzinfo=self.zone), result.draft.remind_at)
+
+    def test_user_timezone_survives_creation_follow_up_and_edit(self) -> None:
+        from remindly.reminders.service import Confirmation, EditResult
+
+        zone = ZoneInfo("America/New_York")
+        self.repository.set_user_timezone(7, zone.key)
+        now = datetime(2026, 10, 23, 23, 0, tzinfo=zone)
+        expected = datetime(2026, 10, 24, 9, 0, tzinfo=zone)
+        message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="提醒我買湯",
+            entities=(),
+        )
+        direct = self.service.begin_create("提醒我明早九點買湯", message, now)
+        self.assertEqual(expected, direct.draft.remind_at)
+        self.service.begin_create(message.text, message, now)
+        answer = replace(message, text="明早九點")
+        follow_up = self.service.continue_draft(answer, now)
+        self.assertIsInstance(follow_up, Confirmation)
+        self.assertEqual(expected, follow_up.draft.remind_at)
+        created = self.service.confirm(follow_up.draft.id, 7, now).reminder
+        self.service.begin_edit(100, created.short_id, 7, "time", now)
+        edited = self.service.continue_edit(answer, now)
+        self.assertIsInstance(edited, EditResult)
+        self.assertEqual(expected, edited.details.reminder.remind_at)
+
+    def test_follow_up_time_keeps_explicit_month_day(self) -> None:
+        from remindly.reminders.service import Confirmation, DraftPrompt
+
+        now = datetime(2026, 10, 23, 12, 0, tzinfo=self.zone)
+        message = TelegramMessage(
+            id=1,
+            chat=TelegramChat(id=100, type="private"),
+            from_user=TelegramUser(id=7, first_name="Orange", username="orange"),
+            text="提醒我要領蝦幣",
+            entities=(),
+        )
+        prompt = self.service.begin_create(message.text, message, now)
+        self.assertIsInstance(prompt, DraftPrompt)
+        self.assertEqual("什麼時候提醒？", prompt.question)
+
+        answer = TelegramMessage(
+            id=2,
+            chat=message.chat,
+            from_user=message.from_user,
+            text="11/17 23:55",
+            entities=(),
+        )
+        result = self.service.continue_draft(answer, now + timedelta(seconds=10))
+
+        self.assertIsInstance(result, Confirmation)
+        self.assertEqual("要領蝦幣", result.draft.title)
+        self.assertEqual(datetime(2026, 11, 17, 23, 55, tzinfo=self.zone), result.draft.remind_at)
+        saved = self.draft_store.get_by_id(result.draft.id, now + timedelta(seconds=11))
+        self.assertEqual(result.draft.remind_at, saved.remind_at)
 
     def test_sweep_returns_only_prompts_with_message_id(self) -> None:
         with_msg = self._draft("draft_with_msg", creator_user_id=7)

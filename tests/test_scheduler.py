@@ -4,6 +4,7 @@ import unittest
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from remindly.reminders.models import Participant, Reminder, ReminderStatus
@@ -136,7 +137,6 @@ class ReminderSchedulerTest(unittest.TestCase):
         ]
         self.assertEqual(["10 分鐘後", "1 小時後", "明天 09:00"], labels)
 
-
     def test_tick_marks_expired_prompts_with_empty_keyboard(self) -> None:
         now = datetime.now(ZoneInfo("Asia/Taipei"))
         reminder = Reminder(
@@ -223,9 +223,7 @@ class ReminderSchedulerTest(unittest.TestCase):
         # Mock `datetime.now` 讓 tick 時的 now 剛好是 2026-07-03 09:00 TP (= 01:00 UTC)
         import unittest.mock
 
-        with unittest.mock.patch(
-            "remindly.reminders.scheduler.datetime"
-        ) as mock_dt:
+        with unittest.mock.patch("remindly.reminders.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 7, 3, 1, 0, tzinfo=scheduler_zone)
             scheduler.tick()
 
@@ -364,7 +362,9 @@ class ReminderSchedulerTest(unittest.TestCase):
             interval_seconds=10,
         )
 
-        scheduler.tick()
+        with patch("remindly.reminders.scheduler.datetime") as clock:
+            clock.now.return_value = remind_at
+            scheduler.tick()
 
         self.assertEqual([], repository.marked_fired)  # 不標 FIRED
         self.assertEqual(1, len(repository.rescheduled))

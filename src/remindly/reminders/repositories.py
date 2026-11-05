@@ -68,7 +68,7 @@ class ReminderRepository(ReminderDeliveryRepository, Protocol):
         """取得建立者顯示名稱，用於 /list 依建立者分組。"""
         ...
 
-    def create_reminder(self, reminder: Reminder, participants: list[Participant]) -> None:
+    def create_reminder(self, reminder: Reminder, participants: list[Participant]) -> bool:
         """建立正式提醒與提醒對象。"""
         ...
 

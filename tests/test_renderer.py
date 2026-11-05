@@ -76,6 +76,34 @@ class RenderConfirmationTest(unittest.TestCase):
         self.assertIn("時間：", text)
         self.assertNotIn("重複：", text)
         self.assertNotIn("下次：", text)
+        self.assertTrue(text.endswith("\n\n<code>使用 內建規則 解析</code>"))
+
+    def test_ai_confirmation_labels_actual_parse_source(self) -> None:
+        draft = _draft(
+            parse_result={
+                "grain": "ai",
+                "provider": "gemini",
+                "model": "gemini-3.5-flash-lite",
+                "model_display_name": "Gemini 3.5 Flash-Lite",
+            }
+        )
+        text = self.renderer.render_confirmation(draft)
+        self.assertIn("<code>使用 Gemini 3.5 Flash-Lite 解析</code>", text)
+        self.assertNotIn("gemini-3.5-flash-lite", text)
+        self.assertNotIn("使用 內建規則 解析", text)
+        self.assertIn("時區：Asia/Taipei", text)
+
+    def test_ai_label_falls_back_and_escapes_metadata(self) -> None:
+        for metadata, expected in (
+            ({"provider": "other", "model": "internal-model-id"}, "AI"),
+            ({}, "AI"),
+            ({"model_display_name": "<model>&"}, "&lt;model&gt;&amp;"),
+        ):
+            with self.subTest(metadata=metadata):
+                text = self.renderer.render_confirmation(
+                    _draft(parse_result={"grain": "ai", **metadata})
+                )
+                self.assertIn(f"<code>使用 {expected} 解析</code>", text)
 
     def test_recurring_shows_repeat_and_next(self) -> None:
         draft = _draft(
@@ -103,11 +131,7 @@ class RenderCreatedTest(unittest.TestCase):
 
     def test_recurring_shows_repeat_and_next(self) -> None:
         text = self.renderer.render_created(
-            _reminder(
-                recurrence=RecurrenceRule(
-                    period=RecurrencePeriod.DAILY, hour=9, minute=0
-                )
-            )
+            _reminder(recurrence=RecurrenceRule(period=RecurrencePeriod.DAILY, hour=9, minute=0))
         )
         self.assertIn("重複：每天 09:00", text)
         self.assertIn("下次：", text)
@@ -248,11 +272,7 @@ class ReminderListKeyboardTest(unittest.TestCase):
             )
         ]
         markup = reminder_list_keyboard(groups, ReminderListFilter.ALL)
-        button_texts = [
-            button["text"]
-            for row in markup["inline_keyboard"]
-            for button in row
-        ]
+        button_texts = [button["text"] for row in markup["inline_keyboard"] for button in row]
 
         recurring_button = next(t for t in button_texts if "R-REC" in t)
         oneoff_button = next(t for t in button_texts if "R-ONE" in t)

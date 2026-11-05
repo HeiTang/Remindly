@@ -1,0 +1,5438 @@
+{
+  "base_commit": "1aa825039566d58529f684f407ce5eef7cbe6c6d",
+  "parser_sha256": "1c68259ee39a37b1cbaac8409cb5166acd0d72411aae66b97721713051d1dcde",
+  "mode": "offline replay only; immutable recorded raw JSON and current frozen expectations; legacy recordings may predate intent/route scoring",
+  "suites": [
+    {
+      "name": "old-regression",
+      "cases_file": "groq_live_cases.jsonl",
+      "cases_sha256": "ee3074ca336433993271d9abdac555d3242c10d0d13dde228dd0ceb2855d13e0",
+      "recording": "groq_live_results_2026-10-30.jsonl",
+      "recording_sha256": "98c2d39fd0982c7715e6006a66054bae95f81cc9314a256a5c323148bbcfac47",
+      "trials": 52,
+      "scores": {
+        "off": 51,
+        "raw": 26,
+        "local": 52
+      },
+      "model_correct_but_local_broke": [],
+      "results": [
+        {
+          "id": "time-slash-date",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-chinese-date",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-iso-date",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-tomorrow-alias",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-24T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-next-next-monday",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-11-02T09:00:00+08:00",
+              "actual": "2026-11-08T09:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-relative-hours",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-23T15:10:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-relative-half-hour",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-23T12:40:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-half-hour-clock",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-23T15:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-invalid-day",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "日期或時間無效，請重新輸入正確日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-invalid-hour",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": null,
+              "actual": "2026-10-23T00:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "日期或時間無效，請重新輸入正確日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-explicit-past",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-22T09:00:00+08:00",
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "這個時間已經過去，請重新輸入未來的日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-year-rollover",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2027-01-01T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-leap-day",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2028-02-29T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-new-york",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-24T09:00:00-04:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-beef-soup-report",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": "2026-10-23T17:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買兩份清燉牛肉湯",
+            "at": "2026-10-24T05:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-suffix-in-title",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": "2026-10-23T17:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買喝湯的時候要用的湯匙",
+            "at": "2026-10-24T05:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-title-period",
+          "run": 1,
+          "off_failures": {
+            "title": {
+              "expected": "買晚上要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "participants": {
+              "expected": [
+                "user:7"
+              ],
+              "actual": []
+            },
+            "intent": {
+              "expected": "create",
+              "actual": "not_reminder"
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "ignore"
+            }
+          },
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買晚上要用的湯匙",
+            "at": "2026-10-24T05:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-title-date-slash",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2027-07-30T21:00:00+08:00",
+              "actual": "2026-07-30T21:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "08/01要去家樂福",
+            "at": "2027-07-30T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-multiple-participants",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "倒垃圾",
+            "at": "2026-10-24T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7",
+              "user:8"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-missing-title",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": null,
+            "at": "2026-10-24T15:00:00+08:00",
+            "missing": [
+              "title"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-breakfast",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買早餐",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請問您想在什麼時間收到提醒？",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-daily",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-24T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "daily",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-weekly",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "weekly",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [
+                0,
+                2,
+                4
+              ],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-monthly",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-01T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "monthly",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [
+                1
+              ],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-yearly",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "yearly",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": 11,
+              "year_day": 17,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-interval",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "喝水",
+            "at": "2026-10-23T12:25:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "interval",
+              "hour": null,
+              "minute": null,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": 900
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-morning-twelve-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T00:00:00+08:00",
+              "actual": "2026-10-25T12:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T00:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-morning-twelve-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T00:00:00+08:00",
+              "actual": "2026-10-25T12:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T00:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-morning-twelve-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T00:00:00+08:00",
+              "actual": "2026-10-25T12:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T00:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-alternative-in-subject-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "買湯或11/18要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-11-17T23:55:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time",
+                "title"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯或11/18要用的湯匙",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-alternative-in-subject-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "買湯或11/18要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-11-17T23:55:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time",
+                "title"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯或11/18要用的湯匙",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-alternative-in-subject-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "買湯或11/18要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-11-17T23:55:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time",
+                "title"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯或11/18要用的湯匙",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-exact-current-clock-rolls-round-2",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T12:10:00+08:00",
+              "actual": "2026-10-24T12:10:00+08:00"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T12:10:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-chinese-date-extra-day-digit-round-2",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": null,
+              "actual": "2026-11-17T23:55:00+08:00"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "time"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "日期或時間無效，請重新輸入正確日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "工作日行事曆",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "工作日行事曆",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "工作日行事曆",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-literal-title-rewritten-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "之前的會議紀錄",
+              "actual": "會議紀錄"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "之前的會議紀錄",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-literal-title-rewritten-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "之前的會議紀錄",
+              "actual": "會議紀錄"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "之前的會議紀錄",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-literal-title-rewritten-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "之前的會議紀錄",
+              "actual": "會議紀錄"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "之前的會議紀錄",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "followup-recorded-garbled-context-title-rewrite",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "寄出年度報表",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "followup-recorded-garbled-context-title-rewrite",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "寄出年度報表",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "followup-recorded-garbled-context-title-rewrite",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "寄出年度報表",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "延後寄包裹",
+              "actual": "寄包裹"
+            },
+            "at": {
+              "expected": "2026-10-26T15:00:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "延後寄包裹",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "延後寄包裹",
+              "actual": "寄包裹"
+            },
+            "at": {
+              "expected": "2026-10-26T15:00:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "延後寄包裹",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "延後寄包裹",
+              "actual": "寄包裹"
+            },
+            "at": {
+              "expected": "2026-10-26T15:00:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "延後寄包裹",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-known-title-existing-condition-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "只在工作日喝水",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "是否只限週一至週五？",
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-known-title-existing-condition-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "只在工作日喝水",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "是否只限週一至週五？",
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-known-title-existing-condition-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "只在工作日喝水",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "是否只限週一至週五？",
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-deadline-definition-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "前交報表",
+              "actual": "交報表"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "前交報表",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請確認額外提醒條件，並一次提供一筆明確提醒。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-deadline-definition-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "前交報表",
+              "actual": "交報表"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "前交報表",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請確認額外提醒條件，並一次提供一筆明確提醒。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-deadline-definition-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "前交報表",
+              "actual": "交報表"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "前交報表",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請確認額外提醒條件，並一次提供一筆明確提醒。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        }
+      ]
+    },
+    {
+      "name": "old-exploration",
+      "cases_file": "groq_exploration_2026-10-31.jsonl",
+      "cases_sha256": "7cfc8ba038fe77bd42046ffc005ead263b84fd14ac2d4d004f1fc86ff4b5be9b",
+      "recording": "groq_exploration_results_2026-10-31.jsonl",
+      "recording_sha256": "b9623118b10cf8bd6e2f9870b7e6bbe7def6b6666d63475366265ae7c8a0f5ce",
+      "trials": 30,
+      "scores": {
+        "off": 8,
+        "raw": 28,
+        "local": 30
+      },
+      "model_correct_but_local_broke": [],
+      "results": [
+        {
+          "id": "control-half-hour",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把護照帶去公司",
+            "at": "2026-11-01T10:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去領包裹",
+            "at": "2026-11-01T14:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T00:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 2,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去領包裹",
+            "at": "2026-11-01T14:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T00:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 3,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去領包裹",
+            "at": "2026-11-01T14:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T00:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "ten-past-eight",
+          "run": 1,
+          "off_failures": {
+            "title": {
+              "expected": "把衣服拿去洗",
+              "actual": "過十分鐘把衣服拿去洗"
+            },
+            "at": {
+              "expected": "2026-11-01T20:10:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把衣服拿去洗",
+            "at": "2026-11-01T20:10:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "title": {
+              "expected": "把衣服拿去洗",
+              "actual": "過十分鐘把衣服拿去洗"
+            },
+            "at": {
+              "expected": "2026-11-01T20:10:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          }
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把烤箱關掉",
+            "at": "2026-10-31T13:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 2,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把烤箱關掉",
+            "at": "2026-10-31T13:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 3,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把烤箱關掉",
+            "at": "2026-10-31T13:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-quarter",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿外送",
+            "at": "2026-10-31T12:15:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-quarter",
+          "run": 2,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿外送",
+            "at": "2026-10-31T12:15:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-quarter",
+          "run": 3,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿外送",
+            "at": "2026-10-31T12:15:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "three-quarters",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把衣服晾起來",
+              "actual": "三刻鐘後把衣服晾起來"
+            },
+            "at": {
+              "expected": "2026-10-31T12:45:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把衣服晾起來",
+            "at": "2026-10-31T12:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "two-half-zhongtou",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去接小孩",
+              "actual": "兩個半鐘頭後去接小孩"
+            },
+            "at": {
+              "expected": "2026-10-31T14:30:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去接小孩",
+            "at": "2026-10-31T14:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "dusk",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "倒垃圾",
+              "actual": "傍晚六點半倒垃圾"
+            },
+            "at": {
+              "expected": "2026-11-01T18:30:00+08:00",
+              "actual": "2026-11-01T12:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "倒垃圾",
+            "at": "2026-11-01T18:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "倒垃圾",
+              "actual": "傍晚六點半倒垃圾"
+            },
+            "at": {
+              "expected": "2026-11-01T18:30:00+08:00",
+              "actual": "2026-11-01T00:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "tomorrow-de-evening",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿包裹",
+              "actual": "的晚上八點去拿包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T20:00:00+08:00",
+              "actual": "2026-11-01T12:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿包裹",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿包裹",
+              "actual": "的晚上八點去拿包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T20:00:00+08:00",
+              "actual": "2026-11-01T00:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          }
+        },
+        {
+          "id": "monday-control",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "帶健保卡",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "this-sunday",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-11-01T19:00:00+08:00",
+              "actual": "2026-11-06T19:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "付停車費",
+            "at": "2026-11-01T19:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "at": {
+              "expected": "2026-11-01T19:00:00+08:00",
+              "actual": "2026-11-06T19:00:00+08:00"
+            }
+          }
+        },
+        {
+          "id": "daily-colloquial",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "吃藥",
+              "actual": "以後 到了 就吃藥"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "吃藥",
+            "at": "2026-10-31T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "daily",
+              "hour": 20,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "chinese-date-control",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "打電話給牙醫",
+            "at": "2026-11-02T14:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "move-one-hour",
+          "run": 1,
+          "off_failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "拿包裹",
+            "at": "2026-11-01T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "move-one-hour",
+          "run": 2,
+          "off_failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "拿包裹",
+            "at": "2026-11-01T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "move-one-hour",
+          "run": 3,
+          "off_failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "拿包裹",
+            "at": "2026-11-01T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-title",
+          "run": 1,
+          "off_failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去郵局寄掛號",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-title",
+          "run": 2,
+          "off_failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去郵局寄掛號",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-title",
+          "run": 3,
+          "off_failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去郵局寄掛號",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-draft",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "intent": {
+              "expected": "create",
+              "actual": "update"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "繳水費",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "intent": {
+              "expected": "create",
+              "actual": "update"
+            }
+          }
+        },
+        {
+          "id": "missing-time-control",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買一杯半糖少冰的奶茶",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "thanks-ignore",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": null,
+            "at": null,
+            "missing": [],
+            "complete": false,
+            "route": "ignore",
+            "participants": [],
+            "recurrence": null,
+            "question": null,
+            "intent": "not_reminder"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "weather-ignore",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": null,
+            "at": null,
+            "missing": [],
+            "complete": false,
+            "route": "ignore",
+            "participants": [],
+            "recurrence": null,
+            "question": null,
+            "intent": "not_reminder"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "two-reminders",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買牛奶，再提醒我晚上七點倒垃圾",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "您一次只能建立一筆提醒，請先告訴我想先建立哪一筆？例如「下週一早上九點買牛奶」或「晚上七點倒垃圾」",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        }
+      ]
+    },
+    {
+      "name": "new-regression",
+      "cases_file": "groq_live_cases.jsonl",
+      "cases_sha256": "ee3074ca336433993271d9abdac555d3242c10d0d13dde228dd0ceb2855d13e0",
+      "recording": "groq_live_results_2026-11-04.jsonl",
+      "recording_sha256": "82ee5a5ecbf779ddcd5d6bbfdc9b6f20d5a1e814bd9ec5cc35f850488dc7194e",
+      "trials": 52,
+      "scores": {
+        "off": 51,
+        "raw": 28,
+        "local": 52
+      },
+      "model_correct_but_local_broke": [],
+      "results": [
+        {
+          "id": "time-slash-date",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-chinese-date",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-iso-date",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-tomorrow-alias",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-24T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-next-next-monday",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-11-02T09:00:00+08:00",
+              "actual": "2026-11-01T09:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-relative-hours",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-23T15:10:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-relative-half-hour",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-23T12:40:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-half-hour-clock",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-23T15:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-invalid-day",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "日期或時間無效，請重新輸入正確日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-invalid-hour",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "日期或時間無效，請重新輸入正確日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-explicit-past",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-22T09:00:00+08:00",
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "這個時間已經過去，請重新輸入未來的日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-year-rollover",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2027-01-01T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-leap-day",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2028-02-29T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "time-new-york",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-24T09:00:00-04:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-beef-soup-report",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": "2026-10-23T17:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買兩份清燉牛肉湯",
+            "at": "2026-10-24T05:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-suffix-in-title",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": "2026-10-23T17:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買喝湯的時候要用的湯匙",
+            "at": "2026-10-24T05:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-title-period",
+          "run": 1,
+          "off_failures": {
+            "title": {
+              "expected": "買晚上要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "participants": {
+              "expected": [
+                "user:7"
+              ],
+              "actual": []
+            },
+            "intent": {
+              "expected": "create",
+              "actual": "not_reminder"
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "ignore"
+            }
+          },
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-24T05:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買晚上要用的湯匙",
+            "at": "2026-10-24T05:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-title-date-slash",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "08/01要去家樂福",
+            "at": "2027-07-30T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-multiple-participants",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "倒垃圾",
+            "at": "2026-10-24T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7",
+              "user:8"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-missing-title",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": null,
+            "at": "2026-10-24T15:00:00+08:00",
+            "missing": [
+              "title"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-breakfast",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買早餐",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請提供提醒的具體時間或日期。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-daily",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-24T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "daily",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-weekly",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "weekly",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [
+                0,
+                2,
+                4
+              ],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-monthly",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-01T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "monthly",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [
+                1
+              ],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-yearly",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-11-17T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "yearly",
+              "hour": 9,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": 11,
+              "year_day": 17,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "reminder-interval",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "喝水",
+            "at": "2026-10-23T12:25:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "interval",
+              "hour": null,
+              "minute": null,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": 900
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-morning-twelve-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T00:00:00+08:00",
+              "actual": "2026-10-25T12:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T00:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-morning-twelve-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T00:00:00+08:00",
+              "actual": "2026-10-25T12:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T00:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-morning-twelve-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T00:00:00+08:00",
+              "actual": "2026-10-25T12:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T00:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-alternative-in-subject-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "買湯或11/18要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-11-17T23:55:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time",
+                "title"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯或11/18要用的湯匙",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-alternative-in-subject-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "買湯或11/18要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-11-17T23:55:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time",
+                "title"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯或11/18要用的湯匙",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-alternative-in-subject-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "買湯或11/18要用的湯匙",
+              "actual": null
+            },
+            "at": {
+              "expected": "2026-11-17T23:55:00+08:00",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time",
+                "title"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯或11/18要用的湯匙",
+            "at": "2026-11-17T23:55:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-exact-current-clock-rolls-round-2",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-10-25T12:10:00+08:00",
+              "actual": "2026-10-24T12:10:00+08:00"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": "2026-10-25T12:10:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-chinese-date-extra-day-digit-round-2",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買湯",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "日期或時間無效，請重新輸入正確日期與時間。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "工作日行事曆",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        },
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "工作日行事曆",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-calendar-noun-question",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "工作日行事曆",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-literal-title-rewritten-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "之前的會議紀錄",
+              "actual": "會議紀錄"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "之前的會議紀錄",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-literal-title-rewritten-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "之前的會議紀錄",
+              "actual": "會議紀錄"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "之前的會議紀錄",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "content-recorded-literal-title-rewritten-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "之前的會議紀錄",
+              "actual": "會議紀錄"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "之前的會議紀錄",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "followup-recorded-garbled-context-title-rewrite",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "寄出年度報表",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "followup-recorded-garbled-context-title-rewrite",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "寄出年度報表",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "followup-recorded-garbled-context-title-rewrite",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "寄出年度報表",
+            "at": "2026-10-25T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "延後寄包裹",
+              "actual": null
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "title"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "延後寄包裹",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            },
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            }
+          }
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "延後寄包裹",
+              "actual": "寄包裹"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "延後寄包裹",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-ordinary-7-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "延後寄包裹",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-known-title-existing-condition-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "只在工作日喝水",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "是否只限週一至週五？",
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-known-title-existing-condition-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "只在工作日喝水",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "是否只限週一至週五？",
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-known-title-existing-condition-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "只在工作日喝水",
+            "at": "2026-10-26T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "是否只限週一至週五？",
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-deadline-definition-round-1",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "前交報表",
+              "actual": "交報表"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "前交報表",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請確認額外提醒條件，並一次提供一筆明確提醒。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-deadline-definition-round-1",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "前交報表",
+              "actual": "交報表"
+            },
+            "at": {
+              "expected": "2026-10-26T15:00:00+08:00",
+              "actual": "2026-10-26T00:00:00+08:00"
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "前交報表",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請問您希望在什麼時間提醒您交報表？",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "correction-deadline-definition-round-1",
+          "run": 3,
+          "off_failures": {},
+          "raw_failures": {
+            "title": {
+              "expected": "前交報表",
+              "actual": "交報表"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            },
+            "missing": {
+              "expected": [
+                "clarification"
+              ],
+              "actual": []
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "前交報表",
+            "at": "2026-10-26T15:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "請確認額外提醒條件，並一次提供一筆明確提醒。",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        }
+      ]
+    },
+    {
+      "name": "new-exploration",
+      "cases_file": "groq_exploration_2026-10-31.jsonl",
+      "cases_sha256": "7cfc8ba038fe77bd42046ffc005ead263b84fd14ac2d4d004f1fc86ff4b5be9b",
+      "recording": "groq_exploration_results_2026-11-04.jsonl",
+      "recording_sha256": "61e7f4fef35dc0ab4604319c5fbbea44c19b7cd5c634251c70f44f6df7d6cb6b",
+      "trials": 30,
+      "scores": {
+        "off": 8,
+        "raw": 29,
+        "local": 30
+      },
+      "model_correct_but_local_broke": [],
+      "results": [
+        {
+          "id": "control-half-hour",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把護照帶去公司",
+            "at": "2026-11-01T10:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去領包裹",
+            "at": "2026-11-01T14:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 2,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去領包裹",
+            "at": "2026-11-01T14:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "quarter-to-three",
+          "run": 3,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去領包裹",
+              "actual": "差一刻三點去領包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T14:45:00+08:00",
+              "actual": "2026-11-01T15:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去領包裹",
+            "at": "2026-11-01T14:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "ten-past-eight",
+          "run": 1,
+          "off_failures": {
+            "title": {
+              "expected": "把衣服拿去洗",
+              "actual": "過十分鐘把衣服拿去洗"
+            },
+            "at": {
+              "expected": "2026-11-01T20:10:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把衣服拿去洗",
+            "at": "2026-11-01T20:10:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把烤箱關掉",
+            "at": "2026-10-31T13:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 2,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把烤箱關掉",
+            "at": "2026-10-31T13:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-zhongtou",
+          "run": 3,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把烤箱關掉",
+              "actual": "再過一個鐘頭把烤箱關掉"
+            },
+            "at": {
+              "expected": "2026-10-31T13:00:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把烤箱關掉",
+            "at": "2026-10-31T13:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-quarter",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿外送",
+            "at": "2026-10-31T12:15:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-quarter",
+          "run": 2,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿外送",
+            "at": "2026-10-31T12:15:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "one-quarter",
+          "run": 3,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿外送",
+              "actual": "一刻鐘後去拿外送"
+            },
+            "at": {
+              "expected": "2026-10-31T12:15:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿外送",
+            "at": "2026-10-31T12:15:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "three-quarters",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "把衣服晾起來",
+              "actual": "三刻鐘後把衣服晾起來"
+            },
+            "at": {
+              "expected": "2026-10-31T12:45:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "把衣服晾起來",
+            "at": "2026-10-31T12:45:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "two-half-zhongtou",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去接小孩",
+              "actual": "兩個半鐘頭後去接小孩"
+            },
+            "at": {
+              "expected": "2026-10-31T14:30:00+08:00",
+              "actual": null
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去接小孩",
+            "at": "2026-10-31T14:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "dusk",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "倒垃圾",
+              "actual": "傍晚六點半倒垃圾"
+            },
+            "at": {
+              "expected": "2026-11-01T18:30:00+08:00",
+              "actual": "2026-11-01T12:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "倒垃圾",
+            "at": "2026-11-01T18:30:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "tomorrow-de-evening",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "去拿包裹",
+              "actual": "的晚上八點去拿包裹"
+            },
+            "at": {
+              "expected": "2026-11-01T20:00:00+08:00",
+              "actual": "2026-11-01T12:00:00+08:00"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "time"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去拿包裹",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "monday-control",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "帶健保卡",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "this-sunday",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "付停車費",
+            "at": "2026-11-01T19:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "daily-colloquial",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "confirmation",
+              "actual": "prompt"
+            },
+            "complete": {
+              "expected": true,
+              "actual": false
+            },
+            "title": {
+              "expected": "吃藥",
+              "actual": "以後 到了 就吃藥"
+            },
+            "missing": {
+              "expected": [],
+              "actual": [
+                "clarification"
+              ]
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "吃藥",
+            "at": "2026-10-31T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": {
+              "period": "daily",
+              "hour": 20,
+              "minute": 0,
+              "weekdays": [],
+              "month_days": [],
+              "year_month": null,
+              "year_day": null,
+              "interval_seconds": null
+            },
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "chinese-date-control",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "打電話給牙醫",
+            "at": "2026-11-02T14:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "move-one-hour",
+          "run": 1,
+          "off_failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "拿包裹",
+            "at": "2026-11-01T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "move-one-hour",
+          "run": 2,
+          "off_failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "拿包裹",
+            "at": "2026-11-01T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "move-one-hour",
+          "run": 3,
+          "off_failures": {
+            "at": {
+              "expected": "2026-11-01T21:00:00+08:00",
+              "actual": "2026-11-01T20:00:00+08:00"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "拿包裹",
+            "at": "2026-11-01T21:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-title",
+          "run": 1,
+          "off_failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去郵局寄掛號",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-title",
+          "run": 2,
+          "off_failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去郵局寄掛號",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-title",
+          "run": 3,
+          "off_failures": {
+            "title": {
+              "expected": "去郵局寄掛號",
+              "actual": "拿包裹"
+            }
+          },
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "去郵局寄掛號",
+            "at": "2026-11-01T20:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "update"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-draft",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "繳水費",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "missing-time-control",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "買一杯半糖少冰的奶茶",
+            "at": null,
+            "missing": [
+              "time"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "thanks-ignore",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": null,
+            "at": null,
+            "missing": [],
+            "complete": false,
+            "route": "ignore",
+            "participants": [],
+            "recurrence": null,
+            "question": null,
+            "intent": "not_reminder"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "weather-ignore",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": null,
+            "at": null,
+            "missing": [],
+            "complete": false,
+            "route": "ignore",
+            "participants": [],
+            "recurrence": null,
+            "question": null,
+            "intent": "not_reminder"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "two-reminders",
+          "run": 1,
+          "off_failures": {
+            "route": {
+              "expected": "prompt",
+              "actual": "confirmation"
+            },
+            "complete": {
+              "expected": false,
+              "actual": true
+            }
+          },
+          "raw_failures": {
+            "intent": {
+              "expected": "create",
+              "actual": "not_reminder"
+            },
+            "route": {
+              "expected": "prompt",
+              "actual": "ignore"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "買牛奶，再提醒我晚上七點倒垃圾",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [
+              "clarification"
+            ],
+            "complete": false,
+            "route": "prompt",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": "您一次只能建立一筆提醒，請問要先建立哪一個？「下週一早上九點買牛奶」或「晚上七點倒垃圾」？",
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        }
+      ]
+    },
+    {
+      "name": "new-targeted-drift",
+      "cases_file": "groq_exploration_2026-10-31.jsonl",
+      "cases_sha256": "7cfc8ba038fe77bd42046ffc005ead263b84fd14ac2d4d004f1fc86ff4b5be9b",
+      "recording": "groq_targeted_drift_results_2026-11-04.jsonl",
+      "recording_sha256": "46aa783fd079a3d5987301362621588d1a5003b4edef1082ef3cf9cdb6ce2e77",
+      "trials": 4,
+      "scores": {
+        "off": 4,
+        "raw": 3,
+        "local": 4
+      },
+      "model_correct_but_local_broke": [],
+      "results": [
+        {
+          "id": "this-sunday",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {
+            "at": {
+              "expected": "2026-11-01T19:00:00+08:00",
+              "actual": "2026-11-06T19:00:00+08:00"
+            }
+          },
+          "local_failures": {},
+          "local_result": {
+            "title": "付停車費",
+            "at": "2026-11-01T19:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "this-sunday",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "付停車費",
+            "at": "2026-11-01T19:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-draft",
+          "run": 1,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "繳水費",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        },
+        {
+          "id": "replace-draft",
+          "run": 2,
+          "off_failures": {},
+          "raw_failures": {},
+          "local_failures": {},
+          "local_result": {
+            "title": "繳水費",
+            "at": "2026-11-02T09:00:00+08:00",
+            "missing": [],
+            "complete": true,
+            "route": "confirmation",
+            "participants": [
+              "user:7"
+            ],
+            "recurrence": null,
+            "question": null,
+            "intent": "create"
+          },
+          "recorded_local_failures": {}
+        }
+      ]
+    }
+  ],
+  "guards_sha256": "8dff36163c4c223fbc693d2b6a3f4cc6e5df22fc38f920a0771b43ce8f8ad1fc"
+}
