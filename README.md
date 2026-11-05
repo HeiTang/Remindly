@@ -231,6 +231,29 @@ docker compose up -d --build
 
 SQLite 會存在 named volume `remindly-data`，container 內 DB 路徑固定為 `/app/data/reminders.db`。
 
+### GHCR 發布映像
+
+正式版本映像使用 `ghcr.io/heitang/remindly`，提供 `linux/amd64` 與 `linux/arm64`。
+兩個架構都在原生 runner 建置並執行無網路容器自檢，通過後才建立 `vX.Y.Z` 與
+`sha-<完整來源提交>` 標籤；digest 記錄在 Publish container workflow 的執行摘要。
+版本標籤已存在時拒絕覆寫，更新基底映像或依賴須另發新版本。
+
+首次發布後，package 擁有者須在 GitHub package settings 將可見性設為 Public，
+之後可匿名拉取，不需在 Portainer 保存 GHCR 憑證。發布流程使用 `GITHUB_TOKEN`，
+不需要新增個人 registry token。
+
+正式部署改用摘要中的固定 digest，例如：
+
+```yaml
+services:
+  remindly:
+    image: ghcr.io/heitang/remindly@sha256:<digest>
+```
+
+這是替換既有 service 的 `image` 設定；同時移除 `build` 與 `pull_policy: build`，
+保留原本環境變數與 `remindly-data` volume。開發用 Compose 仍可從原始碼建置。
+映像發布不觸發部署；升級前須另行備份資料庫及 AI 主金鑰，回滾也須確認 DB 相容性。
+
 ### SQLite 備份
 
 執行備份：
@@ -324,7 +347,17 @@ uv export --locked --no-dev --no-emit-project --format requirements-txt --output
 2. 將 `CHANGELOG.md` 的 `Unreleased` 內容移到新版本區段。
 3. 跑 `make check`，確認 lint、unit tests、smoke flow 都通過。
 4. 依 GitOps 流程合併到 `main`。
-5. 在 `main` 建立 tag，例如 `v0.3.0`，再建立 GitHub Release。
+5. 在 `main` 建立與版本一致的 tag，例如 `v0.5.0`，再發布正式 GitHub Release。
+6. Publish container workflow 驗證已發布的 release、tag 來源位於 `main` 歷史及版本一致性，
+   重跑測試，再建置／自檢兩個架構並發布到 GHCR。部署仍由人員另行執行。
+
+補發既有正式版本映像使用同一流程，不移動 tag：
+
+```sh
+gh workflow run publish.yml --ref main -f tag=v0.5.0
+```
+
+只接受 `vX.Y.Z` 正式 release，不發布草稿／預發布版，也不產生 `latest` 標籤。
 
 ## 版本紀錄
 

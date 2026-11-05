@@ -1,0 +1,166 @@
+name: Publish container
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag (for example v0.5.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcr-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+      image: ${{ steps.release.outputs.image }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - name: Validate published release and source
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          source_sha=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          [[ "$(git rev-parse HEAD)" == "$source_sha" ]]
+          git merge-base --is-ancestor "$source_sha" origin/main
+          published_tag=$(gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease --jq 'select(.isDraft == false and .isPrerelease == false) | .tagName')
+          [[ "$published_tag" == "$RELEASE_TAG" ]]
+          python3 - <<'PYCODE'
+          import os
+          import runpy
+          import tomllib
+          from pathlib import Path
+
+          version = os.environ["RELEASE_TAG"][1:]
+          project = tomllib.loads(Path("pyproject.toml").read_text())
+          lock = tomllib.loads(Path("uv.lock").read_text())
+          package = next(p for p in lock["package"] if p["name"] == "remindly")
+          assert project["project"]["version"] == package["version"] == version
+          assert runpy.run_path("src/remindly/__init__.py")["__version__"] == version
+          PYCODE
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - run: uv sync --locked
+      - run: make check
+
+  build:
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          path: source
+      - name: Checkout workflow self-check
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: automation
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build release image by digest
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: source
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ needs.check.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.check.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+      - name: Test published digest without network
+        env:
+          IMAGE: ${{ needs.check.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          docker pull "$IMAGE@$DIGEST"
+          docker run --rm --interactive --network none --env EXPECTED_VERSION --entrypoint python "$IMAGE@$DIGEST" - < automation/scripts/container_check.py
+          printf '%s' "$DIGEST" > "digest-${{ matrix.arch }}.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digest-${{ matrix.arch }}.txt
+          retention-days: 7
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    env:
+      IMAGE: ${{ needs.check.outputs.image }}
+      SOURCE_SHA: ${{ needs.check.outputs.sha }}
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Refuse to replace an existing version
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" > /tmp/existing-image 2> /tmp/registry-error; then
+            echo "::error::Version image already exists; refusing to overwrite it"
+            exit 1
+          fi
+          if ! grep -Eiq 'not found|manifest unknown|name unknown' /tmp/registry-error; then
+            cat /tmp/registry-error
+            exit 1
+          fi
+      - name: Publish tested platforms and record digest
+        run: |
+          amd64=$(cat digest-amd64.txt)
+          arm64=$(cat digest-arm64.txt)
+          [[ "$amd64" =~ ^sha256:[a-f0-9]{64}$ && "$arm64" =~ ^sha256:[a-f0-9]{64}$ ]]
+          docker buildx imagetools create --tag "$IMAGE:$RELEASE_TAG" --tag "$IMAGE:sha-$SOURCE_SHA" "$IMAGE@$amd64" "$IMAGE@$arm64"
+          docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --raw > manifest.json
+          jq -e '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]' manifest.json
+          digest=$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{.Manifest.Digest}}')
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf '## %s\n\nImage: `%s:%s`\n\nSource: `%s`\n\nPinned image: `%s@%s`\n' "$RELEASE_TAG" "$IMAGE" "$RELEASE_TAG" "$SOURCE_SHA" "$IMAGE" "$digest" >> "$GITHUB_STEP_SUMMARY"
