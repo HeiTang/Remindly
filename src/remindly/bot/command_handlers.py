@@ -83,7 +83,7 @@ class CommandHandlers:
                     "/cancel <id> - 取消提醒",
                     "/timezone <IANA timezone> - 設定時區",
                     "/groupmode on|off|status - 群組自然語言模式",
-                    "/ai - 個人 AI Key 與語意解析設定（私聊）",
+                    "/ai - 個人 AI Key 設定（私聊）；/ai group - 群組 AI 授權與設定",
                 ]
             ),
         )

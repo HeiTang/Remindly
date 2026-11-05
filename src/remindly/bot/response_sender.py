@@ -180,6 +180,8 @@ class ResponseSender:
         if isinstance(result, RecurrenceRejected):
             self.send_recurrence_error(chat_id, result.error)
             return
+        if result.draft.parse_result.get("ai_fallback"):
+            notice = (notice or "") + "群組 AI 暫時無法使用，已改用內建解析。\n"
         if isinstance(result, Confirmation):
             message_id = self._client.send_message(
                 chat_id,
