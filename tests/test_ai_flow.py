@@ -205,6 +205,35 @@ class AiFlowTest(unittest.TestCase):
         self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
         self.assertEqual([], self.repo.list_pending(CHAT.id))
 
+    def test_partial_time_guards_block_confirmation(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        for text, recurrence in (
+            ("提醒我明天的晚上八點吃藥", rule(hour=20)),
+            ("提醒我明天的晚上八點只在工作日吃藥", None),
+        ):
+            with self.subTest(text=text):
+                self.gemini.responses.append(
+                    parsed(title="吃藥", time="20:00", recurrence=recurrence)
+                )
+                self.send(text)
+                draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+                self.assertIn("clarification", draft.missing_fields)
+                self.assertIsNone(draft.recurrence)
+                self.confirm(draft.id)
+                self.assertEqual([], self.repo.list_pending(CHAT.id))
+
+    def test_recurrence_saves_explicit_tomorrow_evening_start(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(parsed(title="吃藥", time="20:00", recurrence=rule(hour=20)))
+        self.send("每天明晚八點提醒我吃藥")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertTrue(draft.is_complete)
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+        self.confirm(draft.id)
+        reminder = self.repo.list_pending(CHAT.id)[0]
+        self.assertEqual(NOW.replace(day=23, hour=20), reminder.remind_at)
+        self.assertEqual(20, reminder.recurrence.hour)
+
     def test_wrong_model_dates_cannot_change_followup_date(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.extend(

@@ -362,6 +362,7 @@ class ReminderParser:
                     temporal.remind_at
                     and temporal.is_complete
                     and not temporal.missing_time
+                    and not temporal.has_explicit_date
                     and (TIME_RE.match(consumed) or PART_OF_DAY_RE.match(consumed))
                 ):
                     rule = RecurrenceRule(

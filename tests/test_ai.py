@@ -595,6 +595,63 @@ class SemanticTimeGuardTest(unittest.TestCase):
                 self.assertIn("time", result.missing_fields)
                 self.assertIsNone(result.remind_at)
 
+    def test_partial_time_cannot_drop_source_conditions(self):
+        for text in (
+            "提醒我明天的晚上八點只在工作日吃藥",
+            "提醒我明天清晨五點如果下雨就收衣服",
+            "提醒我明天晚上八點過十分鐘前交報表",
+            "提醒我明天的晚上八點吃藥，後天九點提醒我寄信",
+        ):
+            with self.subTest(text=text):
+                result = self.parse(parsed(title="吃藥", time="20:00"), text)
+                self.assertIn("clarification", result.missing_fields)
+                self.assertTrue(result.raw["condition_question"])
+        for title in ("前往車站", "之前的會議紀錄", "準備十分鐘的簡報"):
+            with self.subTest(title=title):
+                result = self.parse(
+                    parsed(title=title, time="20:00"), f"提醒我明天的晚上八點{title}"
+                )
+                self.assertEqual(title, result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_partial_time_still_validates_recurrence(self):
+        for text in (
+            "提醒我明天的晚上八點吃藥",
+            "提醒我明天的晚上八點每週一吃藥",
+        ):
+            with self.subTest(text=text):
+                result = self.parse(
+                    parsed(title="吃藥", time="20:00", recurrence=rule(hour=20)), text
+                )
+                self.assertIsNone(result.recurrence)
+                self.assertIn("clarification", result.missing_fields)
+                self.assertIn("週期", result.raw["question"])
+        result = self.parse(
+            parsed(title="吃藥", time="20:10", recurrence=rule(hour=9)),
+            "提醒我每天晚上八點過十分鐘吃藥",
+        )
+        self.assertIsNone(result.recurrence)
+        self.assertIn("clarification", result.missing_fields)
+        result = self.parse(
+            parsed(title="吃藥", time="20:10", recurrence=rule(hour=20, minute=10)),
+            "提醒我每天晚上八點過十分鐘吃藥",
+        )
+        self.assertEqual((), result.missing_fields)
+        self.assertEqual((20, 10), (result.recurrence.hour, result.recurrence.minute))
+        context = self.draft(
+            title="吃藥",
+            remind_at=NOW.replace(day=23, hour=20),
+            missing_fields=[],
+            recurrence=RecurrenceRule(RecurrencePeriod.DAILY, hour=20, minute=0),
+        )
+        result = self.parse(
+            parsed(intent="update", title="吃藥", time="20:10", recurrence=rule(hour=20)),
+            "改成明天晚上八點過十分鐘",
+            context=context,
+        )
+        self.assertEqual(context.recurrence, result.recurrence)
+        self.assertEqual((), result.missing_fields)
+
     def test_time_words_in_subject_do_not_disable_verified_time_guard(self):
         now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
         for source, title in (
@@ -833,6 +890,27 @@ class SemanticTimeGuardTest(unittest.TestCase):
         )
         self.assertEqual(datetime(2026, 11, 4, 9, tzinfo=NOW.tzinfo), result.remind_at)
         self.assertEqual((), result.missing_fields)
+
+    def test_recurrence_preserves_relative_day_in_period(self):
+        now = NOW.replace(hour=6)
+        for period, day, clock in (
+            ("明早九點", 23, "09:00"),
+            ("明晚八點", 23, "20:00"),
+            ("後晚八點", 24, "20:00"),
+        ):
+            with self.subTest(period=period):
+                result = self.parse(
+                    parsed(
+                        title="吃藥",
+                        date=f"2026-10-{day}",
+                        time=clock,
+                        recurrence=rule(hour=int(clock[:2])),
+                    ),
+                    f"每天{period}提醒我吃藥",
+                    now=now,
+                )
+                self.assertEqual(f"2026-10-{day}T{clock}:00+08:00", result.remind_at.isoformat())
+                self.assertEqual((), result.missing_fields)
 
 
 class SemanticValidationTest(unittest.TestCase):

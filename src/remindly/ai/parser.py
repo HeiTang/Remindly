@@ -26,6 +26,7 @@ from remindly.reminders.parser import (
     LEADING_ZAI_RE,
     PROMPT_SPLIT_RE,
     RELATIVE_RE,
+    TIME_DURATION_RE,
     TIME_RE,
     WEEKDAY_RE,
     ReminderParser,
@@ -248,14 +249,23 @@ class SemanticParser:
                     ),
                     False,
                 )
-            if constraint and not constraint[0].is_complete:
+            incomplete_time = bool(constraint and not constraint[0].is_complete)
+            if incomplete_time:
                 temporal = constraint[0]
                 if temporal.has_explicit_date and temporal.remind_at:
                     data = dict(response.data)
                     data.update(date=temporal.remind_at.date().isoformat(), relative_minutes=None)
                     result = validate_result(data, now, participants)
                 source_question = source_question or (
-                    CONDITION_QUESTION if has_condition(text) else None
+                    CONDITION_QUESTION
+                    if has_condition(text)
+                    or any(
+                        has_condition(text[match.end() :].lstrip())
+                        for pattern in (TIME_RE, TIME_DURATION_RE)
+                        for match in pattern.finditer(text)
+                    )
+                    or len(PROMPT_SPLIT_RE.findall(text)) > 1
+                    else None
                 )
                 # 時間前綴只能約束明確日期，不能代替未完整理解的時間與事項。
                 constraint = None
@@ -412,32 +422,6 @@ class SemanticParser:
                     data["question"] = "這個時間已經過去，請重新輸入未來的日期與時間。"
                 elif temporal.missing_time:
                     data["question"] = "那天幾點？"
-                if not time_only and result.recurrence:
-                    marker = rules.recurrence_marker(text)
-                    expected_rule = None
-                    if isinstance(marker, tuple) and temporal.remind_at:
-                        clock = (
-                            {}
-                            if marker[1] == RecurrencePeriod.INTERVAL
-                            else {
-                                "hour": temporal.remind_at.hour,
-                                "minute": temporal.remind_at.minute,
-                            }
-                        )
-                        expected_rule = RecurrenceRule(period=marker[1], **clock, **marker[2])
-                    retained = (
-                        context
-                        and data["intent"] == "update"
-                        and result.recurrence == context.recurrence
-                    )
-                    if not retained and result.recurrence != expected_rule:
-                        data.update(
-                            recurrence=None,
-                            question=(
-                                f"{data['question'] or ''}\n"
-                                "請確認是否需要重複提醒，並提供明確的週期。"
-                            ).strip()[:300],
-                        )
                 result = validate_result(data, now, participants)
                 if temporal.grain in {"invalid", "ambiguous"}:
                     result = replace(
@@ -453,6 +437,36 @@ class SemanticParser:
                 )
             if correction and not PROMPT_SPLIT_RE.search(text):
                 result = replace(result, raw={**result.raw, "intent": "update"})
+            if result.recurrence and (incomplete_time or (constraint and not constraint[1])):
+                marker = rules.recurrence_marker(text)
+                expected_rule = None
+                if isinstance(marker, tuple) and result.remind_at:
+                    clock = (
+                        {}
+                        if marker[1] == RecurrencePeriod.INTERVAL
+                        else {"hour": result.remind_at.hour, "minute": result.remind_at.minute}
+                    )
+                    expected_rule = RecurrenceRule(period=marker[1], **clock, **marker[2])
+                retained = (
+                    context
+                    and result.raw["intent"] == "update"
+                    and result.recurrence == context.recurrence
+                )
+                if not retained and result.recurrence != expected_rule:
+                    result = replace(
+                        result,
+                        recurrence=None,
+                        missing_fields=tuple(
+                            dict.fromkeys((*result.missing_fields, "clarification"))
+                        ),
+                        raw={
+                            **result.raw,
+                            "question": (
+                                f"{result.raw['question'] or ''}\n"
+                                "請確認是否需要重複提醒，並提供明確的週期。"
+                            ).strip()[:300],
+                        },
+                    )
             result = preserve_conditions(result, context, source_question)
             return replace(
                 result,
