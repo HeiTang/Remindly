@@ -75,8 +75,14 @@ class GeneratedResponse:
 
 
 class SemanticGenerator(Protocol):
-    def enabled(self, user_id: int) -> bool: ...
+    def enabled(self, user_id: int, *, chat_id: int | None = None) -> bool: ...
 
     def generate(
-        self, user_id: int, system: str, prompt: dict[str, object], schema: dict[str, object]
+        self,
+        user_id: int,
+        system: str,
+        prompt: dict[str, object],
+        schema: dict[str, object],
+        *,
+        chat_id: int | None = None,
     ) -> GeneratedResponse: ...

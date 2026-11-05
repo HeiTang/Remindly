@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
+from remindly.ai.contracts import AiUnavailable
 from remindly.ai.parser import SemanticParsing, followup_question
 from remindly.reminders.drafts import (
     EditSession,
@@ -24,6 +25,7 @@ from remindly.reminders.models import (
 from remindly.reminders.parser import ReminderParser, dedupe_participants
 from remindly.reminders.recurrence import next_fire
 from remindly.reminders.repositories import ReminderRepository
+from remindly.reminders.text import looks_like_reminder_request
 from remindly.telegram.models import (
     TelegramCallbackQuery,
     TelegramMessage,
@@ -132,8 +134,12 @@ class ReminderService:
         self._default_timezone = default_timezone
         self.ai_parser = ai_parser
 
-    def ai_enabled(self, user_id: int) -> bool:
-        return self.ai_parser is not None and self.ai_parser.enabled(user_id)
+    def ai_enabled(self, user_id: int, message: TelegramMessage | None = None) -> bool:
+        if self.ai_parser is None:
+            return False
+        if message is not None and message.chat.type != "private":
+            return self.ai_parser.enabled(user_id, chat_id=message.chat.id)
+        return self.ai_parser.enabled(user_id)
 
     def parse_ai(
         self,
@@ -153,14 +159,47 @@ class ReminderService:
         candidates = self._parser.extract_participants("提醒我 " + text, message)
         if context:
             candidates = dedupe_participants(candidates + context.participants)
-        result = self.ai_parser.parse(
-            text,
-            creator.id,
-            now.astimezone(ZoneInfo(timezone)),
-            candidates,
-            context=context,
-            purpose=purpose,
-        )
+        group = message.chat.type != "private"
+        try:
+            return self.ai_parser.parse(
+                text,
+                creator.id,
+                now.astimezone(ZoneInfo(timezone)),
+                candidates,
+                context=context,
+                purpose=purpose,
+                **({"chat_id": message.chat.id} if group else {}),
+            )
+        except AiUnavailable:
+            if not group:
+                raise
+        result = self._parser.parse(text, message, now=now.astimezone(ZoneInfo(timezone)))
+        if looks_like_reminder_request(text):
+            context = None
+        if context:
+            draft = replace(
+                context,
+                missing_fields=(list(context.missing_fields) or ["time"])
+                if purpose == "edit_time"
+                else list(context.missing_fields),
+                parse_result={
+                    k: v
+                    for k, v in context.parse_result.items()
+                    if k not in {"provider", "model", "model_display_name", "grain", "ai_fallback"}
+                },
+            )
+            self._merge_answer(draft, text, message, now)
+            result = replace(
+                result,
+                title=draft.title,
+                remind_at=draft.remind_at,
+                participants=tuple(draft.participants),
+                missing_fields=tuple(draft.missing_fields),
+                recurrence=draft.recurrence,
+                raw={**draft.parse_result, "intent": "update"},
+            )
+        result.raw["ai_fallback"] = True
+        result.raw["timezone"] = timezone
         return result
 
     def record_message_context(self, message: TelegramMessage, now: datetime) -> None:
@@ -214,7 +253,7 @@ class ReminderService:
         `begin_create` 也可以透過 `parse_result` kwarg 重用此結果避免重複解析。"""
         creator = require_user(message)
         timezone = self._repository.get_user_timezone(creator.id, self._default_timezone)
-        if self.ai_enabled(creator.id):
+        if self.ai_enabled(creator.id, message):
             return self.parse_ai(text, message, now)
         return self._parser.parse(text, message, now=now.astimezone(ZoneInfo(timezone)))
 
@@ -232,7 +271,7 @@ class ReminderService:
             parse_result = self.preview_parse(text, message, now)
         if parse_result.recurrence_error is not None:
             return RecurrenceRejected(error=parse_result.recurrence_error)
-        if parse_result.raw.get("grain") == "ai":
+        if parse_result.raw.get("grain") == "ai" or parse_result.raw.get("ai_fallback"):
             timezone = str(parse_result.raw["timezone"])
         draft = ReminderDraft(
             id=new_id("draft"),
@@ -521,7 +560,7 @@ class ReminderService:
             return self._edit_result(updated, "已更新提醒內容。")
 
         if session.field == "time":
-            if self.ai_enabled(actor.id):
+            if self.ai_enabled(actor.id, message):
                 context = ReminderDraft(
                     id=reminder.id,
                     chat_id=reminder.chat_id,
@@ -558,12 +597,28 @@ class ReminderService:
                             "condition_question": parsed.raw.get("condition_question"),
                         }
                         self._edit_store.save(session, now)
-                    return EditPrompt(reminder, followup_question(parsed.missing_fields))
+                    return EditPrompt(
+                        reminder,
+                        (
+                            "群組 AI 暫時無法使用，已改用內建解析。\n"
+                            if parsed.raw.get("ai_fallback")
+                            else ""
+                        )
+                        + followup_question(parsed.missing_fields),
+                    )
                 updated = self._repository.update_remind_at(
                     message.chat.id, session.short_id, actor.id, parsed.remind_at, now
                 )
                 self._edit_store.delete(message.chat.id, actor.id)
-                return self._edit_result(updated, "已更新下次提醒時間。")
+                return self._edit_result(
+                    updated,
+                    (
+                        "群組 AI 暫時無法使用，已改用內建解析。\n"
+                        if parsed.raw.get("ai_fallback")
+                        else ""
+                    )
+                    + "已更新下次提醒時間。",
+                )
             parsed_time = self._parser.parse_time_only(
                 message.text,
                 now.astimezone(ZoneInfo(reminder.timezone)),

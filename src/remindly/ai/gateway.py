@@ -24,7 +24,10 @@ class AiGateway:
         self.providers = dict(providers)
         self.default_provider = default_provider
 
-    def enabled(self, user_id: int) -> bool:
+    def enabled(self, user_id: int, *, chat_id: int | None = None) -> bool:
+        if chat_id is not None:
+            owner, key_id, enabled, _ = self.keys.group_settings(chat_id)
+            return self.keys.configured and enabled and owner is not None and key_id is not None
         return self.keys.enabled(user_id)
 
     def add_key(self, user_id: int, key: str, provider: str | None = None) -> str:
@@ -34,11 +37,27 @@ class AiGateway:
         return self.keys.add(user_id, key, provider=provider)
 
     def generate(
-        self, user_id: int, system: str, prompt: dict[str, object], schema: dict[str, object]
+        self,
+        user_id: int,
+        system: str,
+        prompt: dict[str, object],
+        schema: dict[str, object],
+        *,
+        chat_id: int | None = None,
     ) -> GeneratedResponse:
+        selected_key = None
+        if chat_id is not None:
+            owner, selected_key, enabled, _ = self.keys.group_settings(chat_id)
+            if not enabled or owner is None or selected_key is None:
+                raise AiUnavailable("群組 AI 未啟用。")
+            user_id = owner
         deadline = time.monotonic() + AI_TIME_BUDGET_SECONDS
         # shortcut: 未提供專案資訊時無法合併跨 Key 配額，最多嘗試三組避免重複轟炸。
-        available = [k for k in self.keys.available(user_id) if k.provider in self.providers]
+        available = [
+            k
+            for k in self.keys.available(user_id)
+            if k.provider in self.providers and (selected_key is None or k.id == selected_key)
+        ]
         for key in available[:3]:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -73,6 +92,8 @@ class AiGateway:
                 else None
             )
             return GeneratedResponse(result, provider.id, provider.model, display_name)
+        if chat_id is not None:
+            raise AiUnavailable("群組 AI 暫時無法使用。")
         lines = ["AI 解析未成功："]
         for key in self.keys.list(user_id):
             if key.provider not in self.providers:

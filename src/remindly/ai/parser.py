@@ -127,7 +127,7 @@ SCHEMA: dict[str, object] = {
 
 
 class SemanticParsing(Protocol):
-    def enabled(self, user_id: int) -> bool: ...
+    def enabled(self, user_id: int, *, chat_id: int | None = None) -> bool: ...
 
     def parse(
         self,
@@ -138,6 +138,7 @@ class SemanticParsing(Protocol):
         *,
         context: ReminderDraft | None = None,
         purpose: str = "reminder",
+        chat_id: int | None = None,
     ) -> ParseResult: ...
 
 
@@ -145,8 +146,12 @@ class SemanticParser:
     def __init__(self, gateway: SemanticGenerator) -> None:
         self._gateway = gateway
 
-    def enabled(self, user_id: int) -> bool:
-        return self._gateway.enabled(user_id)
+    def enabled(self, user_id: int, *, chat_id: int | None = None) -> bool:
+        return (
+            self._gateway.enabled(user_id, chat_id=chat_id)
+            if chat_id is not None
+            else self._gateway.enabled(user_id)
+        )
 
     def parse(
         self,
@@ -157,6 +162,7 @@ class SemanticParser:
         *,
         context: ReminderDraft | None = None,
         purpose: str = "reminder",
+        chat_id: int | None = None,
     ) -> ParseResult:
         if len(text) > 4000:
             raise AiUnavailable("提醒文字太長，請縮短至 4000 字以內。")
@@ -196,6 +202,7 @@ class SemanticParser:
                 ],
             },
             SCHEMA,
+            **({"chat_id": chat_id} if chat_id is not None else {}),
         )
         try:
             result = validate_result(response.data, now, participants)

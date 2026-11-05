@@ -116,6 +116,80 @@ class ApiKeyStore:
             )
         return result.rowcount == 1
 
+    def group_settings(self, chat_id: int) -> tuple[int | None, str | None, bool, bool]:
+        with self._repository.connect() as connection:
+            row = connection.execute(
+                "select * from group_ai_settings where chat_id = ?", (chat_id,)
+            ).fetchone()
+        if row is None:
+            return None, None, False, False
+        return (
+            row["owner_user_id"],
+            row["key_id"],
+            bool(row["enabled"]),
+            bool(row["accepting_grants"]),
+        )
+
+    def grant_group(self, user_id: int, chat_id: int, key_id: str) -> None:
+        with self._repository.connect() as connection:
+            result = connection.execute(
+                """update group_ai_settings set owner_user_id = ?, key_id = ?,
+                enabled = 0, accepting_grants = 0
+                where chat_id = ? and accepting_grants = 1 and exists
+                (select 1 from ai_keys where user_id = ? and id = ?)""",
+                (user_id, key_id, chat_id, user_id, key_id),
+            )
+            if result.rowcount != 1:
+                raise ValueError("請確認 Key 屬於你，且群組管理員已用 /ai group allow 開放綁定。")
+
+    def revoke_group(self, user_id: int, chat_id: int) -> bool:
+        with self._repository.connect() as connection:
+            result = connection.execute(
+                """update group_ai_settings set owner_user_id = null, key_id = null,
+                enabled = 0, accepting_grants = 0 where chat_id = ? and owner_user_id = ?""",
+                (chat_id, user_id),
+            )
+        return result.rowcount == 1
+
+    def manage_group(self, chat_id: int, action: str) -> None:
+        if chat_id >= 0 or action not in {"allow", "on", "off", "unlink"}:
+            raise ValueError("群組設定不正確。")
+        with self._repository.connect() as connection:
+            connection.execute(
+                "insert into group_ai_settings(chat_id) values (?) on conflict do nothing",
+                (chat_id,),
+            )
+            if action == "on":
+                result = connection.execute(
+                    """update group_ai_settings set enabled = 1, accepting_grants = 0
+                    where chat_id = ? and exists
+                    (select 1 from ai_keys where id = key_id and user_id = owner_user_id)""",
+                    (chat_id,),
+                )
+                if result.rowcount != 1:
+                    raise ValueError("請先由 Key 持有人於私聊授權此群組。")
+            elif action == "off":
+                connection.execute(
+                    """update group_ai_settings set enabled = 0, accepting_grants = 0
+                    where chat_id = ?""",
+                    (chat_id,),
+                )
+            elif action == "allow":
+                connection.execute(
+                    "update group_ai_settings set accepting_grants = 1 where chat_id = ?",
+                    (chat_id,),
+                )
+            else:
+                connection.execute("delete from group_ai_settings where chat_id = ?", (chat_id,))
+
+    def group_grants(self, user_id: int) -> list[tuple[int, str, bool]]:
+        with self._repository.connect() as connection:
+            rows = connection.execute(
+                "select chat_id, key_id, enabled from group_ai_settings where owner_user_id = ?",
+                (user_id,),
+            ).fetchall()
+        return [(row["chat_id"], row["key_id"], bool(row["enabled"])) for row in rows]
+
     def move(self, user_id: int, key_id: str, position: int) -> None:
         keys = self.list(user_id)
         selected = next((key for key in keys if key.id == key_id), None)

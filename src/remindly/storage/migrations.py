@@ -174,6 +174,24 @@ MIGRATIONS = (
         name="ai_key_last_error",
         sql="alter table ai_keys add column last_error text;",
     ),
+    Migration(
+        version=10,
+        name="group_ai_keys",
+        sql="""
+        create table group_ai_settings (
+            chat_id integer primary key check(chat_id < 0),
+            owner_user_id integer,
+            key_id text references ai_keys(id),
+            enabled integer not null default 0,
+            accepting_grants integer not null default 0
+        );
+        create trigger delete_group_ai_key after delete on ai_keys
+        begin
+            update group_ai_settings set owner_user_id = null, key_id = null, enabled = 0
+            where key_id = old.id;
+        end;
+        """,
+    ),
 )
 
 
