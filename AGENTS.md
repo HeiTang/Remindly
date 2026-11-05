@@ -11,7 +11,7 @@
 
 ## 擴充 AI 供應商
 
-目前正式啟用 Gemini。供應商透過 `ai/contracts.py` 的 `AiProvider` Protocol 接入，
+目前註冊 Gemini 與 Groq（固定 `openai/gpt-oss-120b`）。供應商透過 `ai/contracts.py` 的 `AiProvider` Protocol 接入，
 不繼承 Gemini 實作。新增時只需實作 adapter 並在 `app.py` 註冊：
 
 1. 提供 `id`、`name`、`model`，實作 `generate(key, system, prompt, schema, *, timeout)`。
@@ -40,4 +40,5 @@
 Schema v7 只新增供應商欄位，原有 v6 Key 標記為 `gemini`，加密內容、排序及冷卻狀態保留。
 Schema v8 保存 AI 編輯時間的追問狀態；schema 與版本紀錄必須在同一交易內提交。
 Schema v9 新增 `ai_keys.last_error`；既有 Key 保留，舊紀錄的失敗原因預設為 `NULL`。
-第二供應商的隔離與備援透過測試替身驗證；不代表已正式支援另一個雲端服務。
+Groq 使用 strict JSON Schema，沒有可讀模型名稱 metadata，回傳 `None` 並顯示共用 AI 標籤。
+供應商隔離、備援與確認流程透過模擬 HTTP 回應驗證；不代表已完成真實 Groq Key 實測。

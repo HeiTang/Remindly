@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
@@ -12,6 +12,7 @@ from remindly.reminders.drafts import (
     ReminderDraftStore,
     ReminderEditSessionStore,
 )
+from remindly.reminders.guards import CORRECTION_RE, VAGUE_TIME_RE, preserve_conditions
 from remindly.reminders.models import (
     ParseResult,
     Participant,
@@ -718,15 +719,36 @@ class ReminderService:
         message: TelegramMessage,
         now: datetime,
     ) -> None:
+        previous = replace(
+            draft, missing_fields=list(draft.missing_fields), parse_result=dict(draft.parse_result)
+        )
         missing = [field for field in draft.missing_fields if field != "clarification"]
-        draft.parse_result.pop("question", None)
         parsed_answer = self._parser.parse(
             answer,
             message,
             now=now.astimezone(ZoneInfo(draft.timezone)),
         )
 
-        if "time" in missing:
+        correction = CORRECTION_RE.match(answer.strip()) or VAGUE_TIME_RE.fullmatch(answer.strip())
+        if correction:
+            constraint = self._parser.explicit_update(
+                answer, now.astimezone(ZoneInfo(draft.timezone)), draft
+            )
+            parsed_time = constraint[0] if constraint else None
+            if parsed_time and parsed_time.remind_at:
+                draft.remind_at = parsed_time.remind_at
+            missing = [field for field in missing if field != "time"]
+            if (
+                not parsed_time
+                or not parsed_time.remind_at
+                or parsed_time.missing_time
+                or parsed_time.is_past
+                or not parsed_time.is_complete
+            ):
+                missing.append("time")
+            if parsed_time and parsed_time.grain in {"invalid", "ambiguous"}:
+                draft.remind_at = None
+        elif "time" in missing:
             parsed_time = self._parser.parse_time_only(
                 answer,
                 now.astimezone(ZoneInfo(draft.timezone)),
@@ -739,7 +761,7 @@ class ReminderService:
                 draft.remind_at = parsed_time.remind_at
                 missing.remove("time")
 
-        if "title" in missing:
+        if "title" in missing and not correction:
             title = parsed_answer.title
             if title:
                 draft.title = title
@@ -749,7 +771,20 @@ class ReminderService:
             draft.participants = list(parsed_answer.participants)
             missing.remove("participants")
 
-        draft.missing_fields = missing
+        guarded = preserve_conditions(
+            replace(
+                parsed_answer,
+                title=draft.title,
+                remind_at=draft.remind_at,
+                participants=tuple(draft.participants),
+                missing_fields=tuple(missing),
+                raw={**draft.parse_result, "intent": "update"},
+            ),
+            previous,
+            parsed_answer.raw.get("condition_question"),
+        )
+        draft.missing_fields = list(guarded.missing_fields)
+        draft.parse_result = guarded.raw
 
     def _question_for(self, draft: ReminderDraft) -> str:
         if draft.parse_result.get("grain") == "ai" or draft.parse_result.get("provider"):

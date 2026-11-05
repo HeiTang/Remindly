@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import calendar
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
+from remindly.reminders.guards import (
+    CONDITION_QUESTION,
+    CORRECTION_RE,
+    VAGUE_TIME_RE,
+    has_condition,
+    preserve_conditions,
+)
 from remindly.reminders.models import (
     MentionKind,
     ParseResult,
@@ -13,13 +20,19 @@ from remindly.reminders.models import (
     RecurrenceError,
     RecurrencePeriod,
     RecurrenceRule,
+    ReminderDraft,
 )
 from remindly.reminders.recurrence import (
     INTERVAL_MIN_SECONDS,
     is_valid_month_day,
     next_fire,
 )
-from remindly.reminders.text import normalize_spaces
+from remindly.reminders.text import (
+    PROMPT_SPLIT_RE,
+    WEEKDAY_RE,
+    new_reminder_text,
+    normalize_spaces,
+)
 from remindly.telegram.models import TelegramMessage, TelegramUser
 
 WEEKDAY_MAP = {
@@ -67,6 +80,14 @@ RELATIVE_RE = re.compile(
     r"|個月|个月|天|日)\s*後" + TIME_SUFFIX
 )
 
+# 只辨識尚未消耗的時間成分，不代表本機已支援計算這種時間說法。
+TIME_DURATION_RE = re.compile(
+    r"(?:\d+|[半零〇一二兩两三四五六七八九十百]+)\s*(?:個)?\s*"
+    r"(?:分鐘|秒鐘|小時|鐘頭|刻鐘|星期|分|秒|刻|天|日|週|月)"
+)
+TIME_CONTINUATION_RE = re.compile(r"^(?:(?:的|過|差|加|減|再|又|多|少|前|後)\s*)+")
+TIME_PERIOD_FRAGMENT_RE = re.compile(r"^[^\W\d_]{0,2}[晨晚夜午早]\s*")
+
 # 「N 分」（不含 分鐘），用於「19 分要...」= 當前小時 + N 分。
 # 若當前分鐘已過就滾到下一個整點。
 PARTIAL_MINUTE_RE = re.compile(r"(?P<minute>\d+)\s*分(?![鐘钟])" + TIME_SUFFIX)
@@ -92,12 +113,6 @@ PART_OF_DAY_RE = re.compile(
     r"(?P<period>早上|早晨|上午|中午|下午|晚上|今晚|"
     r"[早晚](?(day)|(?=$|\s|(?:的\s*)?時候|"
     r"[\d零〇一二兩两三四五六七八九十]+\s*[點点:：])))" + TIME_SUFFIX
-)
-
-WEEKDAY_RE = re.compile(
-    r"(?P<prefix>(?:下)+|這|本)?"
-    r"(?:週|周|禮拜|礼拜|星期)"
-    r"(?P<weekday>[一二三四五六日天])"
 )
 
 REL_DAY_RE = re.compile(r"(?P<kw>後天|明天|明日|今天|今日)")
@@ -144,9 +159,6 @@ _INTERVAL_UNIT_SECONDS: dict[str, int] = {
     "周": 7 * 24 * 3600,
 }
 
-# 切割 '提醒我/我們/大家' 的錨點；用於「以動詞切段」策略
-PROMPT_SPLIT_RE = re.compile(r"提醒(?:我們|我|大家)?")
-
 # 內容區前綴清理：連接詞 / 主詞代名詞
 LEADING_CONNECTOR_RE = re.compile(r"^\s*(?:和|跟|與|我們|我|大家)\s*")
 
@@ -174,6 +186,32 @@ class TimeParse:
     missing_time: bool = False
     is_past: bool = False
     consumed_spans: tuple[tuple[int, int], ...] = ()
+    is_complete: bool = True
+
+    @property
+    def has_explicit_date(self) -> bool:
+        text = LEADING_ZAI_RE.sub("", self.consumed_text).strip()
+        if any(
+            pattern.match(text)
+            for pattern in (
+                ABSOLUTE_RE,
+                SHORT_DATE_RE,
+                CHINESE_DATE_RE,
+                WEEKDAY_RE,
+                REL_DAY_RE,
+            )
+        ):
+            return True
+        period = PART_OF_DAY_RE.match(text)
+        return bool(period and period.group("day"))
+
+
+def _has_time_continuation(text: str) -> bool:
+    tail = TIME_CONTINUATION_RE.sub("", text.lstrip(), count=1)
+    if TIME_RE.match(tail) or TIME_DURATION_RE.match(tail):
+        return True
+    period = TIME_PERIOD_FRAGMENT_RE.match(tail)
+    return bool(period and TIME_RE.match(tail[period.end() :]))
 
 
 class ReminderParser:
@@ -191,7 +229,7 @@ class ReminderParser:
         if reference.tzinfo is None:
             reference = reference.replace(tzinfo=zone)
 
-        cleaned = normalize_spaces(text)
+        cleaned = normalize_spaces(new_reminder_text(text) or text)
         participants = self.extract_participants(cleaned, message)
 
         # 週期性提醒優先：認出 每天/每週X/每月X號/每年 X 就直接產出 RecurrenceRule。
@@ -221,14 +259,17 @@ class ReminderParser:
                 "missing_fields": missing_fields,
                 "confidence": confidence,
             }
-            return ParseResult(
-                title=title,
-                remind_at=remind_at,
-                participants=tuple(participants),
-                missing_fields=tuple(missing_fields),
-                confidence=confidence,
-                raw=raw,
-                recurrence=rule,
+            return preserve_conditions(
+                ParseResult(
+                    title=title,
+                    remind_at=remind_at,
+                    participants=tuple(participants),
+                    missing_fields=tuple(missing_fields),
+                    confidence=confidence,
+                    raw=raw,
+                    recurrence=rule,
+                ),
+                source_question=CONDITION_QUESTION if has_condition(title) else None,
             )
 
         split = self._try_split_parse(cleaned, reference, zone, participants)
@@ -257,14 +298,38 @@ class ReminderParser:
             "is_past": time_parse.is_past,
             "confidence": confidence,
         }
-        return ParseResult(
-            title=title,
-            remind_at=time_parse.remind_at,
-            participants=tuple(participants),
-            missing_fields=tuple(missing_fields),
-            confidence=confidence,
-            raw=raw,
+        return preserve_conditions(
+            ParseResult(
+                title=title,
+                remind_at=time_parse.remind_at,
+                participants=tuple(participants),
+                missing_fields=tuple(missing_fields),
+                confidence=confidence,
+                raw=raw,
+            ),
+            source_question=CONDITION_QUESTION if has_condition(title) else None,
         )
+
+    def explicit_update(
+        self, text: str, now: datetime, context: ReminderDraft
+    ) -> tuple[TimeParse, bool] | None:
+        constraint = self.explicit_time(text, now, context.remind_at)
+        correction = CORRECTION_RE.match(text.strip())
+        vague = bool(VAGUE_TIME_RE.fullmatch(text.strip()))
+        if (correction or vague) and constraint is None:
+            content = text.strip()[correction.end() :] if correction else text
+            constraint = (
+                self.explicit_time(content, now, context.remind_at)
+                if self.recurrence_marker(content) is None
+                else None
+            )
+            if correction and correction.group().rstrip().endswith("不是") and constraint:
+                constraint = (TimeParse(None, "", "ambiguous", missing_time=True), True)
+            if constraint is None and (
+                "title" in context.missing_fields or vague or VAGUE_TIME_RE.fullmatch(content)
+            ):
+                constraint = (TimeParse(None, "", "ambiguous", missing_time=True), True)
+        return constraint
 
     def parse_time_only(
         self,
@@ -289,7 +354,28 @@ class ReminderParser:
             and marker[1] != RecurrencePeriod.INTERVAL
             and prefix.startswith(marker[0])
         ):
-            return self.explicit_time(cleaned.replace(marker[0], "", 1), now, existing_date)
+            constraint = self.explicit_time(cleaned.replace(marker[0], "", 1), now, existing_date)
+            if constraint:
+                temporal, time_only = constraint
+                consumed = LEADING_ZAI_RE.sub("", temporal.consumed_text).strip()
+                if (
+                    temporal.remind_at
+                    and temporal.is_complete
+                    and not temporal.missing_time
+                    and not temporal.has_explicit_date
+                    and (TIME_RE.match(consumed) or PART_OF_DAY_RE.match(consumed))
+                ):
+                    rule = RecurrenceRule(
+                        period=marker[1],
+                        hour=temporal.remind_at.hour,
+                        minute=temporal.remind_at.minute,
+                        **marker[2],
+                    )
+                    # 單純時鐘的日期由週期計算，不能沿用一次性提醒的今天／明天。
+                    return replace(
+                        temporal, remind_at=next_fire(rule, now), is_past=False
+                    ), time_only
+            return constraint
         prompt = PROMPT_SPLIT_RE.search(cleaned)
         if prompt:
             left = cleaned[: prompt.start()].strip()
@@ -607,6 +693,8 @@ class ReminderParser:
                 missing_time=missing,
                 is_past=target is not None and target.astimezone(UTC) <= now.astimezone(UTC),
                 consumed_spans=tuple(spans),
+                is_complete=grain in {"invalid", "ambiguous"}
+                or not _has_time_continuation(text[end:]),
             ), end
 
         def invalid_date(end: int) -> tuple[TimeParse, int]:

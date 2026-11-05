@@ -33,6 +33,29 @@ from remindly.telegram.models import (
 
 
 class AiFlowTest(unittest.TestCase):
+    def test_explicit_additional_request_is_created_even_when_model_says_update(self):
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.extend(
+            [
+                parsed(title="拿包裹"),
+                parsed(intent="update", title="繳水費", date="2026-10-24", time="09:00"),
+            ]
+        )
+        self.send("提醒我明天下午三點拿包裹")
+        old = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        source = "那件事取消，另外提醒我後天早上九點繳水費"
+        self.send(source)
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual("create", draft.parse_result["intent"])
+        self.assertEqual(source, draft.source_text)
+        self.assertEqual("繳水費", draft.title)
+        self.assertIsNone(self.gemini.calls[-1][1]["context"])
+        self.assertEqual("提醒我後天早上九點繳水費", self.gemini.calls[-1][1]["text"])
+        self.assertIsNone(self.service.confirm(old.id, USER.id, NOW))
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+        self.confirm(draft.id)
+        self.assertEqual("繳水費", self.repo.list_pending(CHAT.id)[0].title)
+
     def test_pending_title_time_correction_then_literal_answer(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.extend(
@@ -181,6 +204,35 @@ class AiFlowTest(unittest.TestCase):
         self.assertIn("clarification", draft.missing_fields)
         self.assertIsNone(self.service.confirm(draft.id, USER.id, NOW))
         self.assertEqual([], self.repo.list_pending(CHAT.id))
+
+    def test_partial_time_guards_block_confirmation(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        for text, recurrence in (
+            ("提醒我明天的晚上八點吃藥", rule(hour=20)),
+            ("提醒我明天的晚上八點只在工作日吃藥", None),
+        ):
+            with self.subTest(text=text):
+                self.gemini.responses.append(
+                    parsed(title="吃藥", time="20:00", recurrence=recurrence)
+                )
+                self.send(text)
+                draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+                self.assertIn("clarification", draft.missing_fields)
+                self.assertIsNone(draft.recurrence)
+                self.confirm(draft.id)
+                self.assertEqual([], self.repo.list_pending(CHAT.id))
+
+    def test_recurrence_saves_explicit_tomorrow_evening_start(self) -> None:
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.gemini.responses.append(parsed(title="吃藥", time="20:00", recurrence=rule(hour=20)))
+        self.send("每天明晚八點提醒我吃藥")
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertTrue(draft.is_complete)
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+        self.confirm(draft.id)
+        reminder = self.repo.list_pending(CHAT.id)[0]
+        self.assertEqual(NOW.replace(day=23, hour=20), reminder.remind_at)
+        self.assertEqual(20, reminder.recurrence.hour)
 
     def test_wrong_model_dates_cannot_change_followup_date(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
@@ -353,6 +405,50 @@ class AiFlowTest(unittest.TestCase):
         self.assertEqual("拿包裹", self.repo.list_pending(CHAT.id)[0].title)
         self.assertEqual(SECOND, other.calls[0][0])
         self.assertEqual([], self.gemini.calls)
+
+    def test_groq_fallback_uses_remaining_budget_and_requires_confirmation(self) -> None:
+        import io
+        import json
+
+        from remindly.ai.groq import GroqProvider
+
+        calls = []
+
+        def opener(request, *, timeout):
+            calls.append((request.get_header("Authorization"), timeout))
+            return io.BytesIO(
+                json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "finish_reason": "stop",
+                                "message": {"content": json.dumps(parsed(title="拿包裹"))},
+                            }
+                        ]
+                    }
+                ).encode()
+            )
+
+        self.gateway.providers["groq"] = GroqProvider(opener=opener)
+        self.send(f"/ai add gemini {SECRET}")
+        self.send(f"/ai add groq {SECOND}")
+        self.assertIn("groq · Groq", self.telegram.messages[-1].text)
+        self.gemini.responses.append(ProviderError("timeout"))
+        with patch("remindly.ai.gateway.time.monotonic", side_effect=[100, 100, 105, 106]):
+            self.send("明天下午三點叫我去拿包裹")
+        self.assertEqual([(f"Bearer {SECOND}", 13)], calls)
+        self.assertEqual([18], self.gemini.timeouts)
+        first, second = self.keys.list(USER.id)
+        self.assertEqual(("cooldown", "timeout"), (first.status, first.last_error))
+        self.assertEqual(("ready", None), (second.status, second.last_error))
+        draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
+        self.assertEqual("groq", draft.parse_result["provider"])
+        self.assertEqual("openai/gpt-oss-120b", draft.parse_result["model"])
+        self.assertIn("<code>使用 AI 解析</code>", self.telegram.messages[-1].text)
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
+        self.confirm(draft.id)
+        self.assertEqual("拿包裹", self.repo.list_pending(CHAT.id)[0].title)
+        self.assertNotIn(SECOND, repr(self.telegram.messages))
 
     def test_failed_key_message_deletion_is_reported_without_echoing(self) -> None:
         with patch.object(
@@ -621,15 +717,17 @@ class AiFlowTest(unittest.TestCase):
         self.assertIn("最近失敗：AI 請求逾時", self.telegram.messages[-1].text)
         self.assertNotIn(SECRET, self.telegram.messages[-1].text)
 
-    def test_ai_off_can_finish_preserved_ambiguous_draft_with_basic_parser(self) -> None:
+    def test_ai_off_cannot_clear_preserved_condition_by_only_supplying_time(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.gemini.responses.append(parsed(question="要不要排除假日？"))
         self.send("工作日提醒我喝水")
         self.send("/ai off")
         self.send("明天下午三點")
         draft = self.service.peek_draft(CHAT.id, USER.id, NOW)
-        self.assertTrue(draft.is_complete)
-        self.assertNotIn("question", draft.parse_result)
+        self.assertFalse(draft.is_complete)
+        self.assertIn("clarification", draft.missing_fields)
+        self.assertTrue(draft.parse_result["question"])
+        self.assertEqual([], self.repo.list_pending(CHAT.id))
 
     def test_update_keeps_other_participants_and_original_timezone(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)

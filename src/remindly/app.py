@@ -7,6 +7,7 @@ from types import FrameType
 from remindly import __version__
 from remindly.ai.gateway import AiGateway
 from remindly.ai.gemini import GeminiProvider
+from remindly.ai.groq import GroqProvider
 from remindly.ai.keys import ApiKeyStore
 from remindly.ai.parser import SemanticParser
 from remindly.bot.ai_commands import AiCommands
@@ -67,7 +68,9 @@ def main() -> None:
     repository = ReminderRepository(settings.database_path)
     repository.migrate()
     ai_keys = ApiKeyStore(repository, settings.ai_encryption_key)
-    ai_gateway = AiGateway(ai_keys, {"gemini": GeminiProvider()}, default_provider="gemini")
+    ai_gateway = AiGateway(
+        ai_keys, {"gemini": GeminiProvider(), "groq": GroqProvider()}, default_provider="gemini"
+    )
 
     client = TelegramClient(settings.token)
     renderer = ReminderRenderer()

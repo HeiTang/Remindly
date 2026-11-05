@@ -25,6 +25,7 @@ from remindly.ai.gemini import GeminiProvider, gemini_schema, quota_cooldown
 from remindly.ai.keys import ApiKeyStore
 from remindly.ai.parser import SCHEMA, SemanticParser, validate_result
 from remindly.reminders.models import MentionKind, Participant, RecurrencePeriod, RecurrenceRule
+from remindly.reminders.parser import ReminderParser
 from remindly.storage.sqlite import ReminderRepository
 
 NOW = datetime(2026, 10, 22, 12, tzinfo=ZoneInfo("Asia/Taipei"))
@@ -495,6 +496,177 @@ class GeminiClientTest(unittest.TestCase):
 
 
 class SemanticTimeGuardTest(unittest.TestCase):
+    def test_weekday_aliases_share_calendar_constraints_and_week_boundaries(self):
+        now = datetime(2026, 10, 31, 12, tzinfo=NOW.tzinfo)
+        for weekday, day, past in (
+            ("這個星期天", "2026-11-01", False),
+            ("這個禮拜日", "2026-11-01", False),
+            ("這週日", "2026-11-01", False),
+            ("本星期天", "2026-11-01", False),
+            ("下個星期一", "2026-11-02", False),
+            ("下下個禮拜天", "2026-11-15", False),
+            ("這個星期一", "2026-10-26", True),
+        ):
+            with self.subTest(weekday=weekday):
+                text = f"提醒我{weekday}晚上七點付停車費"
+                result = self.parse(
+                    parsed(title="付停車費", date="2026-11-06", time="19:00"), text, now=now
+                )
+                native = ReminderParser("Asia/Taipei").parse_time_only(weekday + "晚上七點", now)
+                self.assertEqual(day, result.remind_at.date().isoformat())
+                self.assertEqual(native.remind_at, result.remind_at)
+                self.assertEqual(past, "time" in result.missing_fields)
+                self.assertEqual("付停車費", result.title)
+        sunday = datetime(2026, 11, 1, 20, tzinfo=NOW.tzinfo)
+        result = self.parse(
+            parsed(date="2026-11-08", time="19:00"), "提醒我這個星期天晚上七點買湯", now=sunday
+        )
+        self.assertEqual("2026-11-01", result.remind_at.date().isoformat())
+        self.assertIn("time", result.missing_fields)
+
+    def test_explicit_new_request_does_not_inherit_old_draft_state(self):
+        context = self.draft(
+            source_text="每天九點提醒我只在工作日吃藥",
+            remind_at=NOW.replace(day=23, hour=9),
+            missing_fields=["clarification"],
+            parse_result={"question": "是否只限週一至週五？"},
+            recurrence=RecurrenceRule(RecurrencePeriod.DAILY, hour=9, minute=0),
+        )
+        for prefix in ("另外", "另", "再", "新增", "另開一筆", "請另外建立一個"):
+            for intent in ("update", "not_reminder"):
+                text = f"前一件先擱著；{prefix}提醒我後天早上九點繳水費"
+                with self.subTest(prefix=prefix, intent=intent):
+                    result = self.parse(
+                        parsed(intent=intent, title="繳水費"), text, context=context
+                    )
+                    self.assertEqual("create", result.raw["intent"])
+                    self.assertEqual("2026-10-24T09:00:00+08:00", result.remind_at.isoformat())
+                    self.assertEqual("繳水費", result.title)
+                    self.assertIsNone(result.recurrence)
+                    self.assertEqual((), result.missing_fields)
+
+    def test_new_intent_constraint_cannot_repair_invalid_provider_schema(self):
+        with self.assertRaises(AiUnavailable):
+            self.parse(
+                {**parsed(), "unexpected": True},
+                "另外提醒我後天早上九點繳水費",
+                context=self.draft(),
+            )
+
+    def test_unparsed_time_components_preserve_complete_model_results(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source, day, clock, title in (
+            ("提醒我後天上午差十分九點繳電話費", "2026-11-06", "08:50", "繳電話費"),
+            ("提醒我11/9晚上九點過二十分鐘寄包裹", "2026-11-09", "21:20", "寄包裹"),
+            ("提醒我明天清晨五點買早餐", "2026-11-05", "05:00", "買早餐"),
+            ("提醒我明天的下午兩點看牙醫", "2026-11-05", "14:00", "看牙醫"),
+        ):
+            with self.subTest(source=source):
+                constraint = ReminderParser("Asia/Taipei").explicit_time(source, now)
+                self.assertFalse(constraint[0].is_complete)
+                result = self.parse(parsed(title=title, date=day, time=clock), source, now=now)
+                self.assertEqual(f"{day}T{clock}:00+08:00", result.remind_at.isoformat())
+                self.assertEqual(title, result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_partial_time_keeps_source_calendar_date_and_past_check(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source, day, missing in (
+            ("提醒我後天清晨五點買早餐", "2026-11-06", False),
+            ("提醒我2026/11/3清晨五點買早餐", "2026-11-03", True),
+        ):
+            with self.subTest(source=source):
+                result = self.parse(
+                    parsed(title="買早餐", date="2026-11-05", time="05:00"), source, now=now
+                )
+                self.assertEqual(day, result.remind_at.date().isoformat())
+                self.assertEqual(missing, "time" in result.missing_fields)
+
+    def test_partial_time_cannot_bypass_invalid_or_ambiguous_source(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source in (
+            "提醒我11/31清晨五點買早餐",
+            "提醒我明天下午三點或四點買早餐",
+        ):
+            with self.subTest(source=source):
+                result = self.parse(
+                    parsed(title="買早餐", date="2026-11-05", time="05:00"), source, now=now
+                )
+                self.assertIn("time", result.missing_fields)
+                self.assertIsNone(result.remind_at)
+
+    def test_partial_time_cannot_drop_source_conditions(self):
+        for text in (
+            "提醒我明天的晚上八點只在工作日吃藥",
+            "提醒我明天清晨五點如果下雨就收衣服",
+            "提醒我明天晚上八點過十分鐘前交報表",
+            "提醒我明天的晚上八點吃藥，後天九點提醒我寄信",
+        ):
+            with self.subTest(text=text):
+                result = self.parse(parsed(title="吃藥", time="20:00"), text)
+                self.assertIn("clarification", result.missing_fields)
+                self.assertTrue(result.raw["condition_question"])
+        for title in ("前往車站", "之前的會議紀錄", "準備十分鐘的簡報"):
+            with self.subTest(title=title):
+                result = self.parse(
+                    parsed(title=title, time="20:00"), f"提醒我明天的晚上八點{title}"
+                )
+                self.assertEqual(title, result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_partial_time_still_validates_recurrence(self):
+        for text in (
+            "提醒我明天的晚上八點吃藥",
+            "提醒我明天的晚上八點每週一吃藥",
+        ):
+            with self.subTest(text=text):
+                result = self.parse(
+                    parsed(title="吃藥", time="20:00", recurrence=rule(hour=20)), text
+                )
+                self.assertIsNone(result.recurrence)
+                self.assertIn("clarification", result.missing_fields)
+                self.assertIn("週期", result.raw["question"])
+        result = self.parse(
+            parsed(title="吃藥", time="20:10", recurrence=rule(hour=9)),
+            "提醒我每天晚上八點過十分鐘吃藥",
+        )
+        self.assertIsNone(result.recurrence)
+        self.assertIn("clarification", result.missing_fields)
+        result = self.parse(
+            parsed(title="吃藥", time="20:10", recurrence=rule(hour=20, minute=10)),
+            "提醒我每天晚上八點過十分鐘吃藥",
+        )
+        self.assertEqual((), result.missing_fields)
+        self.assertEqual((20, 10), (result.recurrence.hour, result.recurrence.minute))
+        context = self.draft(
+            title="吃藥",
+            remind_at=NOW.replace(day=23, hour=20),
+            missing_fields=[],
+            recurrence=RecurrenceRule(RecurrencePeriod.DAILY, hour=20, minute=0),
+        )
+        result = self.parse(
+            parsed(intent="update", title="吃藥", time="20:10", recurrence=rule(hour=20)),
+            "改成明天晚上八點過十分鐘",
+            context=context,
+        )
+        self.assertEqual(context.recurrence, result.recurrence)
+        self.assertEqual((), result.missing_fields)
+
+    def test_time_words_in_subject_do_not_disable_verified_time_guard(self):
+        now = datetime(2026, 11, 4, 12, tzinfo=NOW.tzinfo)
+        for source, title in (
+            ("提醒我明天晚上八點過去拿包裹", "過去拿包裹"),
+            ("提醒我明天晚上八點準備十五分鐘的簡報", "準備十五分鐘的簡報"),
+            ("明天晚上八點提醒我晚上九點播出的節目", "晚上九點播出的節目"),
+        ):
+            with self.subTest(source=source):
+                result = self.parse(
+                    parsed(title="錯誤改寫", date="2026-11-06", time="09:00"), source, now=now
+                )
+                self.assertEqual("2026-11-05T20:00:00+08:00", result.remind_at.isoformat())
+                self.assertEqual(title, result.title)
+                self.assertEqual((), result.missing_fields)
+
     def test_date_then_clock_cannot_clear_pending_condition(self):
         context = self.draft(
             missing_fields=["time", "clarification"],
@@ -680,6 +852,65 @@ class SemanticTimeGuardTest(unittest.TestCase):
         self.assertEqual(RecurrencePeriod.WEEKLY, result.recurrence.period)
         self.assertEqual((0,), result.recurrence.weekdays)
         self.assertEqual(datetime(2026, 10, 26, 9, tzinfo=NOW.tzinfo), result.remind_at)
+
+    def test_weekly_first_fire_is_not_overwritten_by_clock_rollover(self):
+        now = datetime(2026, 10, 30, 12, tzinfo=NOW.tzinfo)
+        for text in (
+            "每週一、三、五早上九點提醒我吃藥",
+            "提醒我每週一、三、五早上九點吃藥",
+            "每週一、三、五09:00提醒我吃藥",
+        ):
+            with self.subTest(text=text):
+                result = self.parse(
+                    parsed(
+                        title="吃藥",
+                        date="2026-11-02",
+                        time="09:00",
+                        recurrence=rule(period="weekly", weekdays=[0, 2, 4]),
+                    ),
+                    text,
+                    now=now,
+                )
+                self.assertEqual(datetime(2026, 11, 2, 9, tzinfo=NOW.tzinfo), result.remind_at)
+                self.assertEqual((0, 2, 4), result.recurrence.weekdays)
+                self.assertEqual("吃藥", result.title)
+                self.assertEqual((), result.missing_fields)
+
+    def test_weekly_explicit_start_date_is_preserved(self):
+        now = datetime(2026, 10, 30, 12, tzinfo=NOW.tzinfo)
+        result = self.parse(
+            parsed(
+                title="吃藥",
+                date="2026-11-02",
+                time="09:00",
+                recurrence=rule(period="weekly", weekdays=[0, 2, 4]),
+            ),
+            "每週一、三、五11/4早上九點提醒我吃藥",
+            now=now,
+        )
+        self.assertEqual(datetime(2026, 11, 4, 9, tzinfo=NOW.tzinfo), result.remind_at)
+        self.assertEqual((), result.missing_fields)
+
+    def test_recurrence_preserves_relative_day_in_period(self):
+        now = NOW.replace(hour=6)
+        for period, day, clock in (
+            ("明早九點", 23, "09:00"),
+            ("明晚八點", 23, "20:00"),
+            ("後晚八點", 24, "20:00"),
+        ):
+            with self.subTest(period=period):
+                result = self.parse(
+                    parsed(
+                        title="吃藥",
+                        date=f"2026-10-{day}",
+                        time=clock,
+                        recurrence=rule(hour=int(clock[:2])),
+                    ),
+                    f"每天{period}提醒我吃藥",
+                    now=now,
+                )
+                self.assertEqual(f"2026-10-{day}T{clock}:00+08:00", result.remind_at.isoformat())
+                self.assertEqual((), result.missing_fields)
 
 
 class SemanticValidationTest(unittest.TestCase):

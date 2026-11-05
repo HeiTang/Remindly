@@ -28,7 +28,7 @@
 
 - 🔎 **自然語言建立提醒**：支援「明天下午三點提醒我倒垃圾」這類中文輸入，拆出提醒時間、提醒事項與參與者。
 
-- 🧠 **自帶 Gemini 語意解析**：個人可設定多組 API Key，以 Gemini 3.5 Flash-Lite 理解口語、不同日期及草稿修正；不明確時追問，仍需確認才建立。未設定或關閉 AI 時使用原本規則解析。
+- 🧠 **自帶 Key 的 AI 語意解析**：個人可設定多組 Gemini／Groq API Key，以 Gemini 3.5 Flash-Lite 或 GPT-OSS 120B 理解口語、不同日期及草稿修正；不明確時追問，仍需確認才建立。未設定或關閉 AI 時使用原本規則解析。
 
 - 🔁 **週期性提醒**：`每天 09:00`、`每週一 09:00`、`每個月 1, 18, 25 號 09:00`、`每年 12/25 08:00`、`每 15 分鐘 / 每 2 小時` 都能一句話建立，到期後自動排下一次。內建解析遇到無效語法會直接拒絕；AI 解析遇到缺漏或歧義則追問。
 
@@ -78,33 +78,36 @@ Telegram Update
 | `/cancel R-8F3K` | 取消提醒。 |
 | `/timezone Asia/Taipei` | 設定時區。 |
 | `/groupmode on\|off\|status` | 查看或切換群組自然語言模式。 |
-| `/ai` | 私聊管理個人 Gemini Key、開關及備援順序。 |
+| `/ai` | 私聊管理個人 Gemini／Groq Key、開關及備援順序。 |
 
 ### 個人 AI 設定（選用）
 
 **不設定也能用。** 所有使用者功能相同，不分免費／付費；預設使用內建規則解析。
-想用 AI 理解口語提醒，可自備 Gemini API Key，平台不提供 Key。
+想用 AI 理解口語提醒，可自備 Gemini 或 Groq API Key，平台不提供 Key。
 
 **開啟：** 與 Bot 私聊，輸入：
 
 ```text
-/ai add <你的 Gemini API Key>
+/ai add gemini <你的 Gemini API Key>
+/ai add groq <你的 Groq API Key>
 ```
 
+選一個供應商新增即可；省略供應商仍預設 Gemini。Groq 固定使用 `openai/gpt-oss-120b`，不提供模型切換。
 首次新增後自動開啟；若之前手動關閉過，請再輸入 `/ai on`。
 接著直接說「明晚八點叫我拿包裹」，確認後才會建立提醒。
 確認卡會標示「使用 … 解析」，方便核對本次使用的模型或內建規則。
+Groq 模型 metadata 沒有可讀名稱，確認卡顯示「使用 AI 解析」；供應商與模型 ID 仍存於解析紀錄。
 
 | 想做什麼 | 指令 |
 | --- | --- |
 | 查看狀態與 Key ID | `/ai` |
 | 關閉／重新開啟 AI | `/ai off` ／ `/ai on` |
-| 新增備援 Key | `/ai add <另一組 Key>` |
+| 新增備援 Key | `/ai add gemini <Key>` ／ `/ai add groq <Key>` |
 | 將某組 Key 優先使用 | `/ai move <Key ID> 1` |
 | 刪除 Key | `/ai delete <Key ID>` |
 
-- **費用自己掌握：** 依你的 Google 專案計費；付費專案可能直接收費，不會先跳出付費確認。同專案多組 Key 共用額度。
-- **資料會傳出：** Key 經 Telegram 傳至 Bot 加密保存；啟用後，一般私聊文字、群組觸發訊息及必要上下文會送至 Google。
+- **費用自己掌握：** 依你的供應商帳號／專案計費；付費帳號可能直接收費，不會先跳出付費確認。同帳號／專案多組 Key 可能共用額度。
+- **資料會傳出：** Key 經 Telegram 傳至 Bot 加密保存；啟用後，一般私聊文字、群組觸發訊息及必要上下文會送至實際使用的供應商（Google 或 Groq）；備援時可能依序送至兩者。
 - **時間與事項約束：** 可明確辨識的時間及事項區由共用本機規則定案，事項保留原文；只補時間時保留草稿日期、事項、對象與週期。已確定欄位的多餘追問會移除，未解條件則保留；無效或已過的時間會追問，不接受模型換成其他日期。其他口語歧義仍須確認。
 - **AI 暫時不能用：** 草稿會保留；稍後重試，或 `/ai off` 後重送，改用內建解析。
 - **等待時間：** 最多嘗試三組 Key，共用 18 秒等待預算；逾時不代表 Key 失效或免費額度用盡。
@@ -196,7 +199,7 @@ cp .env.example .env
 | `SCHEDULER_INTERVAL_SECONDS` | 否 | `10` | 到期提醒掃描間隔。 |
 | `DRAFT_TTL_MINUTES` | 否 | `10` | 草稿與修改 session 過期時間。 |
 | `LOG_LEVEL` | 否 | `INFO` | Logging level。 |
-| `AI_ENCRYPTION_KEY` | AI 設定必填 | 無 | Fernet 主金鑰，加密個人 Gemini Key；需固定並另行備份。 |
+| `AI_ENCRYPTION_KEY` | AI 設定必填 | 無 | Fernet 主金鑰，加密個人 AI Key；需固定並另行備份。 |
 
 ### 啟用個人 AI（選用）
 
@@ -311,7 +314,7 @@ Runtime 新增 `cryptography` 供 Key 加密。更新 runtime dependencies 後�
 uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt
 ```
 
-`tests/test_ai.py` 與 `tests/test_ai_flow.py` 使用模擬 Gemini 回應及暫存 SQLite，檢查 REST
+`tests/test_ai.py`、`tests/test_groq.py` 與 `tests/test_ai_flow.py` 使用模擬供應商回應及暫存 SQLite，檢查 REST
 請求、結構化驗證、Key 備援與 Telegram 完整流程，不消耗真實 API 額度。這些檢查不代表
 已量測模型中文準確率；實際模型表現需另用真實 Key 驗證。
 
