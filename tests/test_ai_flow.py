@@ -302,6 +302,344 @@ class AiFlowTest(unittest.TestCase):
         self.assertIn("未來日期與時間", self.telegram.messages[-1].text)
         self.assertEqual(original.id, self.service.peek_draft(CHAT.id, USER.id, NOW).id)
 
+    def bind_group(self, *, owner=USER, secret=SECRET, provider="gemini"):
+        key_id = self.keys.add(owner.id, provider=provider, key=secret)
+        self.telegram.chat_member_statuses[USER.id] = "administrator"
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}", user=owner)
+        self.assertFalse(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.assertTrue(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        return key_id
+
+    def click_ai(self, data, *, user=USER, chat=CHAT):
+        message = self.telegram.messages[-1]
+        callback = TelegramCallbackQuery(
+            id="ai-click",
+            from_user=user,
+            data=data,
+            message=TelegramMessage(
+                id=message.id, chat=chat, from_user=USER, text=message.text, entities=()
+            ),
+        )
+        self.router.handle_update(TelegramUpdate(id=9000, callback_query=callback))
+
+    def open_group_picker(self):
+        self.telegram.chat_member_statuses[USER.id] = "administrator"
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        button = self.telegram.messages[-1].reply_markup["inline_keyboard"][0][0]
+        self.assertEqual("授權我的 Key", button["text"])
+        self.assertEqual(f"https://t.me/ReminderBot?start=aigroup_{GROUP_CHAT.id}", button["url"])
+        self.send("/start " + button["url"].split("?start=", 1)[1])
+        return self.telegram.messages[-1]
+
+    def test_group_button_private_key_picker_and_confirmation(self):
+        first = self.keys.add(USER.id, provider="gemini", key=SECRET)
+        second = self.keys.add(USER.id, provider="gemini", key=SECOND)
+        self.keys.add(8, provider="gemini", key="other-owner-key")
+        picker = self.open_group_picker()
+        rows = picker.reply_markup["inline_keyboard"]
+        self.assertEqual(2, len(rows))
+        self.assertIn("費用與額度歸你", picker.text)
+        self.assertIn("點選即同意", picker.text)
+        for row in rows:
+            self.assertLessEqual(len(row[0]["callback_data"].encode()), 64)
+            self.assertNotIn(first, row[0]["text"])
+            self.assertNotIn(second, row[0]["text"])
+        self.click_ai(rows[1][0]["callback_data"])
+        self.assertEqual((USER.id, second, False, False), self.keys.group_settings(GROUP_CHAT.id))
+        self.assertEqual({"inline_keyboard": []}, self.telegram.messages[-1].reply_markup)
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.assertTrue(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        self.assertNotIn(SECRET, repr(self.telegram.messages))
+        self.assertNotIn(SECOND, repr(self.telegram.messages))
+
+    def test_group_picker_rejects_another_user_and_group_callbacks(self):
+        key_id = self.keys.add(USER.id, provider="gemini", key=SECRET)
+        picker = self.open_group_picker()
+        data = picker.reply_markup["inline_keyboard"][0][0]["callback_data"]
+        self.click_ai(data, user=TelegramUser(id=8, first_name="Other"))
+        self.assertIn("自己的 Key", self.telegram.callback_answers[-1])
+        self.click_ai(data, chat=GROUP_CHAT)
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+        self.assertIn("私聊", self.telegram.callback_answers[-1])
+        other_key = self.keys.add(8, provider="gemini", key=SECOND)
+        self.click_ai(data.replace(key_id, other_key))
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+
+    def test_group_picker_rechecks_membership_key_and_grant_window(self):
+        key_id = self.keys.add(USER.id, provider="gemini", key=SECRET)
+        picker = self.open_group_picker()
+        data = picker.reply_markup["inline_keyboard"][0][0]["callback_data"]
+        self.telegram.fail_chat_member_lookup = True
+        self.click_ai(data)
+        self.assertIn("無法確認", self.telegram.callback_answers[-1])
+        self.telegram.fail_chat_member_lookup = False
+        self.telegram.chat_member_statuses[USER.id] = "left"
+        self.click_ai(data)
+        self.assertIn("只有該群組成員", self.telegram.callback_answers[-1])
+        self.telegram.chat_member_statuses[USER.id] = "administrator"
+        self.send("/ai group off", chat=GROUP_CHAT)
+        self.click_ai(data)
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        self.keys.delete(USER.id, key_id)
+        self.click_ai(data)
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+
+    def test_group_picker_empty_invalid_link_and_no_group_key_disclosure(self):
+        picker = self.open_group_picker()
+        self.assertIsNone(picker.reply_markup)
+        self.assertIn("還沒有可選的 Key", picker.text)
+        for target in ("abc", "100", str(-(2**80)), "-999"):
+            self.send(f"/start aigroup_{target}")
+            self.assertIsNone(self.telegram.messages[-1].reply_markup)
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.send(f"/start aigroup_{GROUP_CHAT.id}", chat=GROUP_CHAT)
+        self.assertIsNone(self.telegram.messages[-1].reply_markup)
+        self.assertIn("私聊", self.telegram.messages[-1].text)
+        self.send("/ai group off", chat=GROUP_CHAT)
+        self.send(f"/start aigroup_{GROUP_CHAT.id}")
+        self.assertIsNone(self.telegram.messages[-1].reply_markup)
+
+    def test_group_picker_consumed_button_cannot_regrant_and_edit_failure_is_safe(self):
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        picker = self.open_group_picker()
+        data = picker.reply_markup["inline_keyboard"][0][0]["callback_data"]
+        self.telegram.fail_edit_message = True
+        self.click_ai(data)
+        self.assertIn("已授權群組", self.telegram.messages[-1].text)
+        self.click_ai(data)
+        self.assertIn("開放綁定", self.telegram.callback_answers[-1])
+        self.assertFalse(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        for malformed in ("ai:g", "ai:g:-100:missing", "ai:unknown:-100:7_key"):
+            self.click_ai(malformed)
+            self.assertIsNotNone(self.telegram.callback_answers[-1])
+
+    def test_group_link_resolves_missing_bot_username_and_handles_lookup_failure(self):
+        self.router._ai_commands._bot_username = None
+        self.telegram.chat_member_statuses[USER.id] = "administrator"
+        with patch.object(
+            self.telegram, "call", create=True, return_value={"result": {"username": "ResolvedBot"}}
+        ) as call:
+            self.send("/ai group allow", chat=GROUP_CHAT)
+            self.assertIn(
+                "t.me/ResolvedBot?start=",
+                self.telegram.messages[-1].reply_markup["inline_keyboard"][0][0]["url"],
+            )
+            self.send("/ai group", chat=GROUP_CHAT)
+            call.assert_called_once_with("getMe", {})
+        self.router._ai_commands._bot_username = None
+        with patch.object(
+            self.telegram, "call", create=True, side_effect=TelegramApiError("getMe", "failure")
+        ):
+            self.send("/ai group", chat=GROUP_CHAT)
+            self.assertIsNone(self.telegram.messages[-1].reply_markup)
+            self.assertIn("無法取得 Bot 帳號", self.telegram.messages[-1].text)
+
+    def test_group_consent_permissions_and_private_key_management(self):
+        key_id = self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}")
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        self.assertIn("只有群組管理員", self.telegram.messages[-1].text)
+        self.telegram.chat_member_statuses[USER.id] = "administrator"
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.assertIn("請先由 Key 持有人", self.telegram.messages[-1].text)
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        self.assertEqual(
+            "授權我的 Key", self.telegram.messages[-1].reply_markup["inline_keyboard"][0][0]["text"]
+        )
+        self.assertNotIn("grant <群組 ID>", self.telegram.messages[-1].text)
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}", chat=GROUP_CHAT)
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}")
+        self.assertFalse(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        other = TelegramUser(id=8, first_name="Other")
+        for action in ("on", "off", "allow", "unlink"):
+            self.send(f"/ai group {action}", chat=GROUP_CHAT, user=other)
+            self.assertIn("只有群組管理員", self.telegram.messages[-1].text)
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.send("/ai group", chat=GROUP_CHAT, user=other)
+        self.assertNotIn(key_id, self.telegram.messages[-1].text)
+        self.assertNotIn(SECRET, repr(self.telegram.messages))
+
+    def test_group_lookup_failures_and_wrong_owner_fail_closed(self):
+        key_id = self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.telegram.chat_member_statuses[USER.id] = "administrator"
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        self.telegram.fail_chat_member_lookup = True
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}")
+        self.assertIn("無法確認", self.telegram.messages[-1].text)
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.assertIn("無法確認", self.telegram.messages[-1].text)
+        self.telegram.fail_chat_member_lookup = False
+        other = TelegramUser(id=8, first_name="Other")
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}", user=other)
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+        self.telegram.chat_member_statuses[USER.id] = "left"
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}")
+        self.assertIn("只有該群組成員", self.telegram.messages[-1].text)
+        for invalid in ("abc", "100", str(-(2**80))):
+            self.send(f"/ai group grant {invalid} {key_id}")
+            self.assertIn("群組 ID 不正確", self.telegram.messages[-1].text)
+            self.send(f"/ai group revoke {invalid}")
+            self.assertIn("群組 ID 不正確", self.telegram.messages[-1].text)
+        self.assertIsNone(self.keys.group_settings(GROUP_CHAT.id)[0])
+
+    def test_group_uses_only_shared_key_independent_of_personal_switch(self):
+        owner = TelegramUser(id=9, first_name="Owner")
+        key_id = self.bind_group(owner=owner, secret=SECOND)
+        self.keys.set_enabled(owner.id, False)
+        self.keys.add(USER.id, provider="gemini", key=SECRET)
+        self.keys.set_enabled(USER.id, False)
+        self.gemini.responses.append(parsed())
+        self.send("明天三點提醒我喝水", chat=GROUP_CHAT)
+        self.assertEqual([], self.gemini.calls)
+        self.send("@ReminderBot 明天下午三點提醒我喝水", chat=GROUP_CHAT)
+        self.assertEqual(SECOND, self.gemini.calls[0][0])
+        self.assertTrue(self.gemini.calls[0][1]["participants"][0]["is_self"])
+        draft = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.assertEqual("gemini", draft.parse_result["provider"])
+        self.assertIn("使用 Test gemini 解析", self.telegram.messages[-1].text)
+        self.assertEqual([], self.repo.list_pending(GROUP_CHAT.id))
+        self.assertIsNone(self.service.confirm(draft.id, owner.id, NOW))
+        self.assertIsNotNone(self.service.confirm(draft.id, USER.id, NOW))
+        self.assertEqual(1, len(self.repo.list_pending(GROUP_CHAT.id)))
+        self.assertEqual(key_id, self.keys.group_settings(GROUP_CHAT.id)[1])
+
+    def test_group_failure_cools_only_selected_key_and_falls_back(self):
+        key_id = self.bind_group()
+        self.keys.add(USER.id, provider="gemini", key=SECOND)
+        self.gemini.responses.append(ProviderError("rate"))
+        self.send("/remind 明天下午三點提醒我喝水", chat=GROUP_CHAT)
+        self.assertEqual([SECRET], [key for key, _ in self.gemini.calls])
+        self.assertEqual("cooldown", self.keys.list(USER.id)[0].status)
+        self.assertEqual("unchecked", self.keys.list(USER.id)[1].status)
+        draft = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.assertTrue(draft.is_complete)
+        self.assertTrue(draft.parse_result["ai_fallback"])
+        self.assertNotIn("provider", draft.parse_result)
+        self.assertIn("已改用內建解析", self.telegram.messages[-1].text)
+        self.assertNotIn(key_id, self.telegram.messages[-1].text)
+        self.assertNotIn(SECRET, repr(self.telegram.messages))
+        self.send("@ReminderBot 明天下午四點提醒我喝水", chat=GROUP_CHAT)
+        self.assertEqual(1, len(self.gemini.calls))
+        draft = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.assertIsNotNone(self.service.confirm(draft.id, USER.id, NOW))
+        self.gemini.responses.append(parsed())
+        self.send("明天下午三點叫我喝水")
+        self.assertEqual(SECOND, self.gemini.calls[-1][0])
+
+    def test_group_revoke_delete_off_unlink_and_rebinding(self):
+        key_id = self.bind_group()
+        other = TelegramUser(id=8, first_name="Other")
+        self.send(f"/ai group revoke {GROUP_CHAT.id}", user=other)
+        self.assertTrue(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        self.send("/ai group off", chat=GROUP_CHAT)
+        self.assertFalse(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.send(f"/ai group revoke {GROUP_CHAT.id}")
+        self.assertFalse(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.assertFalse(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        self.send(f"/ai group grant {GROUP_CHAT.id} {key_id}")
+        self.send("/ai group on", chat=GROUP_CHAT)
+        second = self.keys.add(USER.id, provider="gemini", key=SECOND)
+        self.send("/ai group allow", chat=GROUP_CHAT)
+        self.send(f"/ai group grant {GROUP_CHAT.id} {second}")
+        self.assertFalse(self.gateway.enabled(USER.id, chat_id=GROUP_CHAT.id))
+        self.send("/ai group on", chat=GROUP_CHAT)
+        self.send(f"/ai delete {second}")
+        self.assertEqual((None, None, False, False), self.keys.group_settings(GROUP_CHAT.id))
+        self.send("@ReminderBot 明天下午三點提醒我喝水", chat=GROUP_CHAT)
+        self.assertEqual([], self.gemini.calls)
+        self.send("/ai group unlink", chat=GROUP_CHAT)
+        self.assertEqual([], self.keys.group_grants(USER.id))
+
+    def test_group_unknown_provider_and_broken_encryption_fall_back(self):
+        key_id = self.bind_group(provider="unknown")
+        self.send("/remind 明天下午三點提醒我喝水", chat=GROUP_CHAT)
+        self.assertIn("已改用內建解析", self.telegram.messages[-1].text)
+        self.assertEqual([], self.gemini.calls)
+        self.keys.delete(USER.id, key_id)
+        self.bind_group()
+        self.keys._cipher = Fernet(Fernet.generate_key())
+        self.send("/remind 明天下午三點提醒我喝水", chat=GROUP_CHAT)
+        self.assertIn("已改用內建解析", self.telegram.messages[-1].text)
+        self.assertEqual([], self.gemini.calls)
+
+    def test_group_fallback_keeps_draft_context_and_actual_parser_label(self):
+        self.bind_group()
+        self.gemini.responses.extend([parsed(title=None), ProviderError("temporary")])
+        self.send("@ReminderBot 明天下午三點提醒我", chat=GROUP_CHAT)
+        old = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.send("喝水", chat=GROUP_CHAT)
+        draft = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.assertEqual(old.remind_at, draft.remind_at)
+        self.assertEqual("喝水", draft.title)
+        self.assertTrue(draft.is_complete)
+        self.assertNotIn("provider", draft.parse_result)
+        self.assertNotIn("使用 Test gemini", self.telegram.messages[-1].text)
+        self.assertIsNotNone(self.service.confirm(draft.id, USER.id, NOW))
+
+    def test_group_groq_isolation_and_natural_language_trigger(self):
+        groq = ScriptedProvider([parsed()], provider_id="groq")
+        self.gateway.providers["groq"] = groq
+        self.bind_group(provider="groq")
+        self.keys.add(USER.id, provider="gemini", key=SECOND)
+        self.send("/groupmode on", chat=GROUP_CHAT)
+        self.send("你提醒我想到一件事", chat=GROUP_CHAT)
+        self.assertEqual([], groq.calls)
+        self.send("明天下午三點提醒我喝水", chat=GROUP_CHAT)
+        self.assertEqual(SECRET, groq.calls[0][0])
+        self.assertEqual([], self.gemini.calls)
+        self.assertEqual(
+            "groq", self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW).parse_result["provider"]
+        )
+        groq.responses.append(ProviderError("permission"))
+        self.send("/remind 明天下午四點提醒我喝水", chat=GROUP_CHAT)
+        self.assertEqual("invalid", self.keys.list(USER.id)[0].status)
+        self.assertEqual([], self.gemini.calls)
+        self.assertIn("已改用內建解析", self.telegram.messages[-1].text)
+
+    def test_group_fallback_explicit_reminder_replaces_complete_draft(self):
+        self.bind_group()
+        self.gemini.responses.extend([parsed(title="交報告"), ProviderError("temporary")])
+        self.send("@ReminderBot 提醒我明天下午三點交報告", chat=GROUP_CHAT)
+        old = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.send("@ReminderBot 提醒我後天下午四點繳費", chat=GROUP_CHAT)
+        draft = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.assertEqual("繳費", draft.title)
+        self.assertEqual((24, 16), (draft.remind_at.day, draft.remind_at.hour))
+        self.assertIsNone(self.service.confirm(old.id, USER.id, NOW))
+
+    def test_group_fallback_new_request_does_not_merge_old_draft(self):
+        self.bind_group()
+        self.gemini.responses.extend([parsed(title=None), ProviderError("response")])
+        self.send("@ReminderBot 明天下午三點提醒我", chat=GROUP_CHAT)
+        self.send("@ReminderBot 另外提醒我後天下午四點喝水", chat=GROUP_CHAT)
+        draft = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.assertEqual("喝水", draft.title)
+        self.assertEqual((24, 16), (draft.remind_at.day, draft.remind_at.hour))
+        self.assertTrue(draft.parse_result["ai_fallback"])
+
+    def test_group_fallback_time_edit_preserves_series(self):
+        self.bind_group()
+        self.gemini.responses.append(parsed(date=None, time=None, recurrence=rule()))
+        self.send("/remind 每天九點提醒我吃藥", chat=GROUP_CHAT)
+        draft = self.service.peek_draft(GROUP_CHAT.id, USER.id, NOW)
+        self.service.confirm(draft.id, USER.id, NOW)
+        reminder = self.repo.list_pending(GROUP_CHAT.id)[0]
+        self.service.begin_edit(GROUP_CHAT.id, reminder.short_id, USER.id, "time", NOW)
+        self.gemini.responses.append(ProviderError("timeout"))
+        self.send("明天下午三點", chat=GROUP_CHAT)
+        updated = self.repo.list_pending(GROUP_CHAT.id)[0]
+        self.assertEqual(15, updated.remind_at.hour)
+        self.assertEqual(reminder.recurrence, updated.recurrence)
+        self.assertIn("已改用內建解析", self.telegram.messages[-1].text)
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = ReminderRepository(Path(self.tmp.name) / "test.db")
@@ -563,7 +901,7 @@ class AiFlowTest(unittest.TestCase):
         self.assertEqual("Asia/Tokyo", self.gemini.calls[0][1]["timezone"])
         self.assertEqual("Asia/Tokyo", self.service.peek_draft(CHAT.id, USER.id, NOW).timezone)
 
-    def test_group_trigger_and_keys_are_scoped_to_actor(self) -> None:
+    def test_unbound_group_never_uses_actor_personal_keys(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)
         self.send("明晚八點叫我拿包裹", chat=GROUP_CHAT)
         self.assertEqual([], self.gemini.calls)
@@ -572,7 +910,7 @@ class AiFlowTest(unittest.TestCase):
         self.assertEqual([], self.gemini.calls)
         self.gemini.responses.append(parsed())
         self.send("@ReminderBot 明天三點叫我喝水", chat=GROUP_CHAT)
-        self.assertEqual(SECRET, self.gemini.calls[0][0])
+        self.assertEqual([], self.gemini.calls)
 
     def test_time_edit_passes_context_and_preserves_series(self) -> None:
         self.keys.add(USER.id, provider="gemini", key=SECRET)

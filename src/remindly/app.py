@@ -33,7 +33,7 @@ COMMANDS = [
     BotCommand("cancel", "取消提醒"),
     BotCommand("timezone", "設定時區"),
     BotCommand("groupmode", "群組自然語言模式"),
-    BotCommand("ai", "個人 AI Key 與語意解析設定"),
+    BotCommand("ai", "個人 AI Key 與群組 AI 設定"),
 ]
 
 

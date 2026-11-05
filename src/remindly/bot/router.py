@@ -45,6 +45,10 @@ class BotRouter:
         """接收 Telegram update，依型別分派給 message 或 callback 流程。"""
         now = datetime.now(ZoneInfo(self._default_timezone))
         if update.callback_query:
+            if self._ai_commands is not None and self._ai_commands.handle_callback(
+                update.callback_query
+            ):
+                return
             self._callback_handlers.handle(update.callback_query, now)
             return
 
@@ -74,7 +78,7 @@ class BotRouter:
 
         actor_id = message.from_user.id
         starts_new_reminder = self._should_treat_as_reminder(message, text)
-        if self._reminder_service.ai_enabled(actor_id):
+        if self._reminder_service.ai_enabled(actor_id, message):
             self._handle_ai_message(message, text, now, starts_new_reminder)
             return
 

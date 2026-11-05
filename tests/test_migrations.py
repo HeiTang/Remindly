@@ -30,13 +30,35 @@ class MigrationTest(unittest.TestCase):
                 tables = table_names(connection)
 
         self.assertEqual(expected_migration_rows(), rows)
-        self.assertEqual(9, latest_schema_version())
+        self.assertEqual(10, latest_schema_version())
         self.assertIn("reminders", tables)
         self.assertIn("reminder_drafts", tables)
         self.assertIn("edit_sessions", tables)
         self.assertIn("chat_settings", tables)
         self.assertIn("ai_keys", tables)
         self.assertIn("ai_settings", tables)
+
+    def test_group_migration_ledger_failure_rolls_back_table_and_trigger(self):
+        with connect(Path(":memory:")) as connection:
+            ensure_migration_table(connection)
+            for migration in MIGRATIONS[:9]:
+                apply_migration(connection, migration)
+            connection.execute(
+                """create trigger reject_group_version before insert on schema_migrations
+                when new.version = 10
+                begin select raise(abort, 'ledger unavailable'); end"""
+            )
+            with self.assertRaises(sqlite3.IntegrityError):
+                migrate_sqlite_database(connection)
+            self.assertNotIn("group_ai_settings", table_names(connection))
+            self.assertIsNone(
+                connection.execute(
+                    "select name from sqlite_master where name = 'delete_group_ai_key'"
+                ).fetchone()
+            )
+            connection.execute("drop trigger reject_group_version")
+            migrate_sqlite_database(connection)
+            self.assertIn("group_ai_settings", table_names(connection))
 
     def test_migrate_adopts_unversioned_existing_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -116,6 +138,7 @@ def expected_migration_rows() -> list[tuple[int, str]]:
         (7, "ai_key_providers"),
         (8, "ai_edit_context"),
         (9, "ai_key_last_error"),
+        (10, "group_ai_keys"),
     ]
 
 
