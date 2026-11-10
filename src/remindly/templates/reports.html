@@ -1,0 +1,220 @@
+{% macro icon(name) -%}
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  {% if name == 'brand' %}
+  <path d="M7 14.5 10.5 18 17.5 10.5M12 3v3M20 5l-2 2M5 5l2 2"/>
+  {% elif name == 'inbox' %}
+  <path d="M5 5h14l2 9v5H3v-5l2-9Z"/><path d="M3 14h5l2 2h4l2-2h5"/>
+  {% elif name == 'filter' %}
+  <path d="M4 7h16M7 12h10m-7 5h4"/>
+  {% elif name == 'next' %}
+  <path d="m9 6 6 6-6 6"/>
+  {% elif name == 'back' %}
+  <path d="M19 12H5m6-6-6 6 6 6"/>
+  {% elif name == 'attachment' %}
+  <path d="m20 11-8 8a4 4 0 0 1-6-6l8-8a2.8 2.8 0 0 1 4 4l-8 8a1.4 1.4 0 0 1-2-2l7-7"/>
+  {% elif name == 'logout' %}
+  <path d="M11 5H5v14h6m-1-7h10m-4-4 4 4-4 4"/>
+  {% endif %}
+</svg>
+{%- endmacro %}
+{% macro select_filter(name, label, options, value) -%}
+<label class="filter-field" for="filter-{{ name }}">
+  {{ label }}
+  <span class="filter-control">
+    <select id="filter-{{ name }}" name="{{ name }}">
+      <option value="">全部</option>
+      {% for option in options %}
+      <option value="{{ option }}"{% if option == value %} selected{% endif %}>{{ options[option] if options is mapping else option }}</option>
+      {% endfor %}
+    </select>
+  </span>
+</label>
+{%- endmacro %}
+{% macro source_badge(source) -%}
+<span class="source-badge source-{{ source }}"><span class="badge-dot" aria-hidden="true"></span>{{ sources[source] }}</span>
+{%- endmacro %}
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% if screen == 'detail' %}{{ reasons[report.reason] }} · {% endif %}解析回報 · Remindly</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='reports.css') }}">
+  {% if screen == 'list' %}
+  <script src="{{ url_for('static', filename='report-filters.js') }}" defer></script>
+  {% endif %}
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要內容</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <div class="brand">
+        <span class="brand-mark">{{ icon('brand') }}</span>
+        <span><strong>Remindly</strong><span class="brand-subtitle">維護後台</span></span>
+      </div>
+      {% if screen in ('list', 'detail') %}
+      <nav class="header-nav" aria-label="維護後台">
+        <a class="workspace-link" href="{{ url_for('reports') }}"{% if screen == 'list' %} aria-current="page"{% endif %}>{{ icon('inbox') }} 回報中心</a>
+        <form action="{{ url_for('logout') }}" method="post">
+          <input type="hidden" name="token" value="{{ session.logout_token }}">
+          <button class="button button-quiet" type="submit">{{ icon('logout') }} 登出</button>
+        </form>
+      </nav>
+      {% endif %}
+    </div>
+  </header>
+  <main id="main" class="shell">
+    {% if screen == 'login' or screen == 'error' %}
+      <section class="panel login">
+        <span class="feature-icon">{{ icon('inbox') }}</span>
+        {% if screen == 'login' %}
+        <h1>解析回報</h1>
+        <p>使用維護者的 Telegram 帳號登入。</p>
+        <a class="button button-primary" href="{{ url_for('start_login') }}">使用 Telegram 登入 {{ icon('next') }}</a>
+        {% else %}
+        <h1>{{ message }}</h1>
+        <a class="button button-secondary" href="{{ url_for('login') }}">{{ icon('back') }} 返回登入頁</a>
+        {% endif %}
+      </section>
+    {% elif screen == 'list' %}
+      <div class="page-heading">
+        <div class="eyebrow">{{ icon('inbox') }} 回報收件匣</div>
+        <h1>解析回報</h1>
+        <p>查看使用者在確認提醒時回報的解析問題。</p>
+      </div>
+
+      <section class="panel filter-panel" aria-labelledby="filter-heading">
+        <div class="section-title">
+          {{ icon('filter') }} <h2 id="filter-heading">篩選回報</h2>
+        </div>
+        <form id="report-filters" class="filters" action="{{ url_for('reports') }}" method="get" aria-labelledby="filter-heading">
+          {{ select_filter('reason', '原因', reasons, filters.reason) }}
+          {{ select_filter('parser_source', '解析來源', sources, filters.parser_source) }}
+          {{ select_filter('model', '模型', models, filters.model) }}
+          {{ select_filter('bot_version', 'Bot 版本', versions, filters.bot_version) }}
+          <div class="filter-actions">
+            <a class="button button-quiet" href="{{ url_for('reports') }}">清除</a>
+            <button class="button button-primary" type="submit">套用</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel report-panel" aria-labelledby="list-heading">
+        <div class="panel-header">
+          <h2 id="list-heading">回報列表 <span class="result-count">本頁 {{ rows|length }} 筆</span></h2>
+          <span class="list-order">依回報時間排序</span>
+        </div>
+        {% if rows %}
+        <table class="report-table" role="table" aria-labelledby="list-heading">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th scope="col" role="columnheader">回報原因</th>
+              <th scope="col" role="columnheader">解析來源／模型</th>
+              <th scope="col" role="columnheader">回報時間 <span class="timezone">UTC</span></th>
+              <th scope="col" role="columnheader">Bot 版本</th>
+              <th scope="col" role="columnheader">附件</th>
+            </tr>
+          </thead>
+          <tbody role="rowgroup">
+            {% for row in rows %}
+            <tr role="row">
+              <td class="reason-cell" role="cell">
+                <a class="report-link" href="{{ url_for('report_detail', draft_id=row.draft_id, **detail_query) }}">
+                  {{ reasons[row.reason] }} {{ icon('next') }}
+                </a>
+              </td>
+              <td class="source-cell" role="cell">
+                {{ source_badge(row.parser_source) }}
+                {% if row.model %}<small class="model-name">{{ row.provider or '' }}{% if row.provider %} · {% endif %}{{ row.model }}</small>{% endif %}
+              </td>
+              <td class="time-cell" role="cell"><time datetime="{{ row.reported_at }}">{{ row.reported_at[:16]|replace('T', ' ') }}</time><span class="mobile-utc" aria-hidden="true"> UTC</span></td>
+              <td class="version-cell" role="cell"><span class="mobile-label" aria-hidden="true">Bot </span><span class="version">{{ row.bot_version }}</span></td>
+              <td class="attachment-cell" role="cell">
+                {% if row.has_attachment %}<span class="attachment-badge">{{ icon('attachment') }} 有附件</span>
+                {% else %}<span class="muted">無附件</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <span class="feature-icon">{{ icon('inbox') }}</span>
+          <p>目前沒有符合條件的回報。</p>
+          {% if detail_query %}<a class="button button-secondary" href="{{ url_for('reports') }}">清除篩選</a>{% endif %}
+        </div>
+        {% endif %}
+        {% if previous or following %}
+        <nav class="pagination" aria-label="回報分頁">
+          {% if previous %}<a class="button button-secondary" href="{{ previous }}">上一頁</a>{% endif %}
+          <span>第 {{ page }} 頁</span>
+          {% if following %}<a class="button button-secondary" href="{{ following }}">下一頁</a>{% endif %}
+        </nav>
+        {% endif %}
+      </section>
+    {% else %}
+      <a class="back-link" href="{{ list_url }}">{{ icon('back') }} 回到回報列表</a>
+      <div class="page-heading detail-heading">
+        <div class="eyebrow">回報詳情</div>
+        <h1>{{ reasons[report.reason] }}</h1>
+        <div class="detail-subtitle">
+          {{ source_badge(report.parser_source) }}
+          <time datetime="{{ report.reported_at }}">{{ report.reported_at[:16]|replace('T', ' ') }} UTC</time>
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <section class="panel attachment-panel" aria-labelledby="attachment-heading">
+          <div class="panel-header section-title">
+            {{ icon('attachment') }} <h2 id="attachment-heading">回報附件</h2>
+          </div>
+          {% if original_text or attachment %}
+          <div class="panel-body">
+            {% if original_text %}
+            <h3>原句</h3>
+            <blockquote>{{ original_text }}</blockquote>
+            {% endif %}
+            {% if attachment %}
+            <h3>解析結果</h3>
+            <dl class="metadata">
+              {% for label, value in attachment.items() %}
+              <dt>{{ label }}</dt><dd>{{ value }}</dd>
+              {% endfor %}
+            </dl>
+            {% endif %}
+          </div>
+          {% else %}
+          <div class="empty-state">
+            <span class="feature-icon">{{ icon('attachment') }}</span>
+            <p>使用者未附上原句與解析結果。</p>
+          </div>
+          {% endif %}
+        </section>
+        <div class="detail-sidebar">
+          <section class="panel" aria-labelledby="reporter-heading">
+            <div class="panel-header"><h2 id="reporter-heading">回報者</h2></div>
+            {% if report.reporter_user_id %}
+            <dl class="metadata panel-body">
+              <dt>Telegram user ID</dt><dd><code>{{ report.reporter_user_id }}</code></dd>
+              <dt>Telegram 帳號</dt><dd>{% if report.reporter_username %}<code>@{{ report.reporter_username }}</code>{% else %}<span class="muted">未設定</span>{% endif %}</dd>
+            </dl>
+            {% else %}
+            <p class="panel-body muted">這筆回報未記錄回報者。</p>
+            {% endif %}
+          </section>
+          <section class="panel" aria-labelledby="summary-heading">
+            <div class="panel-header"><h2 id="summary-heading">解析紀錄</h2></div>
+            <dl class="metadata panel-body">
+              <dt>供應商</dt><dd>{{ report.provider or '—' }}</dd>
+              <dt>模型</dt><dd>{{ report.model or '—' }}</dd>
+              <dt>Bot 版本</dt><dd><span class="version">{{ report.bot_version }}</span></dd>
+              <dt>草稿 ID</dt><dd><code>{{ report.draft_id }}</code></dd>
+            </dl>
+          </section>
+        </div>
+      </div>
+    {% endif %}
+  </main>
+</body>
+</html>

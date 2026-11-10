@@ -18,6 +18,7 @@ from remindly.reminders.scheduler import ReminderScheduler, start_scheduler_thre
 from remindly.reminders.service import ReminderService
 from remindly.settings import Settings, load_settings
 from remindly.storage.migrations import latest_schema_version
+from remindly.storage.reports import ReportStore
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
 from remindly.telegram.client import BotCommand, TelegramClient
@@ -96,6 +97,7 @@ def main() -> None:
         bot_username=settings.bot_username,
         default_timezone=settings.default_timezone,
         ai_commands=AiCommands(client, ai_gateway, settings.bot_username),
+        report_store=ReportStore(repository),
     )
     scheduler = ReminderScheduler(
         repository=repository,

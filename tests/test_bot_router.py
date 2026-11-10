@@ -13,6 +13,7 @@ from remindly.reminders.models import Reminder, ReminderStatus
 from remindly.reminders.parser import ReminderParser
 from remindly.reminders.renderer import ReminderRenderer, delivery_snooze_keyboard
 from remindly.reminders.service import ReminderService
+from remindly.storage.reports import ReportStore
 from remindly.storage.session_stores import SqliteDraftStore, SqliteEditSessionStore
 from remindly.storage.sqlite import ReminderRepository
 from remindly.telegram.client import TelegramApiError
@@ -96,6 +97,95 @@ class FakeTelegramClient:
 
 
 class BotRouterTest(unittest.TestCase):
+    def test_report_flow_requires_owner_and_submit_and_preserves_reminder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository, reports=True)
+
+            send_text(router, 1, "@ReminderBot 明天下午三點提醒我拿包裹", chat=GROUP_CHAT)
+            card = client.messages[-1]
+            self.assertIn("使用 內建規則 解析</code> · <a", card.text)
+            start = "/start " + card.text.split("?start=", 1)[1].split('"', 1)[0]
+            send_text(router, 2, start, user=TelegramUser(8, "Other"))
+            self.assertIn("你不是草稿建立者", client.messages[-1].text)
+            send_text(router, 3, start, chat=GROUP_CHAT)
+            self.assertEqual(CHAT.id, client.messages[-1].chat_id)
+            send_text(router, 4, start)
+            click_button(router, 5, client.messages[-1], "時間錯了")
+            click_button(router, 6, client.messages[-1], "附上原句與結果")
+            self.assertIn("拿包裹", client.messages[-1].text)
+            click_button(router, 7, client.messages[-1], "移除附件")
+            preview = client.messages[-1]
+            self.assertNotIn("拿包裹", preview.text)
+            self.assertIn("Telegram user ID：7", preview.text)
+            self.assertIn("Telegram @username：@orange", preview.text)
+            self.assertIn("送出時會記錄", preview.text)
+            self.assertIn("維護者可在回報詳情查看", preview.text)
+            legacy_button = preview.reply_markup["inline_keyboard"][-1][-1]
+            legacy_button["callback_data"] = legacy_button["callback_data"].replace(
+                "report:send_id:", "report:send:", 1
+            )
+            click_button(router, 8, preview, "送出回報")
+            preview = client.messages[-1]
+            self.assertIn("維護者可在回報詳情查看", preview.text)
+            click_button(router, 9, preview, "送出回報", user=TelegramUser(8, "Other"))
+            with repository.connect() as connection:
+                self.assertEqual(
+                    0,
+                    connection.execute("select count(*) from reminder_parse_reports").fetchone()[0],
+                )
+            click_button(router, 10, preview, "送出回報")
+            self.assertIn("已收到回報", client.messages[-1].text)
+            click_button(router, 11, preview, "送出回報", user=TelegramUser(7, "Orange", "renamed"))
+            self.assertIn("已回報過", client.messages[-1].text)
+            self.assertEqual([], repository.list_pending(GROUP_CHAT.id))
+            click_button(router, 12, card, "確認")
+            self.assertEqual(1, len(repository.list_pending(GROUP_CHAT.id)))
+            with repository.connect() as connection:
+                rows = connection.execute(
+                    "select reason, parser_source, attachment_json, "
+                    "reporter_user_id, reporter_username from reminder_parse_reports"
+                ).fetchall()
+            self.assertEqual([("time", "rules", None, 7, "orange")], [tuple(row) for row in rows])
+
+    def test_report_rejects_old_preview_after_draft_changes_and_saves_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository, reports=True)
+
+            send_text(router, 1, "@ReminderBot 明天下午三點提醒我拿包裹", chat=GROUP_CHAT)
+            card = client.messages[-1]
+            start = "/start " + card.text.split("?start=", 1)[1].split('"', 1)[0]
+            send_text(router, 2, start)
+            click_button(router, 3, client.messages[-1], "時間錯了")
+            stale_preview = client.messages[-1]
+            send_text(router, 4, "改成下午四點", chat=GROUP_CHAT)
+            revised_card = client.messages[-1]
+            self.assertIn("16:00", revised_card.text)
+            click_button(router, 5, stale_preview, "送出回報")
+            self.assertIn("這張確認卡已失效", client.callback_answers[-1])
+
+            start = "/start " + revised_card.text.split("?start=", 1)[1].split('"', 1)[0]
+            send_text(router, 6, start)
+            click_button(router, 7, client.messages[-1], "時間錯了")
+            no_username = TelegramUser(USER.id, USER.first_name)
+            click_button(router, 8, client.messages[-1], "附上原句與結果", user=no_username)
+            self.assertIn("Telegram @username：未設定", client.messages[-1].text)
+            click_button(router, 9, client.messages[-1], "送出回報", user=no_username)
+            with repository.connect() as connection:
+                rows = connection.execute(
+                    "select attachment_json, reporter_user_id, reporter_username "
+                    "from reminder_parse_reports"
+                ).fetchall()
+            self.assertEqual(1, len(rows))
+            self.assertIn("16:00", rows[0]["attachment_json"])
+            self.assertIn("拿包裹", rows[0]["attachment_json"])
+            self.assertIn('"parsed_at"', rows[0]["attachment_json"])
+            self.assertEqual(USER.id, rows[0]["reporter_user_id"])
+            self.assertIsNone(rows[0]["reporter_username"])
+
     def test_group_plain_text_reminder_request_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FakeTelegramClient()
@@ -503,6 +593,8 @@ class BotRouterTest(unittest.TestCase):
 def build_router(
     client: FakeTelegramClient,
     repository: ReminderRepository,
+    *,
+    reports: bool = False,
 ) -> BotRouter:
     repository.migrate()
     renderer = ReminderRenderer()
@@ -519,6 +611,7 @@ def build_router(
         renderer=renderer,
         bot_username="ReminderBot",
         default_timezone="Asia/Taipei",
+        report_store=ReportStore(repository) if reports else None,
     )
 
 
@@ -528,11 +621,12 @@ def send_text(
     text: str,
     *,
     chat: TelegramChat = CHAT,
+    user: TelegramUser = USER,
 ) -> None:
     message = TelegramMessage(
         id=update_id,
         chat=chat,
-        from_user=USER,
+        from_user=user,
         text=text,
         entities=(),
     )
@@ -544,6 +638,8 @@ def click_button(
     update_id: int,
     message: SentMessage,
     label_contains: str,
+    *,
+    user: TelegramUser = USER,
 ) -> None:
     callback_chat = GROUP_CHAT if message.chat_id == GROUP_CHAT.id else CHAT
     callback_message = TelegramMessage(
@@ -555,7 +651,7 @@ def click_button(
     )
     callback = TelegramCallbackQuery(
         id=f"cb_{update_id}",
-        from_user=USER,
+        from_user=user,
         message=callback_message,
         data=find_callback_data(message.reply_markup, label_contains),
     )
@@ -566,9 +662,7 @@ def button_labels(reply_markup: dict[str, Any] | None) -> list[str]:
     if not reply_markup:
         return []
     return [
-        str(button["text"])
-        for row in reply_markup.get("inline_keyboard", [])
-        for button in row
+        str(button["text"]) for row in reply_markup.get("inline_keyboard", []) for button in row
     ]
 
 

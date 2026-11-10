@@ -22,6 +22,27 @@ services:
     restart: unless-stopped
     stop_grace_period: 15s
 
+  remindly-admin:
+    profiles: [admin]
+    image: remindly:local
+    pull_policy: never
+    init: true
+    depends_on:
+      - remindly
+    command: ["gunicorn", "--bind", "0.0.0.0:8081", "remindly.admin:create_app()"]
+    environment:
+      DATABASE_PATH: /app/data/reminders.db
+      MAINTAINER_TELEGRAM_IDS: ${MAINTAINER_TELEGRAM_IDS:-}
+      ADMIN_TELEGRAM_CLIENT_ID: ${ADMIN_TELEGRAM_CLIENT_ID:-}
+      ADMIN_TELEGRAM_CLIENT_SECRET: ${ADMIN_TELEGRAM_CLIENT_SECRET:-}
+      ADMIN_TELEGRAM_REDIRECT_URI: ${ADMIN_TELEGRAM_REDIRECT_URI:-}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
+    volumes:
+      - remindly-data:/app/data:ro
+    ports:
+      - "127.0.0.1:8081:8081"
+    restart: unless-stopped
+
 volumes:
   remindly-data:
     name: remindly-data

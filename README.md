@@ -34,6 +34,8 @@
 
 - 💬 **缺漏資訊追問**：缺少資訊時主動追問；內建解析在日期明確但缺少時間時，提供 09:00、12:00、15:00、18:00 快捷按鈕。
 
+- 🐛 **解析問題回報**：從確認卡進入 Bot 私聊回報，可選擇附上原句與解析結果；維護者可在後台查閱。
+
 - 🛠️ **互動式提醒管理**：`/list` 依建立者分組，並支援今天、本週、我的、全部篩選。週期性提醒會以 `[重複]` 前綴標示。
 
 - 👥 **群組與多人提醒**：支援私聊與群組，到期時可 mention 相關使用者。
@@ -196,6 +198,13 @@ Telegram 的指令選單點選 `/groupmode` 時可能會直接送出，這是正
 
 若 BotFather 的 Group Privacy 沒關，bot 仍收不到一般群組訊息。請到 `@BotFather` 執行 `/setprivacy`，選擇 bot 後設為 `Disable`；若原本已在群組，必要時把 bot 移除後重新加入。
 
+### 回報解析問題
+
+在確認卡的「使用 … 解析」旁點「回報問題」，在 Bot 私聊選原因、預覽，再按「送出回報」。
+只有草稿建立者可以回報，附件預設不附。附上時會先顯示實際送出的原句及解析結果，過長的欄位會截短。
+送出前會提示將記錄 Telegram user ID 與帳號（如有設定 `@username`），供維護者在回報詳情查閱。
+回報後仍可回到原聊天確認或取消提醒。請在草稿取消、確認或過期前送出。
+
 ## 部署
 
 ### 部署檢查清單
@@ -256,6 +265,23 @@ docker compose up -d --build
 
 SQLite 會存在 named volume `remindly-data`，container 內 DB 路徑固定為 `/app/data/reminders.db`。
 
+### 回報維護後台（選用）
+
+1. 在 BotFather 的 Telegram 登入設定登記後台 HTTPS 網址與回呼 `https://你的後台網域/auth/telegram`，
+   保留預設 RS256 簽章。將回呼填入 `ADMIN_TELEGRAM_REDIRECT_URI`，並填入
+   `ADMIN_TELEGRAM_CLIENT_ID` 與 `ADMIN_TELEGRAM_CLIENT_SECRET`。登入密鑰由 BotFather 提供。
+2. 將維護者的數字 Telegram user ID 以逗號分隔填入 `MAINTAINER_TELEGRAM_IDS`。
+   用 `uv run python -c "import secrets; print(secrets.token_urlsafe(32))"` 產生 `ADMIN_SESSION_SECRET`。
+3. 用 HTTPS 反向代理將後台網域轉到部署主機的 `127.0.0.1:8081`，再從專案目錄啟動：
+
+   ```sh
+   docker compose --profile admin up -d --build
+   ```
+
+維護者用 Telegram 帳號登入後，可依原因、解析來源、模型和 Bot 版本篩選回報，點原因開啟詳情。
+白名單由部署者維護，更新後執行 `docker compose --profile admin up -d --no-deps --force-recreate remindly-admin`。
+移除的帳號在新容器接手後無法再查閱回報，即使原本已登入。白名單留空時，後台會拒絕所有帳號。
+
 ### GHCR 發布映像
 
 正式版本映像使用 `ghcr.io/heitang/remindly`，提供 `linux/amd64` 與 `linux/arm64`。
@@ -277,6 +303,7 @@ services:
 
 這是替換既有 service 的 `image` 設定；同時移除 `build` 與 `pull_policy: build`，
 保留原本環境變數與 `remindly-data` volume。開發用 Compose 仍可從原始碼建置。
+若啟用後台，`remindly-admin` 也使用相同的映像 digest，並移除其 `pull_policy: never`。
 映像發布不觸發部署；升級前須另行備份資料庫及 AI 主金鑰，回滾也須確認 DB 相容性。
 
 ### SQLite 備份
@@ -347,6 +374,7 @@ Smoke test 會模擬：
 | `src/remindly/storage/` | SQLite repository、session stores、versioned migrations。 |
 | `src/remindly/telegram/` | Telegram Bot API client 與 DTO。 |
 | `src/remindly/app.py` | Composition root，組裝 dependencies 並啟動 polling/scheduler。 |
+| `src/remindly/admin.py` | 維護後台、Telegram 登入與回報查詢。 |
 
 ### GitOps 流程
 
@@ -356,7 +384,7 @@ main -> dev -> feature/<name> -> PR -> dev -> PR -> main
 
 Feature branch 合併到 `dev` 必須開 PR；`dev` 驗證通過後再以 release PR 合併回 `main`。
 
-Runtime 新增 `cryptography` 供 Key 加密。更新 runtime dependencies 後同步 Docker 安裝清單：
+更新 runtime dependencies 後同步 Docker 安裝清單：
 
 ```sh
 uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt

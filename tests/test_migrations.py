@@ -30,13 +30,30 @@ class MigrationTest(unittest.TestCase):
                 tables = table_names(connection)
 
         self.assertEqual(expected_migration_rows(), rows)
-        self.assertEqual(10, latest_schema_version())
+        self.assertEqual(12, latest_schema_version())
         self.assertIn("reminders", tables)
         self.assertIn("reminder_drafts", tables)
         self.assertIn("edit_sessions", tables)
         self.assertIn("chat_settings", tables)
         self.assertIn("ai_keys", tables)
         self.assertIn("ai_settings", tables)
+        self.assertIn("reminder_parse_reports", tables)
+
+    def test_reporter_migration_keeps_existing_reports_without_an_identity(self) -> None:
+        with connect(Path(":memory:")) as connection:
+            ensure_migration_table(connection)
+            for migration in MIGRATIONS[:-1]:
+                apply_migration(connection, migration)
+            connection.execute(
+                """insert into reminder_parse_reports
+                (draft_id, reported_at, reason, parser_source, bot_version)
+                values ('draft_legacy', '2026-11-10T10:00:00+00:00', 'time', 'rules', '0.6.0')"""
+            )
+            migrate_sqlite_database(connection)
+            row = connection.execute(
+                "select draft_id, reporter_user_id, reporter_username from reminder_parse_reports"
+            ).fetchone()
+            self.assertEqual(("draft_legacy", None, None), tuple(row))
 
     def test_group_migration_ledger_failure_rolls_back_table_and_trigger(self):
         with connect(Path(":memory:")) as connection:
@@ -139,6 +156,8 @@ def expected_migration_rows() -> list[tuple[int, str]]:
         (8, "ai_edit_context"),
         (9, "ai_key_last_error"),
         (10, "group_ai_keys"),
+        (11, "reminder_parse_reports"),
+        (12, "parse_report_reporter"),
     ]
 
 
