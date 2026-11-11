@@ -232,8 +232,9 @@ h3 + .metadata { margin-top: .65rem; }
 .admin-notice p { margin-top: .5rem; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .header-inner { flex-wrap: wrap; padding-block: .5rem; } .header-nav { flex-wrap: wrap; } }
 
-.member-identity { min-width: 0; width: 100%; }
-.member-note-editor { margin-top: .55rem; }
+.member-identity { display: grid; gap: .5rem; min-width: 0; width: 100%; }
+.member-identity > p { line-height: 1.7; }
+.member-note-editor { margin-top: 0; }
 .member-note-editor summary { cursor: pointer; color: var(--accent); font-size: .8125rem; width: fit-content; padding-block: .3rem; }
 .admin-identity { margin-block: .85rem; }
 
