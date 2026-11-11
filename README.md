@@ -270,7 +270,7 @@ SQLite 會存在 named volume `remindly-data`，container 內 DB 路徑固定為
 1. 在 BotFather 的 Telegram 登入設定登記後台 HTTPS 網址與回呼 `https://你的後台網域/auth/telegram`，
    保留預設 RS256 簽章。將回呼填入 `ADMIN_TELEGRAM_REDIRECT_URI`，並填入
    `ADMIN_TELEGRAM_CLIENT_ID` 與 `ADMIN_TELEGRAM_CLIENT_SECRET`。登入密鑰由 BotFather 提供。
-2. 將維護者的數字 Telegram user ID 以逗號分隔填入 `MAINTAINER_TELEGRAM_IDS`。
+2. 將後台管理者的數字 Telegram user ID 以逗號分隔填入 `ADMIN_TELEGRAM_IDS`。
    用 `uv run python -c "import secrets; print(secrets.token_urlsafe(32))"` 產生 `ADMIN_SESSION_SECRET`。
 3. 用 HTTPS 反向代理將後台網域轉到部署主機的 `127.0.0.1:8081`，再從專案目錄啟動：
 
@@ -279,8 +279,17 @@ SQLite 會存在 named volume `remindly-data`，container 內 DB 路徑固定為
    ```
 
 維護者用 Telegram 帳號登入後，可依原因、解析來源、模型和 Bot 版本篩選回報，點原因開啟詳情。
-白名單由部署者維護，更新後執行 `docker compose --profile admin up -d --no-deps --force-recreate remindly-admin`。
-移除的帳號在新容器接手後無法再查閱回報，即使原本已登入。白名單留空時，後台會拒絕所有帳號。
+後台管理者可在「人員權限」新增或移除維護者、編輯備註名稱；維護者只能查閱回報，不能管理人員。
+人員列表顯示本人最近登入取得的 Telegram 名稱與帳號，以及數字 ID；尚未登入時以管理者備註辨識。
+移除維護者後，下次請求即失去權限，已登入的 session 也一樣。
+管理者只能由部署設定授予或撤銷，更新 `ADMIN_TELEGRAM_IDS` 後執行 `docker compose --profile admin up -d --no-deps --force-recreate remindly-admin`。
+移除的管理者在新容器接手後失去管理權限；若也列為維護者，仍可查閱回報。
+舊的 `MAINTAINER_TELEGRAM_IDS` 不再使用；既有維護者請由管理者在後台重新加入。
+首次部署時若未設定管理者，將沒有人可以授予維護者權限。
+
+人員白名單保存於獨立 SQLite，`ADMIN_DATABASE_PATH` 預設為 `data/admin/access.db`，
+Compose 使用 `remindly-admin-data` volume 的 `/app/admin/access.db`，須與提醒資料庫分開備份。
+回報資料庫仍唯讀掛載；後台無法透過人員管理修改提醒或 AI Key。
 
 ### GHCR 發布映像
 

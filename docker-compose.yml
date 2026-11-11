@@ -32,17 +32,21 @@ services:
     command: ["gunicorn", "--bind", "0.0.0.0:8081", "remindly.admin:create_app()"]
     environment:
       DATABASE_PATH: /app/data/reminders.db
-      MAINTAINER_TELEGRAM_IDS: ${MAINTAINER_TELEGRAM_IDS:-}
+      ADMIN_DATABASE_PATH: /app/admin/access.db
+      ADMIN_TELEGRAM_IDS: ${ADMIN_TELEGRAM_IDS:-}
       ADMIN_TELEGRAM_CLIENT_ID: ${ADMIN_TELEGRAM_CLIENT_ID:-}
       ADMIN_TELEGRAM_CLIENT_SECRET: ${ADMIN_TELEGRAM_CLIENT_SECRET:-}
       ADMIN_TELEGRAM_REDIRECT_URI: ${ADMIN_TELEGRAM_REDIRECT_URI:-}
       ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-}
     volumes:
       - remindly-data:/app/data:ro
+      - remindly-admin-data:/app/admin
     ports:
       - "127.0.0.1:8081:8081"
     restart: unless-stopped
 
 volumes:
+  remindly-admin-data:
+    name: remindly-admin-data
   remindly-data:
     name: remindly-data

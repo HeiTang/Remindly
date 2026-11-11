@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from authlib.integrations.flask_client import OAuth, OAuthError
-from flask import Flask, abort, redirect, render_template, request, session, url_for
+from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 from joserfc.errors import JoseError
 from requests import RequestException
 
@@ -47,6 +47,25 @@ def create_app() -> Flask:
         raise RuntimeError("Configure the Telegram login callback and admin secrets first.")
 
     database = Path(os.getenv("DATABASE_PATH", "data/reminders.db")).resolve().as_uri()
+    access_database = Path(os.getenv("ADMIN_DATABASE_PATH", "data/admin/access.db")).resolve()
+    if access_database.as_uri() == database:
+        raise RuntimeError("Admin access database must be separate from the report database.")
+    access_database.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(access_database)) as connection, connection:
+        connection.execute("begin immediate")
+        connection.execute(
+            "create table if not exists maintainers ("
+            "user_id integer primary key check(user_id > 0), "
+            "added_by integer not null, added_at text not null default CURRENT_TIMESTAMP)"
+        )
+        columns = {row[1] for row in connection.execute("pragma table_info(maintainers)")}
+        if "note" not in columns:
+            connection.execute("alter table maintainers add column note text not null default ''")
+        connection.execute(
+            "create table if not exists user_profiles ("
+            "user_id integer primary key, display_name text, username text, "
+            "last_login_at text not null default CURRENT_TIMESTAMP)"
+        )
     app = Flask(__name__)
     app.config.update(
         SECRET_KEY=session_secret,
@@ -56,9 +75,9 @@ def create_app() -> Flask:
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_REFRESH_EACH_REQUEST=False,
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-        MAINTAINER_TELEGRAM_IDS=frozenset(
+        ADMIN_TELEGRAM_IDS=frozenset(
             int(value)
-            for raw in os.getenv("MAINTAINER_TELEGRAM_IDS", "").split(",")
+            for raw in os.getenv("ADMIN_TELEGRAM_IDS", "").split(",")
             if (value := raw.strip())
         ),
     )
@@ -80,8 +99,31 @@ def create_app() -> Flask:
         },
     )
 
+    if any(not 0 < user_id < 2**63 for user_id in app.config["ADMIN_TELEGRAM_IDS"]):
+        raise RuntimeError("ADMIN_TELEGRAM_IDS must contain positive Telegram user IDs.")
+
+    def is_admin(user_id: object) -> bool:
+        return type(user_id) is int and user_id in app.config["ADMIN_TELEGRAM_IDS"]
+
     def can_read(user_id: object) -> bool:
-        return type(user_id) is int and user_id in app.config["MAINTAINER_TELEGRAM_IDS"]
+        if type(user_id) is not int or not 0 < user_id < 2**63:
+            return False
+        if is_admin(user_id):
+            return True
+        with closing(sqlite3.connect(access_database)) as connection:
+            return (
+                connection.execute(
+                    "select 1 from maintainers where user_id = ?", (user_id,)
+                ).fetchone()
+                is not None
+            )
+
+    def check_csrf():
+        expected = session.get("logout_token", "")
+        if not expected or not secrets.compare_digest(
+            request.form.get("token", "").encode(), expected.encode()
+        ):
+            abort(403)
 
     def read_database() -> sqlite3.Connection:
         connection = sqlite3.connect(f"{database}?mode=ro", uri=True)
@@ -96,6 +138,13 @@ def create_app() -> Flask:
             return redirect(url_for("login"))
         if not can_read(session["telegram_user_id"]):
             session.clear()
+            abort(403)
+        g.is_admin = is_admin(session["telegram_user_id"])
+        if (
+            request.endpoint
+            in {"maintainers", "add_maintainer", "remove_maintainer", "update_maintainer_note"}
+            and not g.is_admin
+        ):
             abort(403)
         return None
 
@@ -125,8 +174,6 @@ def create_app() -> Flask:
 
     @app.get("/login/telegram")
     def start_login():
-        if not app.config["MAINTAINER_TELEGRAM_IDS"]:
-            abort(403)
         session.clear()
         try:
             return telegram.authorize_redirect(redirect_uri)
@@ -140,10 +187,24 @@ def create_app() -> Flask:
         except (OAuthError, JoseError, RequestException, ValueError):
             session.clear()
             return error_page("Telegram 登入失敗，請重新登入。", 400)
-        user_id = (token.get("userinfo") or {}).get("id")
+        identity = token.get("userinfo") or {}
+        user_id = identity.get("id")
         session.clear()
         if not can_read(user_id):
             abort(403)
+        display_name = identity.get("name")
+        username = identity.get("preferred_username")
+        with closing(sqlite3.connect(access_database)) as connection, connection:
+            connection.execute(
+                "insert into user_profiles (user_id, display_name, username) values (?, ?, ?) "
+                "on conflict(user_id) do update set display_name = excluded.display_name, "
+                "username = excluded.username, last_login_at = CURRENT_TIMESTAMP",
+                (
+                    user_id,
+                    display_name[:128] if isinstance(display_name, str) else None,
+                    username[:64].lstrip("@") if isinstance(username, str) else None,
+                ),
+            )
         session.permanent = True
         session["telegram_user_id"] = user_id
         session["logout_token"] = secrets.token_urlsafe(24)
@@ -151,13 +212,77 @@ def create_app() -> Flask:
 
     @app.post("/logout")
     def logout():
-        expected = session.get("logout_token", "")
-        if not expected or not secrets.compare_digest(
-            request.form.get("token", "").encode(), expected.encode()
-        ):
-            abort(403)
+        check_csrf()
         session.clear()
         return redirect(url_for("login"), code=303)
+
+    def render_maintainers(message: str = "", status: int = 200):
+        with closing(sqlite3.connect(access_database)) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                "select * from maintainers order by added_at desc, user_id"
+            ).fetchall()
+            profiles = {
+                row["user_id"]: row for row in connection.execute("select * from user_profiles")
+            }
+        return render_template(
+            "reports.html",
+            screen="maintainers",
+            profiles=profiles,
+            maintainers=rows,
+            administrators=sorted(app.config["ADMIN_TELEGRAM_IDS"]),
+            message=message,
+        ), status
+
+    @app.get("/maintainers")
+    def maintainers():
+        return render_maintainers()
+
+    @app.post("/maintainers")
+    def add_maintainer():
+        check_csrf()
+        raw_id = request.form.get("user_id", "").strip()
+        note = request.form.get("note", "").strip()
+        if len(note) > 80:
+            return render_maintainers("備註名稱最多 80 個字。", 400)
+        if not raw_id.isascii() or not raw_id.isdecimal() or len(raw_id) > 19:
+            return render_maintainers("請輸入有效的數字 Telegram user ID。", 400)
+        user_id = int(raw_id)
+        if not 0 < user_id < 2**63:
+            return render_maintainers("請輸入有效的數字 Telegram user ID。", 400)
+        if is_admin(user_id):
+            return render_maintainers("這個帳號已是後台管理者，無須加入維護者。", 400)
+        with closing(sqlite3.connect(access_database)) as connection, connection:
+            connection.execute(
+                "insert into maintainers (user_id, added_by, note) values (?, ?, ?) "
+                "on conflict(user_id) do nothing",
+                (user_id, session["telegram_user_id"], note),
+            )
+        return redirect(url_for("maintainers"), code=303)
+
+    @app.post("/maintainers/<int:user_id>/note")
+    def update_maintainer_note(user_id: int):
+        check_csrf()
+        note = request.form.get("note", "").strip()
+        if not 0 < user_id < 2**63 or len(note) > 80:
+            return render_maintainers("備註名稱最多 80 個字，請確認帳號 ID。", 400)
+        with closing(sqlite3.connect(access_database)) as connection, connection:
+            result = connection.execute(
+                "update maintainers set note = ? where user_id = ?",
+                (note, user_id),
+            )
+            if not result.rowcount:
+                abort(404)
+        return redirect(url_for("maintainers"), code=303)
+
+    @app.post("/maintainers/<int:user_id>/remove")
+    def remove_maintainer(user_id: int):
+        check_csrf()
+        if not 0 < user_id < 2**63 or is_admin(user_id):
+            abort(400)
+        with closing(sqlite3.connect(access_database)) as connection, connection:
+            connection.execute("delete from maintainers where user_id = ?", (user_id,))
+        return redirect(url_for("maintainers"), code=303)
 
     @app.get("/")
     def reports():

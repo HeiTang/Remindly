@@ -30,6 +30,12 @@
   </span>
 </label>
 {%- endmacro %}
+{% macro identity_pills(user_id, profile) -%}
+<div class="identity-pills">
+  {% if profile and profile.username %}<span class="identity-pill">@{{ profile.username }}</span>{% endif %}
+  <span class="identity-pill">ID <code>{{ user_id }}</code></span>
+</div>
+{%- endmacro %}
 {% macro source_badge(source) -%}
 <span class="source-badge source-{{ source }}"><span class="badge-dot" aria-hidden="true"></span>{{ sources[source] }}</span>
 {%- endmacro %}
@@ -53,9 +59,10 @@
         <span class="brand-mark">{{ icon('brand') }}</span>
         <span><strong>Remindly</strong><span class="brand-subtitle">維護後台</span></span>
       </div>
-      {% if screen in ('list', 'detail') %}
+      {% if screen in ('list', 'detail', 'maintainers') %}
       <nav class="header-nav" aria-label="維護後台">
         <a class="workspace-link" href="{{ url_for('reports') }}"{% if screen == 'list' %} aria-current="page"{% endif %}>{{ icon('inbox') }} 回報中心</a>
+        {% if g.is_admin %}<a class="workspace-link" href="{{ url_for('maintainers') }}"{% if screen == 'maintainers' %} aria-current="page"{% endif %}>人員權限</a>{% endif %}
         <form action="{{ url_for('logout') }}" method="post">
           <input type="hidden" name="token" value="{{ session.logout_token }}">
           <button class="button button-quiet" type="submit">{{ icon('logout') }} 登出</button>
@@ -70,12 +77,74 @@
         <span class="feature-icon">{{ icon('inbox') }}</span>
         {% if screen == 'login' %}
         <h1>解析回報</h1>
-        <p>使用維護者的 Telegram 帳號登入。</p>
+        <p>使用管理者或維護者的 Telegram 帳號登入。</p>
         <a class="button button-primary" href="{{ url_for('start_login') }}">使用 Telegram 登入 {{ icon('next') }}</a>
         {% else %}
         <h1>{{ message }}</h1>
         <a class="button button-secondary" href="{{ url_for('login') }}">{{ icon('back') }} 返回登入頁</a>
         {% endif %}
+      </section>
+    {% elif screen == 'maintainers' %}
+      <div class="page-heading">
+        <div class="eyebrow">ACCESS MANAGEMENT</div><h1>人員權限</h1>
+        <p>新增維護者即可查閱全部回報與回報者資訊；移除後，下次請求立即失效。</p>
+      </div>
+      <section class="panel filter-panel" aria-labelledby="add-heading">
+        <h2 id="add-heading">新增後台維護者</h2>
+        <form class="member-form" action="{{ url_for('add_maintainer') }}" method="post">
+          <input type="hidden" name="token" value="{{ session.logout_token }}">
+          <label class="filter-field" for="member-id">Telegram user ID
+            <input id="member-id" name="user_id" inputmode="numeric" pattern="[0-9]+" maxlength="19" required aria-describedby="member-help{% if message %} member-error{% endif %}">
+          </label>
+          <label class="filter-field" for="member-note">備註名稱（選填）
+            <input id="member-note" name="note" maxlength="80" placeholder="例如：小橘／Bot 共同維護者">
+          </label>
+          <button class="button button-primary" type="submit">新增維護者</button>
+        </form>
+        <p id="member-help" class="muted">備註由管理者填寫；Telegram 名稱與帳號會在本人登入後取得，之後每次登入更新。權限仍依數字 ID 判斷。</p>
+        {% if message %}<p id="member-error" role="alert">{{ message }}</p>{% endif %}
+      </section>
+      <section class="panel" aria-labelledby="members-heading">
+        <div class="panel-header"><h2 id="members-heading">後台維護者 <span class="result-count">{{ maintainers|length }} 人</span></h2></div>
+        {% for member in maintainers %}
+        <div class="member-row">
+          {% set profile = profiles.get(member.user_id) %}
+          {% set grantor = profiles.get(member.added_by) %}
+          <div class="member-identity">
+            <div class="person-heading"><strong>{{ (profile.display_name if profile else '') or member.note or '未命名帳號' }}</strong>{{ identity_pills(member.user_id, profile) }}</div>
+            {% if member.note %}<p class="muted">管理者備註：{{ member.note }}</p>{% endif %}
+            <p class="muted">由 {{ (grantor.display_name if grantor else '') or '管理者' }}（{{ member.added_by }}）新增 · {{ member.added_at }} UTC</p>
+            <details class="member-note-editor">
+              <summary>編輯備註</summary>
+              <form class="member-form" action="{{ url_for('update_maintainer_note', user_id=member.user_id) }}" method="post">
+                <input type="hidden" name="token" value="{{ session.logout_token }}">
+                <label class="filter-field" for="note-{{ member.user_id }}">備註名稱（選填）
+                  <input id="note-{{ member.user_id }}" name="note" maxlength="80" value="{{ member.note }}">
+                </label>
+                <button class="button button-secondary" type="submit">儲存備註</button>
+              </form>
+            </details>
+          </div>
+          <a class="button button-secondary" href="{{ url_for('maintainers', remove=member.user_id) }}">移除</a>
+        </div>
+        {% if request.args.get('remove') == member.user_id|string %}
+        <form class="remove-confirm" action="{{ url_for('remove_maintainer', user_id=member.user_id) }}" method="post">
+          <input type="hidden" name="token" value="{{ session.logout_token }}">
+          <p>確定移除 {{ (profile.display_name if profile else '') or member.note or '未命名帳號' }}（ID {{ member.user_id }}）？此帳號將無法再查閱回報。</p>
+          <button class="button button-primary" type="submit">確認移除</button>
+          <a class="button button-quiet" href="{{ url_for('maintainers') }}">取消</a>
+        </form>
+        {% endif %}
+        {% else %}<div class="empty-state"><p>還沒有維護者。管理者仍可查閱回報。</p></div>{% endfor %}
+      </section>
+      <section class="panel admin-notice">
+        <h2>後台管理者</h2>
+        {% for user_id in administrators %}
+        {% set profile = profiles.get(user_id) %}
+        <div class="admin-identity"><div class="person-heading"><strong>{{ (profile.display_name if profile else '') or '後台管理者' }}</strong>{{ identity_pills(user_id, profile) }}</div>
+        </div>
+        {% else %}<p>未設定</p>{% endfor %}
+        <p class="muted">由部署設定 ADMIN_TELEGRAM_IDS 指定，可查閱回報與管理維護者。變更管理者須更新部署設定，無法在此移除。</p>
       </section>
     {% elif screen == 'list' %}
       <div class="page-heading">
