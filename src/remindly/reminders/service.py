@@ -24,6 +24,7 @@ from remindly.reminders.models import (
 )
 from remindly.reminders.parser import ReminderParser, dedupe_participants
 from remindly.reminders.recurrence import next_fire
+from remindly.reminders.reports import stamp_report_context
 from remindly.reminders.repositories import ReminderRepository
 from remindly.reminders.text import looks_like_reminder_request
 from remindly.telegram.models import (
@@ -291,11 +292,10 @@ class ReminderService:
             draft.missing_fields = ["title", "time"]
             draft.parse_result["question"] = "請描述要建立的提醒，例如明天 15:00 叫我拿包裹。"
 
+        self._save_creation_draft(draft, now)
         if draft.is_complete:
-            self._draft_store.save(draft, now)
             return Confirmation(draft)
 
-        self._draft_store.save(draft, now)
         return DraftPrompt(
             draft=draft,
             question=self._question_for(draft),
@@ -317,11 +317,10 @@ class ReminderService:
             return None
 
         self._merge_answer(draft, message.text, message, now)
+        self._save_creation_draft(draft, now)
         if draft.is_complete:
-            self._draft_store.save(draft, now)
             return Confirmation(draft)
 
-        self._draft_store.save(draft, now)
         return DraftPrompt(
             draft=draft,
             question=self._question_for(draft),
@@ -349,10 +348,15 @@ class ReminderService:
         if not parsed.remind_at or parsed.missing_time or parsed.is_past:
             draft.missing_fields.append("time")
 
-        self._draft_store.save(draft, now)
+        self._save_creation_draft(draft, now)
         if draft.is_complete:
             return Confirmation(draft)
         return DraftPrompt(draft=draft, question=self._question_for(draft))
+
+    def _save_creation_draft(self, draft: ReminderDraft, now: datetime) -> None:
+        if draft.is_complete:
+            stamp_report_context(draft, now)
+        self._draft_store.save(draft, now)
 
     def confirm(self, draft_id: str, user_id: int, now: datetime) -> CreateResult | None:
         draft = self._draft_store.get_by_id(draft_id, now)

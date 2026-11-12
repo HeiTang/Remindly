@@ -192,6 +192,34 @@ MIGRATIONS = (
         end;
         """,
     ),
+    Migration(
+        version=11,
+        name="reminder_parse_reports",
+        sql="""
+        create table reminder_parse_reports (
+            draft_id text primary key not null,
+            reported_at text not null,
+            reason text not null check (
+                reason in ('time', 'title', 'participant', 'recurrence', 'other')
+            ),
+            parser_source text not null check (parser_source in ('ai', 'rules', 'rules_fallback')),
+            provider text,
+            model text,
+            bot_version text not null,
+            attachment_json text
+        );
+        create index idx_reminder_parse_reports_recent
+            on reminder_parse_reports(reported_at desc, draft_id desc);
+        """,
+    ),
+    Migration(
+        version=12,
+        name="parse_report_reporter",
+        sql="""
+        alter table reminder_parse_reports add column reporter_user_id integer;
+        alter table reminder_parse_reports add column reporter_username text;
+        """,
+    ),
 )
 
 
