@@ -1,11 +1,16 @@
 [project]
 name = "remindly"
-version = "0.5.0"
+version = "0.6.0"
 description = "Remindly"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "authlib>=1.7,<2",
     "cryptography>=46,<47",
+    "flask>=3.1,<4",
+    "gunicorn>=23,<27",
+    "joserfc>=1.6,<2",
+    "requests>=2.32.4,<3",
 ]
 
 [build-system]
