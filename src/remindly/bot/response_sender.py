@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
-from remindly.reminders.models import RecurrenceError, Reminder
+from remindly.reminders.models import RecurrenceError, Reminder, ReminderDraft
 from remindly.reminders.renderer import (
     ReminderRenderer,
     back_to_list_keyboard,
@@ -39,10 +40,15 @@ class ResponseSender:
         client: TelegramClient,
         reminder_service: ReminderService,
         renderer: ReminderRenderer,
+        *,
+        report_links: bool = False,
+        bot_username: str | None = None,
     ) -> None:
         self._client = client
         self._reminder_service = reminder_service
         self._renderer = renderer
+        self._report_links = report_links
+        self._bot_username = bot_username
 
     def send_reminder_list(
         self,
@@ -183,9 +189,12 @@ class ResponseSender:
         if result.draft.parse_result.get("ai_fallback"):
             notice = (notice or "") + "群組 AI 暫時無法使用，已改用內建解析。\n"
         if isinstance(result, Confirmation):
+            confirmation = self._renderer.render_confirmation(
+                result.draft, report_url=self._report_url(result.draft)
+            )
             message_id = self._client.send_message(
                 chat_id,
-                _prepend_notice(self._renderer.render_confirmation(result.draft), notice),
+                _prepend_notice(confirmation, notice),
                 parse_mode="HTML",
                 reply_markup=confirmation_keyboard(result.draft.id),
             )
@@ -199,6 +208,22 @@ class ResponseSender:
             )
         if message_id is not None:
             self._reminder_service.set_draft_prompt_message_id(result.draft.id, message_id)
+
+    def _report_url(self, draft: ReminderDraft) -> str | None:
+        revision = draft.parse_result.get("report_revision")
+        if not self._report_links or not revision:
+            return None
+        if not self._bot_username:
+            try:
+                result = self._client.call("getMe", {}).get("result")
+            except TelegramApiError:
+                LOGGER.warning("Bot username lookup failed; omitting report link")
+                return None
+            username = result.get("username") if isinstance(result, dict) else None
+            if not isinstance(username, str) or not re.fullmatch(r"[A-Za-z0-9_]+", username):
+                return None
+            self._bot_username = username
+        return f"https://t.me/{self._bot_username}?start=report_{draft.id}_{revision}"
 
     def send_edit_result(
         self,

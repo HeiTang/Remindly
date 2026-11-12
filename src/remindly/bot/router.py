@@ -8,10 +8,12 @@ from remindly.ai.parser import followup_question
 from remindly.bot.ai_commands import AiCommands
 from remindly.bot.callback_handlers import CallbackHandlers
 from remindly.bot.command_handlers import CommandHandlers
+from remindly.bot.report_commands import ReportCommands
 from remindly.bot.response_sender import ResponseSender
 from remindly.reminders.renderer import ReminderRenderer
 from remindly.reminders.service import ReminderService
 from remindly.reminders.text import looks_like_reminder_request, strip_bot_mention
+from remindly.storage.reports import ReportStore
 from remindly.telegram.client import TelegramClient
 from remindly.telegram.models import TelegramMessage, TelegramUpdate
 
@@ -26,11 +28,18 @@ class BotRouter:
         bot_username: str | None,
         default_timezone: str,
         ai_commands: AiCommands | None = None,
+        report_store: ReportStore | None = None,
     ) -> None:
         self._reminder_service = reminder_service
         self._bot_username = bot_username
         self._default_timezone = default_timezone
-        self._responses = ResponseSender(client, reminder_service, renderer)
+        self._responses = ResponseSender(
+            client,
+            reminder_service,
+            renderer,
+            report_links=report_store is not None,
+            bot_username=bot_username,
+        )
         self._command_handlers = CommandHandlers(
             client,
             reminder_service,
@@ -40,11 +49,16 @@ class BotRouter:
         self._callback_handlers = CallbackHandlers(client, reminder_service, self._responses)
         self._client = client
         self._ai_commands = ai_commands
+        self._reports = (
+            ReportCommands(client, report_store, self._responses) if report_store else None
+        )
 
     def handle_update(self, update: TelegramUpdate) -> None:
         """接收 Telegram update，依型別分派給 message 或 callback 流程。"""
         now = datetime.now(ZoneInfo(self._default_timezone))
         if update.callback_query:
+            if self._reports and self._reports.handle_callback(update.callback_query, now):
+                return
             if self._ai_commands is not None and self._ai_commands.handle_callback(
                 update.callback_query
             ):
@@ -64,6 +78,8 @@ class BotRouter:
         使用者意圖比 session state 更權威：若新訊息本身像新的提醒，優先斬斷舊 draft/edit。
         """
         text = strip_bot_mention(message.text, self._bot_username)
+        if self._reports and self._reports.handle_start(message, text, self._bot_username, now):
+            return
         if self._ai_commands is not None and self._ai_commands.handle(message):
             return
         self._reminder_service.record_message_context(message, now)

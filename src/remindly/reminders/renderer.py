@@ -16,7 +16,7 @@ from remindly.reminders.text import html_escape
 
 
 class ReminderRenderer:
-    def render_confirmation(self, draft: ReminderDraft) -> str:
+    def render_confirmation(self, draft: ReminderDraft, *, report_url: str | None = None) -> str:
         participants = self.render_participants(draft.participants)
         used_ai = draft.parse_result.get("grain") == "ai"
         lines = ["確認建立提醒？"]
@@ -32,7 +32,10 @@ class ReminderRenderer:
         parser_name = (
             str(draft.parse_result.get("model_display_name") or "AI") if used_ai else "內建規則"
         )
-        lines.extend(["", f"<code>使用 {html_escape(parser_name)} 解析</code>"])
+        footer = f"<code>使用 {html_escape(parser_name)} 解析</code>"
+        if report_url:
+            footer += f' · <a href="{html_escape(report_url)}">回報問題</a>'
+        lines.extend(["", footer])
         return "\n".join(lines)
 
     def render_created(self, reminder: Reminder) -> str:
