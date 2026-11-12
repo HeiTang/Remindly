@@ -226,8 +226,17 @@ class AdminTest(unittest.TestCase):
         key = RSAKey.generate_key(parameters={"kid": "test"})
         for user_id, audience, wrong_nonce, expected, name, username in (
             (123, "987", False, 302, "小橘", "orange"),
+            ("123", "987", False, 302, "小橘", "orange"),
             (123, "987", False, 302, "小橘改名", None),
             (999, "987", False, 403, "未授權", "denied"),
+            ("999", "987", False, 403, "未授權", "denied"),
+            ("+123", "987", False, 403, "格式錯誤", "denied"),
+            ("123.0", "987", False, 403, "格式錯誤", "denied"),
+            ("１２３", "987", False, 403, "格式錯誤", "denied"),
+            (str(2**63), "987", False, 403, "超出範圍", "denied"),
+            ("1" * 100, "987", False, 403, "超出範圍", "denied"),
+            (True, "987", False, 403, "格式錯誤", "denied"),
+            (None, "987", False, 403, "缺少 ID", "denied"),
             (123, "wrong-audience", False, 400, "不可覆寫", "bad"),
             (123, "987", True, 400, "不可覆寫", "bad"),
         ):
@@ -288,6 +297,9 @@ class AdminTest(unittest.TestCase):
                         "select display_name, username from user_profiles where user_id = ?",
                         (user_id,),
                     ).fetchone()
+                    profiles = connection.execute(
+                        "select user_id, display_name, username from user_profiles"
+                    ).fetchall()
                 if expected == 302:
                     self.assertEqual((name, username), profile)
                     page = self.client.get("/maintainers", base_url=ORIGIN).text
@@ -296,10 +308,8 @@ class AdminTest(unittest.TestCase):
                         self.assertIn("@" + username, page)
                     else:
                         self.assertNotIn("@orange", page)
-                elif user_id == 999:
-                    self.assertIsNone(profile)
                 else:
-                    self.assertEqual(("小橘改名", None), profile)
+                    self.assertEqual([(123, "小橘改名", None)], profiles)
 
         self.assertEqual(
             400,

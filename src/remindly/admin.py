@@ -189,6 +189,13 @@ def create_app() -> Flask:
             return error_page("Telegram 登入失敗，請重新登入。", 400)
         identity = token.get("userinfo") or {}
         user_id = identity.get("id")
+        if (
+            isinstance(user_id, str)
+            and len(user_id) <= 19
+            and user_id.isascii()
+            and user_id.isdecimal()
+        ):
+            user_id = int(user_id)
         session.clear()
         if not can_read(user_id):
             abort(403)
