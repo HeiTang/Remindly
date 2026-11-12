@@ -95,6 +95,67 @@ class AdminTest(unittest.TestCase):
         self.assertEqual(403, self.client.get("/reports/draft_ai", base_url=ORIGIN).status_code)
         self.assertEqual(302, self.client.get("/", base_url=ORIGIN).status_code)
 
+    def test_export_reports_is_authorized_and_omits_reporter_fields(self) -> None:
+        path = "/exports/reports.md"
+        self.assertEqual(302, self.client.get(path + "?id=draft_ai", base_url=ORIGIN).status_code)
+        with self.client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 123
+        with sqlite3.connect(os.environ["DATABASE_PATH"]) as connection:
+            connection.execute(
+                "update reminder_parse_reports set attachment_json = ? where draft_id = ?",
+                (
+                    json.dumps(
+                        {
+                            "source_text": "原句\n```\n# 偽造標題\n```",
+                            "title": "測試事項",
+                            "timezone": "Asia/Taipei",
+                            "parsed_at": "2026-11-10T18:00:00+08:00",
+                            "reporter_username": "must-not-export",
+                        }
+                    ),
+                    "draft_ai",
+                ),
+            )
+        export = self.client.get(
+            path, query_string={"id": ["draft_rules", "draft_ai", "draft_rules"]}, base_url=ORIGIN
+        )
+        self.assertEqual(200, export.status_code)
+        self.assertEqual("text/markdown; charset=utf-8", export.content_type)
+        self.assertIn("-2.md", export.headers["Content-Disposition"])
+        self.assertEqual("no-store", export.headers["Cache-Control"])
+        self.assertIn("connect-src 'self';", export.headers["Content-Security-Policy"])
+        text = export.get_data(as_text=True)
+        self.assertLess(text.index("draft_rules"), text.index("draft_ai"))
+        self.assertEqual(2, text.count("## 回報 "))
+        self.assertIn("Asia/Taipei", text)
+        self.assertIn("2026-11-10T18:00:00+08:00", text)
+        self.assertIn("2026-11-10T10:00:00+00:00", text)
+        self.assertIn("未提供，需由維護者補充", text)
+        self.assertIn("未提供。", text)
+        self.assertIn("````\n原句\n```\n# 偽造標題\n```\n````", text)
+        for excluded in ("reporter_demo", "123456789", "must-not-export", "reporter_username"):
+            self.assertNotIn(excluded, text)
+        for ids, expected in (
+            ([], 400),
+            ([""], 400),
+            (["x" * 129], 400),
+            (["draft_ai"] * 51, 400),
+            (["draft_ai", "missing"], 404),
+            (["' OR 1=1 --"], 404),
+        ):
+            with self.subTest(ids=ids):
+                response = self.client.get(path, query_string={"id": ids}, base_url=ORIGIN)
+                self.assertEqual(expected, response.status_code)
+                self.assertNotIn("Content-Disposition", response.headers)
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            connection.execute("insert into maintainers (user_id, added_by) values (789, 123)")
+        with self.client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 789
+        self.assertEqual(200, self.client.get(path + "?id=draft_ai", base_url=ORIGIN).status_code)
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            connection.execute("delete from maintainers where user_id = 789")
+        self.assertEqual(403, self.client.get(path + "?id=draft_ai", base_url=ORIGIN).status_code)
+
     def test_manage_maintainers_and_revoke_active_session(self) -> None:
         with self.client.session_transaction(base_url=ORIGIN) as session:
             session["telegram_user_id"] = 123

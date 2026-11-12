@@ -50,6 +50,9 @@
   {% if screen == 'list' %}
   <script src="{{ url_for('static', filename='report-filters.js') }}" defer></script>
   {% endif %}
+  {% if screen in ('list', 'detail') %}
+  <script src="{{ url_for('static', filename='report-export.js') }}" defer></script>
+  {% endif %}
 </head>
 <body>
   <a class="skip-link" href="#main">跳到主要內容</a>
@@ -175,9 +178,24 @@
           <span class="list-order">依回報時間排序</span>
         </div>
         {% if rows %}
+        <form id="report-selection" class="export-toolbar" action="{{ url_for('export_reports') }}" method="get" data-report-export>
+          <label class="selection-label"><input type="checkbox" data-select-all>全選本頁</label>
+          <span class="selection-count" data-selected-count>已選 0 筆</span>
+          <div class="export-actions">
+            <button class="button button-secondary" type="button" data-copy-reports disabled>複製所選</button>
+            <button class="button button-secondary" type="submit" disabled>下載 Markdown</button>
+          </div>
+          <p class="export-help">換頁或變更篩選會清除選取。匯出不含回報者欄位，原句仍可能包含人名。</p>
+          <p class="export-status" role="status" aria-live="polite" data-export-status></p>
+          <div class="copy-fallback" data-copy-fallback hidden>
+            <label for="export-text">無法自動複製，請選取下方文字手動複製，或下載 Markdown。</label>
+            <textarea id="export-text" readonly rows="8"></textarea>
+          </div>
+        </form>
         <table class="report-table" role="table" aria-labelledby="list-heading">
           <thead role="rowgroup">
             <tr role="row">
+              <th scope="col" role="columnheader">選取</th>
               <th scope="col" role="columnheader">回報原因</th>
               <th scope="col" role="columnheader">解析來源／模型</th>
               <th scope="col" role="columnheader">回報時間 <span class="timezone">UTC</span></th>
@@ -188,6 +206,12 @@
           <tbody role="rowgroup">
             {% for row in rows %}
             <tr role="row">
+              <td class="selection-cell" role="cell">
+                <label class="selection-label">
+                  <input type="checkbox" name="id" value="{{ row.draft_id }}" form="report-selection" aria-label="選取回報 {{ row.draft_id }}：{{ reasons[row.reason] }}">
+                  <span class="mobile-label">選取回報</span>
+                </label>
+              </td>
               <td class="reason-cell" role="cell">
                 <a class="report-link" href="{{ url_for('report_detail', draft_id=row.draft_id, **detail_query) }}">
                   {{ reasons[row.reason] }} {{ icon('next') }}
@@ -225,12 +249,24 @@
     {% else %}
       <a class="back-link" href="{{ list_url }}">{{ icon('back') }} 回到回報列表</a>
       <div class="page-heading detail-heading">
+        <div class="detail-intro">
         <div class="eyebrow">回報詳情</div>
         <h1>{{ reasons[report.reason] }}</h1>
         <div class="detail-subtitle">
           {{ source_badge(report.parser_source) }}
           <time datetime="{{ report.reported_at }}">{{ report.reported_at[:16]|replace('T', ' ') }} UTC</time>
         </div>
+        </div>
+        <form id="report-selection" class="detail-export" action="{{ url_for('export_reports') }}" method="get" data-report-export>
+          <input type="hidden" name="id" value="{{ report.draft_id }}">
+          <button class="button button-secondary" type="button" data-copy-reports>複製問題資料</button>
+          <p class="export-help">不含回報者欄位，原句仍可能包含人名。</p>
+          <p class="export-status" role="status" aria-live="polite" data-export-status></p>
+          <div class="copy-fallback" data-copy-fallback hidden>
+            <label for="export-text">無法自動複製，請選取下方文字手動複製。</label>
+            <textarea id="export-text" readonly rows="8"></textarea>
+          </div>
+        </form>
       </div>
 
       <div class="detail-grid">
