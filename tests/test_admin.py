@@ -355,6 +355,79 @@ class AdminTest(unittest.TestCase):
                 3, connection.execute("select count(*) from reminder_parse_reports").fetchone()[0]
             )
 
+    def test_batch_status_is_atomic_and_available_to_maintainers(self) -> None:
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            connection.execute("insert into maintainers(user_id,added_by) values(789,123)")
+            connection.execute(
+                "insert into report_management(draft_id,note,updated_by) "
+                "values('draft_ai','保留備註',123)"
+            )
+        with self.client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 789
+            session["logout_token"] = "csrf"
+        path = "/reports/batch"
+        ids = ["draft_ai", "draft_rules"]
+        confirm = self.client.get(
+            path, query_string={"action": "status", "id": ids}, base_url=ORIGIN
+        )
+        self.assertEqual(200, confirm.status_code)
+        self.assertIn("請選擇狀態", confirm.text)
+        self.assertEqual(
+            403,
+            self.client.post(
+                path, data={"action": "status", "id": ids, "status": "resolved"}, base_url=ORIGIN
+            ).status_code,
+        )
+        for selected, status, expected in [
+            (ids, "", 400),
+            (ids, "unknown", 400),
+            (["draft_ai", "missing"], "resolved", 404),
+        ]:
+            self.assertEqual(
+                expected,
+                self.client.post(
+                    path,
+                    data={"action": "status", "id": selected, "status": status, "token": "csrf"},
+                    base_url=ORIGIN,
+                ).status_code,
+            )
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            self.assertEqual(
+                "open",
+                connection.execute(
+                    "select status from report_management where draft_id='draft_ai'"
+                ).fetchone()[0],
+            )
+        self.assertEqual(
+            303,
+            self.client.post(
+                path,
+                data={"action": "status", "id": ids, "status": "resolved", "token": "csrf"},
+                base_url=ORIGIN,
+            ).status_code,
+        )
+        listing = self.client.get("/?status=resolved", base_url=ORIGIN).text
+        self.assertIn("/reports/draft_ai", listing)
+        self.assertIn("/reports/draft_rules", listing)
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            self.assertEqual(
+                ("resolved", "保留備註", 789),
+                connection.execute(
+                    "select status,note,updated_by from report_management where draft_id='draft_ai'"
+                ).fetchone(),
+            )
+            connection.execute(
+                "update report_management set deleted_at='2026-11-13' where draft_id='draft_ai'"
+            )
+        self.assertEqual(
+            409,
+            self.client.post(
+                path,
+                data={"action": "status", "id": ids, "status": "open", "token": "csrf"},
+                base_url=ORIGIN,
+            ).status_code,
+        )
+
     def test_manage_maintainers_and_revoke_active_session(self) -> None:
         with self.client.session_transaction(base_url=ORIGIN) as session:
             session["telegram_user_id"] = 123

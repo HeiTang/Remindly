@@ -232,7 +232,6 @@ def create_app() -> Flask:
                 "add_maintainer",
                 "remove_maintainer",
                 "update_maintainer_note",
-                "batch_reports",
             }
             and not g.is_admin
         ):
@@ -482,8 +481,16 @@ def create_app() -> Flask:
         values = request.form if request.method == "POST" else request.args
         action = values.get("action")
         requested = values.getlist("id")
+        target_status = values.get("status", "")
+        if action in {"delete", "restore"} and not g.is_admin:
+            abort(403)
+        if action == "status" and (
+            target_status not in {"", *_REPORT_STATUSES}
+            or (request.method == "POST" and target_status not in _REPORT_STATUSES)
+        ):
+            abort(400)
         if (
-            action not in {"delete", "restore"}
+            action not in {"delete", "restore", "status"}
             or not 1 <= len(requested) <= _PAGE_SIZE
             or any(not value or len(value) > 128 for value in requested)
         ):
@@ -507,24 +514,40 @@ def create_app() -> Flask:
             if any(bool(row["deleted_at"]) != (action == "restore") for row in rows):
                 abort(409)
             if request.method == "POST":
-                deleted_at = datetime.now(UTC).isoformat() if action == "delete" else None
-                management.executemany(
-                    "insert into report_management(draft_id, deleted_at, updated_by) "
-                    "values (?, ?, ?) on conflict(draft_id) do update set "
-                    "deleted_at=excluded.deleted_at, updated_by=excluded.updated_by, "
-                    "updated_at=CURRENT_TIMESTAMP",
-                    [(value, deleted_at, session["telegram_user_id"]) for value in ids],
-                )
-                flash(
-                    f"已還原 {len(ids)} 筆回報。"
-                    if action == "restore"
-                    else f"已將 {len(ids)} 筆回報移到回收區，可還原。"
-                )
+                if action == "status":
+                    management.executemany(
+                        "insert into report_management(draft_id, status, updated_by) "
+                        "values (?, ?, ?) on conflict(draft_id) do update set "
+                        "status=excluded.status, updated_by=excluded.updated_by, "
+                        "updated_at=CURRENT_TIMESTAMP",
+                        [(value, target_status, session["telegram_user_id"]) for value in ids],
+                    )
+                    flash(f"已將 {len(ids)} 筆回報改為{_REPORT_STATUSES[target_status]}。")
+                else:
+                    deleted_at = datetime.now(UTC).isoformat() if action == "delete" else None
+                    management.executemany(
+                        "insert into report_management(draft_id, deleted_at, updated_by) "
+                        "values (?, ?, ?) on conflict(draft_id) do update set "
+                        "deleted_at=excluded.deleted_at, updated_by=excluded.updated_by, "
+                        "updated_at=CURRENT_TIMESTAMP",
+                        [(value, deleted_at, session["telegram_user_id"]) for value in ids],
+                    )
+                    flash(
+                        f"已還原 {len(ids)} 筆回報。"
+                        if action == "restore"
+                        else f"已將 {len(ids)} 筆回報移到回收區，可還原。"
+                    )
                 return redirect(
                     url_for("reports", **({"trash": "1"} if action == "restore" else {})), code=303
                 )
         return render_template(
-            "reports.html", screen="batch", rows=rows, reasons=REPORT_REASONS, action=action
+            "reports.html",
+            screen="batch",
+            rows=rows,
+            reasons=REPORT_REASONS,
+            action=action,
+            statuses=_REPORT_STATUSES,
+            target_status=target_status,
         )
 
     @app.get("/exports/reports.md")

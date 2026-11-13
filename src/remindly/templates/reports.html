@@ -193,6 +193,8 @@
             {% if not filters.trash %}
             <button class="button button-secondary" type="button" data-copy-reports disabled>複製所選</button>
             <button class="button button-secondary" type="submit" data-download-reports disabled>下載 Markdown</button>
+            <button class="button button-secondary" type="submit" data-selection-action
+              formaction="{{ url_for('batch_reports') }}" name="action" value="status" disabled>修改所選狀態</button>
             {% endif %}
             {% if g.is_admin %}
             <button class="button button-secondary" type="submit" data-selection-action
@@ -268,15 +270,24 @@
         {% endif %}
       </section>
     {% elif screen == 'batch' %}
-      <h1>確認{{ '還原' if action == 'restore' else '刪除' }}回報</h1>
+      {% set action_label = {'restore':'還原', 'delete':'刪除', 'status':'修改狀態'}[action] %}
+      <h1>確認{{ action_label }}回報</h1>
       <section class="panel panel-body management-form">
-        <p>{% if action == 'delete' %}將 {{ rows|length }} 筆回報移到回收區，可隨時還原；原始資料不會清除。{% else %}將 {{ rows|length }} 筆回報還原至一般列表，原狀態與備註保留。{% endif %}</p>
+        <p>{% if action == 'delete' %}將 {{ rows|length }} 筆回報移到回收區，可隨時還原；原始資料不會清除。{% elif action == 'restore' %}將 {{ rows|length }} 筆回報還原至一般列表，原狀態與備註保留。{% else %}將修改 {{ rows|length }} 筆回報的狀態，原備註與修復關聯保留。{% endif %}</p>
         <ul>{% for row in rows %}<li>{{ reasons[row.reason] }} · <code>{{ row.draft_id }}</code></li>{% endfor %}</ul>
         <form method="post" action="{{ url_for('batch_reports') }}">
           <input type="hidden" name="token" value="{{ session.logout_token }}">
           <input type="hidden" name="action" value="{{ action }}">
           {% for row in rows %}<input type="hidden" name="id" value="{{ row.draft_id }}">{% endfor %}
-          <button class="button button-primary" type="submit">確認{{ '還原' if action == 'restore' else '刪除' }}</button>
+          {% if action == 'status' %}
+          <label class="filter-field" for="batch-status">新的處理狀態
+            <span class="filter-control"><select id="batch-status" name="status" required>
+              <option value="">請選擇狀態</option>
+              {% for value, label in statuses.items() %}<option value="{{ value }}"{% if target_status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select></span>
+          </label>
+          {% endif %}
+          <button class="button button-primary" type="submit">確認{{ action_label }}</button>
           <a class="button button-quiet" href="{{ url_for('reports', trash='1' if action == 'restore' else '') }}">取消</a>
         </form>
       </section>
