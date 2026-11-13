@@ -7,6 +7,8 @@ from remindly import __version__
 from remindly.reminders.models import ReminderDraft
 from remindly.reminders.recurrence import format_rule
 
+EXPECTED_RESULT_LIMIT = 500
+
 REPORT_REASONS = {
     "time": "時間錯了",
     "title": "事項錯了",

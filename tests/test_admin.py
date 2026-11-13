@@ -130,7 +130,7 @@ class AdminTest(unittest.TestCase):
         self.assertIn("Asia/Taipei", text)
         self.assertIn("2026-11-10T18:00:00+08:00", text)
         self.assertIn("2026-11-10T10:00:00+00:00", text)
-        self.assertIn("未提供，需由維護者補充", text)
+        self.assertIn("使用者未提供預期結果", text)
         self.assertIn("未提供。", text)
         self.assertIn("````\n原句\n```\n# 偽造標題\n```\n````", text)
         for excluded in ("reporter_demo", "123456789", "must-not-export", "reporter_username"):
@@ -155,6 +155,31 @@ class AdminTest(unittest.TestCase):
         with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
             connection.execute("delete from maintainers where user_id = 789")
         self.assertEqual(403, self.client.get(path + "?id=draft_ai", base_url=ORIGIN).status_code)
+
+    def test_expected_result_detail_and_single_batch_markdown(self) -> None:
+        expected = "每週六下午三點\n<script>預期內容</script>\n```\n# 假標題"
+        with sqlite3.connect(os.environ["DATABASE_PATH"]) as connection:
+            connection.execute(
+                "update reminder_parse_reports set expected_result=? where draft_id='draft_ai'",
+                (expected,),
+            )
+        with self.client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 123
+        detail = self.client.get("/reports/draft_ai", base_url=ORIGIN).text
+        self.assertIn("使用者預期結果", detail)
+        self.assertIn("&lt;script&gt;預期內容&lt;/script&gt;", detail)
+        self.assertNotIn("<script>預期內容</script>", detail)
+        for ids in [["draft_ai"], ["draft_rules", "draft_ai"]]:
+            text = self.client.get(
+                "/exports/reports.md", query_string={"id": ids}, base_url=ORIGIN
+            ).text
+            self.assertIn("### 使用者預期結果", text)
+            self.assertIn("````\n" + expected + "\n````", text)
+            self.assertNotIn("reporter_demo", text)
+            self.assertNotIn("123456789", text)
+        self.assertIn(
+            "使用者未提供預期結果", self.client.get("/reports/draft_rules", base_url=ORIGIN).text
+        )
 
     def test_manage_maintainers_and_revoke_active_session(self) -> None:
         with self.client.session_transaction(base_url=ORIGIN) as session:

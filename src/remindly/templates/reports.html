@@ -185,7 +185,7 @@
             <button class="button button-secondary" type="button" data-copy-reports disabled>複製所選</button>
             <button class="button button-secondary" type="submit" disabled>下載 Markdown</button>
           </div>
-          <p class="export-help">換頁或變更篩選會清除選取。匯出不含回報者欄位，原句仍可能包含人名。</p>
+          <p class="export-help">換頁或變更篩選會清除選取。匯出不含回報者欄位，原句與補充文字仍可能包含人名。</p>
           <p class="export-status" role="status" aria-live="polite" data-export-status></p>
           <div class="copy-fallback" data-copy-fallback hidden>
             <label for="export-text">無法自動複製，請選取下方文字手動複製，或下載 Markdown。</label>
@@ -260,7 +260,7 @@
         <form id="report-selection" class="detail-export" action="{{ url_for('export_reports') }}" method="get" data-report-export>
           <input type="hidden" name="id" value="{{ report.draft_id }}">
           <button class="button button-secondary" type="button" data-copy-reports>複製問題資料</button>
-          <p class="export-help">不含回報者欄位，原句仍可能包含人名。</p>
+          <p class="export-help">不含回報者欄位，原句與補充文字仍可能包含人名。</p>
           <p class="export-status" role="status" aria-live="polite" data-export-status></p>
           <div class="copy-fallback" data-copy-fallback hidden>
             <label for="export-text">無法自動複製，請選取下方文字手動複製。</label>
@@ -292,9 +292,17 @@
           {% else %}
           <div class="empty-state">
             <span class="feature-icon">{{ icon('attachment') }}</span>
-            <p>使用者未附上原句與解析結果。</p>
+            <p>這筆舊回報未保存原句與解析結果。</p>
           </div>
           {% endif %}
+          <div class="panel-header"><h2 id="expected-result-heading">使用者預期結果</h2></div>
+          <div class="panel-body">
+            {% if report.expected_result %}
+            <blockquote>{{ report.expected_result }}</blockquote>
+            {% else %}
+            <p>使用者未提供預期結果。</p>
+            {% endif %}
+          </div>
         </section>
         <div class="detail-sidebar">
           <section class="panel" aria-labelledby="reporter-heading">

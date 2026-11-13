@@ -65,7 +65,10 @@ def _reports_markdown(rows: list[sqlite3.Row]) -> str:
                 code_block(json.dumps(result, ensure_ascii=False, indent=2), "json")
                 if result
                 else "未提供。",
-                "### 使用者期望\n\n未提供，需由維護者補充。",
+                "### 使用者預期結果",
+                code_block(row["expected_result"])
+                if row["expected_result"]
+                else "使用者未提供預期結果。",
             ]
         )
     return "\n\n".join(parts) + "\n"
@@ -405,7 +408,7 @@ def create_app() -> Flask:
         with closing(read_database()) as connection:
             rows = connection.execute(
                 "select draft_id, reported_at, reason, parser_source, provider, model, "
-                "bot_version, attachment_json from reminder_parse_reports "
+                "bot_version, attachment_json, expected_result from reminder_parse_reports "
                 f"where draft_id in ({placeholders})",
                 ids,
             ).fetchall()

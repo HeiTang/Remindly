@@ -5,7 +5,12 @@ import sqlite3
 from datetime import UTC, datetime
 
 from remindly.reminders.models import ReminderDraft
-from remindly.reminders.reports import REPORT_REASONS, parser_source, report_attachment
+from remindly.reminders.reports import (
+    EXPECTED_RESULT_LIMIT,
+    REPORT_REASONS,
+    parser_source,
+    report_attachment,
+)
 from remindly.storage.session_stores import row_to_draft
 from remindly.storage.sqlite import ReminderRepository
 
@@ -29,9 +34,15 @@ class ReportStore:
         *,
         reporter_username: str | None,
         reason: str,
-        include_attachment: bool,
+        expected_result: str | None = None,
     ) -> bool | None:
         """Return True on insert, False on duplicate, None for an unavailable draft."""
+        if expected_result is not None and (
+            not isinstance(expected_result, str)
+            or not expected_result.strip()
+            or len(expected_result) > EXPECTED_RESULT_LIMIT
+        ):
+            return None
         if reason not in REPORT_REASONS:
             return None
         with self._repository.connect() as connection:
@@ -44,8 +55,9 @@ class ReportStore:
             inserted = connection.execute(
                 """insert into reminder_parse_reports
                 (draft_id, reported_at, reason, parser_source,
-                 provider, model, bot_version, attachment_json, reporter_user_id, reporter_username)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 provider, model, bot_version, attachment_json, reporter_user_id, reporter_username,
+                 expected_result)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(draft_id) do nothing""",
                 (
                     draft.id,
@@ -55,11 +67,10 @@ class ReportStore:
                     result.get("provider") if source == "ai" else None,
                     result.get("model") if source == "ai" else None,
                     result["report_bot_version"],
-                    json.dumps(report_attachment(draft), ensure_ascii=False)
-                    if include_attachment
-                    else None,
+                    json.dumps(report_attachment(draft), ensure_ascii=False),
                     user_id,
                     reporter_username or None,
+                    expected_result.strip() if expected_result is not None else None,
                 ),
             )
             return inserted.rowcount == 1

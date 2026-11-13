@@ -220,6 +220,14 @@ MIGRATIONS = (
         alter table reminder_parse_reports add column reporter_username text;
         """,
     ),
+    Migration(
+        version=13,
+        name="parse_report_expected_result",
+        sql="""
+        alter table reminder_parse_reports add column expected_result text
+            check (expected_result is null or length(expected_result) between 1 and 500);
+        """,
+    ),
 )
 
 
