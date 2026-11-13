@@ -2,7 +2,7 @@ const exportForm = document.querySelector('[data-report-export]');
 
 if (exportForm) {
   const copyButton = exportForm.querySelector('[data-copy-reports]');
-  const downloadButton = exportForm.querySelector('button[type="submit"]');
+  const downloadButton = exportForm.querySelector('[data-download-reports]');
   const selectAll = exportForm.querySelector('[data-select-all]');
   const count = exportForm.querySelector('[data-selected-count]');
   const status = exportForm.querySelector('[data-export-status]');
@@ -21,7 +21,10 @@ if (exportForm) {
       selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
     }
     const empty = !new FormData(exportForm).getAll('id').length;
-    copyButton.disabled = copying || empty;
+    if (copyButton) copyButton.disabled = copying || empty;
+    for (const button of exportForm.querySelectorAll('[data-selection-action]')) {
+      button.disabled = empty;
+    }
     if (downloadButton) downloadButton.disabled = empty;
   };
 
@@ -43,7 +46,7 @@ if (exportForm) {
     clearFeedback();
   });
 
-  copyButton.addEventListener('click', async () => {
+  copyButton?.addEventListener('click', async () => {
     const ids = new FormData(exportForm).getAll('id');
     if (!ids.length || copying) return;
     copying = true;

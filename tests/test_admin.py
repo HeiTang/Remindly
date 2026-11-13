@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -180,6 +181,179 @@ class AdminTest(unittest.TestCase):
         self.assertIn(
             "使用者未提供預期結果", self.client.get("/reports/draft_rules", base_url=ORIGIN).text
         )
+
+    def test_report_notes_status_filters_and_maintainer_permissions(self) -> None:
+        original = hashlib.sha256(Path(os.environ["DATABASE_PATH"]).read_bytes()).hexdigest()
+        path = "/reports/draft_ai/manage"
+        with self.client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 123
+            session["logout_token"] = "csrf"
+        self.assertEqual(
+            403, self.client.post(path, data={"status": "resolved"}, base_url=ORIGIN).status_code
+        )
+        for data in [{"status": "unknown"}, {"status": "open", "note": "字" * 2001}]:
+            self.assertEqual(
+                400,
+                self.client.post(path, data={**data, "token": "csrf"}, base_url=ORIGIN).status_code,
+            )
+        note = "已修正時區\n</textarea><script>這是資料</script>\n```"
+        self.assertEqual(
+            303,
+            self.client.post(
+                path, data={"status": "resolved", "note": note, "token": "csrf"}, base_url=ORIGIN
+            ).status_code,
+        )
+        detail = self.client.get("/reports/draft_ai", base_url=ORIGIN).text
+        self.assertIn("&lt;/textarea&gt;&lt;script&gt;這是資料&lt;/script&gt;", detail)
+        self.assertNotIn("<script>這是資料</script>", detail)
+        listing = self.client.get("/?status=resolved", base_url=ORIGIN).text
+        self.assertIn("/reports/draft_ai", listing)
+        self.assertNotIn("/reports/draft_rules", listing)
+        self.assertEqual(400, self.client.get("/?status=unknown", base_url=ORIGIN).status_code)
+        self.assertEqual(400, self.client.get("/?trash=yes", base_url=ORIGIN).status_code)
+        exported = self.client.get("/exports/reports.md?id=draft_ai", base_url=ORIGIN).text
+        self.assertIn('"處理狀態": "已解決"', exported)
+        self.assertIn("````\n" + note + "\n````", exported)
+        self.assertNotIn("reporter_demo", exported)
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            connection.execute("insert into maintainers(user_id,added_by) values(789,123)")
+        client = create_app().test_client()
+        with client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 789
+            session["logout_token"] = "maintainer-csrf"
+        self.assertIn(
+            note.replace("<", "&lt;").replace(">", "&gt;"),
+            client.get("/reports/draft_ai", base_url=ORIGIN).text,
+        )
+        self.assertEqual(
+            303,
+            client.post(
+                path,
+                data={"status": "in_progress", "note": "重新檢查", "token": "maintainer-csrf"},
+                base_url=ORIGIN,
+            ).status_code,
+        )
+        self.assertEqual(
+            404,
+            client.post(
+                "/reports/missing/manage",
+                data={"status": "open", "token": "maintainer-csrf"},
+                base_url=ORIGIN,
+            ).status_code,
+        )
+        self.assertEqual(
+            403, client.get("/reports/batch?action=delete&id=draft_ai", base_url=ORIGIN).status_code
+        )
+        self.assertEqual(
+            403,
+            client.post(
+                "/reports/batch",
+                data={"action": "delete", "id": "draft_ai", "token": "maintainer-csrf"},
+                base_url=ORIGIN,
+            ).status_code,
+        )
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            row = connection.execute(
+                "select status,note,updated_by from report_management where draft_id='draft_ai'"
+            ).fetchone()
+            self.assertEqual(("in_progress", "重新檢查", 789), row)
+            connection.execute("delete from maintainers where user_id=789")
+        self.assertEqual(
+            403,
+            client.post(
+                path, data={"status": "open", "token": "maintainer-csrf"}, base_url=ORIGIN
+            ).status_code,
+        )
+        self.assertEqual(
+            original, hashlib.sha256(Path(os.environ["DATABASE_PATH"]).read_bytes()).hexdigest()
+        )
+
+    def test_report_batch_delete_restore_is_confirmed_atomic_and_reversible(self) -> None:
+        with self.client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 123
+            session["logout_token"] = "csrf"
+        path = "/reports/batch"
+        ids = ["draft_ai", "draft_rules"]
+        self.client.post(
+            "/reports/draft_ai/manage",
+            data={"status": "resolved", "note": "保留備註", "token": "csrf"},
+            base_url=ORIGIN,
+        )
+        for selected, action, expected in [
+            ([], "delete", 400),
+            (["x"] * 51, "delete", 400),
+            (["draft_ai", "missing"], "delete", 404),
+            (ids, "restore", 409),
+            (ids, "purge", 400),
+        ]:
+            self.assertEqual(
+                expected,
+                self.client.post(
+                    path, data={"id": selected, "action": action, "token": "csrf"}, base_url=ORIGIN
+                ).status_code,
+            )
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            self.assertEqual(
+                0,
+                connection.execute(
+                    "select count(*) from report_management where deleted_at is not null"
+                ).fetchone()[0],
+            )
+        confirm = self.client.get(
+            path, query_string={"id": ids, "action": "delete"}, base_url=ORIGIN
+        )
+        self.assertEqual(200, confirm.status_code)
+        self.assertIn("確認刪除", confirm.text)
+        self.assertIn("可隨時還原", confirm.text)
+        self.assertIn("/reports/draft_ai", self.client.get("/", base_url=ORIGIN).text)
+        self.assertEqual(
+            403,
+            self.client.post(
+                path, data={"id": ids, "action": "delete"}, base_url=ORIGIN
+            ).status_code,
+        )
+        self.assertEqual(
+            303,
+            self.client.post(
+                path,
+                data={"id": ids + ["draft_ai"], "action": "delete", "token": "csrf"},
+                base_url=ORIGIN,
+            ).status_code,
+        )
+        normal = self.client.get("/", base_url=ORIGIN).text
+        self.assertNotIn('href="/reports/draft_ai', normal)
+        self.assertNotIn('href="/reports/draft_rules', normal)
+        trash = self.client.get("/?trash=1&status=resolved", base_url=ORIGIN).text
+        self.assertIn("/reports/draft_ai", trash)
+        self.assertNotIn('href="/reports/draft_rules', trash)
+        self.assertIn("還原所選", trash)
+        self.assertNotIn("data-copy-reports", trash)
+        self.assertEqual(
+            404, self.client.get("/exports/reports.md?id=draft_ai", base_url=ORIGIN).status_code
+        )
+        self.assertIn("已移到回收區", self.client.get("/reports/draft_ai", base_url=ORIGIN).text)
+        self.assertEqual(
+            409,
+            self.client.post(
+                "/reports/draft_ai/manage",
+                data={"status": "open", "token": "csrf"},
+                base_url=ORIGIN,
+            ).status_code,
+        )
+        self.assertEqual(
+            303,
+            self.client.post(
+                path, data={"id": ids, "action": "restore", "token": "csrf"}, base_url=ORIGIN
+            ).status_code,
+        )
+        self.assertIn(
+            'href="/reports/draft_ai', self.client.get("/?status=resolved", base_url=ORIGIN).text
+        )
+        self.assertIn("保留備註", self.client.get("/reports/draft_ai", base_url=ORIGIN).text)
+        with sqlite3.connect(os.environ["DATABASE_PATH"]) as connection:
+            self.assertEqual(
+                3, connection.execute("select count(*) from reminder_parse_reports").fetchone()[0]
+            )
 
     def test_manage_maintainers_and_revoke_active_session(self) -> None:
         with self.client.session_transaction(base_url=ORIGIN) as session:

@@ -270,3 +270,13 @@ h3 + .metadata { margin-top: .65rem; }
   .selection-cell { grid-column: 1 / -1; }
   .export-actions { margin-inline-start: 0; }
 }
+
+.management-form { display: grid; gap: 1rem; }
+.management-form textarea {
+  width: 100%; min-width: 0; resize: vertical; padding: .7rem;
+  font: inherit; line-height: 1.6; color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: .5rem;
+}
+.report-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.save-notice { margin-bottom: 1rem; }
