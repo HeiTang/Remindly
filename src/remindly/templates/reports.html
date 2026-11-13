@@ -166,27 +166,28 @@
             <input id="filter-query" name="q" type="search" maxlength="200" value="{{ search_query }}" placeholder="原句、解析事項、預期結果或維護者備註">
           </label>
           {{ select_filter('status', '處理狀態', statuses, filters.status) }}
-          <label class="filter-field" for="filter-trash">顯示範圍
-            <span class="filter-control"><select id="filter-trash" name="trash">
-              <option value="">一般回報</option>
-              <option value="1"{% if filters.trash %} selected{% endif %}>回收區</option>
-            </select></span>
-          </label>
+          <input type="hidden" name="trash" value="{{ filters.trash }}">
           {{ select_filter('reason', '原因', reasons, filters.reason) }}
+          <div class="filter-actions">
+            <a class="button button-quiet" href="{{ url_for('reports') }}"> 清除</a>
+            <button class="button button-primary" type="submit"> 搜尋</button>
+          </div>
+          {% set advanced_count = [filters.parser_source, filters.model, filters.bot_version]|select|list|length %}
+          <details class="advanced-filters" id="advanced-filters"{% if advanced_count %} open{% endif %}>
+            <summary>{{ icon('filter') }} 進階篩選{% if advanced_count %} · {{ advanced_count }} 個條件{% endif %}</summary>
+            <div class="advanced-filter-fields">
           {{ select_filter('parser_source', '解析來源', sources, filters.parser_source) }}
           {{ select_filter('model', '模型', models, filters.model) }}
           {{ select_filter('bot_version', 'Bot 版本', versions, filters.bot_version) }}
-          <div class="filter-actions">
-            <a class="button button-quiet" href="{{ url_for('reports') }}">清除</a>
-            <button class="button button-primary" type="submit">搜尋</button>
-          </div>
+            </div>
+          </details>
         </form>
       </section>
 
       <section class="panel report-panel" aria-labelledby="list-heading">
         <div class="panel-header">
-          <h2 id="list-heading">回報列表 <span class="result-count">本頁 {{ rows|length }} 筆</span></h2>
-          <span class="list-order">依回報時間排序</span>
+          <h2 id="list-heading">{{ '回收區' if filters.trash else '回報列表' }} <span class="result-count">本頁 {{ rows|length }} 筆</span></h2>
+          <a class="button button-quiet" href="{{ url_for('reports', **dict(detail_query, trash='' if filters.trash else '1', page=1)) }}"> {{ '返回一般回報' if filters.trash else '回收區' }}</a>
         </div>
         {% if rows %}
         <form id="report-selection" class="export-toolbar" action="{{ url_for('export_reports') }}" method="get" data-report-export>
