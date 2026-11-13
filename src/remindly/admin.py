@@ -62,6 +62,8 @@ def _reports_markdown(rows: list[sqlite3.Row]) -> str:
             "解析當下": attachment.get("parsed_at") or "未提供",
             "回報時間": row["reported_at"],
             "處理狀態": _REPORT_STATUSES[row["status"]],
+            "修復 PR": row["fix_pr"] or "未填寫",
+            "修復版本": row["fix_version"] or "未填寫",
         }
         result = {
             label: attachment[field]
@@ -144,6 +146,17 @@ def create_app() -> Flask:
             "deleted_at text, updated_by integer not null, "
             "updated_at text not null default CURRENT_TIMESTAMP)"
         )
+        columns = {row[1] for row in connection.execute("pragma table_info(report_management)")}
+        if "fix_pr" not in columns:
+            connection.execute(
+                "alter table report_management add column fix_pr text not null "
+                "default '' check(length(fix_pr) <= 500)"
+            )
+        if "fix_version" not in columns:
+            connection.execute(
+                "alter table report_management add column fix_version text not null "
+                "default '' check(length(fix_version) <= 80)"
+            )
     app = Flask(__name__)
     app.config.update(
         SECRET_KEY=session_secret,
@@ -454,7 +467,22 @@ def create_app() -> Flask:
         check_csrf()
         status = request.form.get("status", "")
         note = request.form.get("note", "")
-        if status not in _REPORT_STATUSES or len(note) > 2000:
+        fix_pr = request.form.get("fix_pr", "").strip().rstrip("/")
+        fix_version = request.form.get("fix_version", "").strip()
+        if (
+            status not in _REPORT_STATUSES
+            or len(note) > 2000
+            or len(fix_pr) > 500
+            or (
+                fix_pr
+                and re.fullmatch(
+                    r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*", fix_pr
+                )
+                is None
+            )
+            or len(fix_version) > 80
+            or (fix_version and not fix_version.isprintable())
+        ):
             abort(400)
         with closing(sqlite3.connect(access_database)) as management, management:
             management.execute("begin immediate")
@@ -467,11 +495,13 @@ def create_app() -> Flask:
             if row["deleted_at"]:
                 abort(409)
             management.execute(
-                "insert into report_management(draft_id, status, note, updated_by) "
-                "values (?, ?, ?, ?) on conflict(draft_id) do update set "
+                "insert into report_management(draft_id, status, note, updated_by, "
+                "fix_pr, fix_version) "
+                "values (?, ?, ?, ?, ?, ?) on conflict(draft_id) do update set "
                 "status=excluded.status, note=excluded.note, updated_by=excluded.updated_by, "
+                "fix_pr=excluded.fix_pr, fix_version=excluded.fix_version, "
                 "updated_at=CURRENT_TIMESTAMP",
-                (draft_id, status, note.strip(), session["telegram_user_id"]),
+                (draft_id, status, note.strip(), session["telegram_user_id"], fix_pr, fix_version),
             )
         flash("處理紀錄已儲存。")
         return redirect(url_for("report_detail", draft_id=draft_id), code=303)
@@ -563,7 +593,7 @@ def create_app() -> Flask:
             rows = connection.execute(
                 "select r.draft_id, r.reported_at, r.reason, r.parser_source, r.provider, r.model, "
                 "r.bot_version, r.attachment_json, r.expected_result, "
-                "coalesce(m.status, 'open') as status, m.note "
+                "coalesce(m.status, 'open') as status, m.note, m.fix_pr, m.fix_version "
                 + _REPORT_JOIN
                 + f"where r.draft_id in ({placeholders}) and m.deleted_at is null",
                 ids,
@@ -586,7 +616,10 @@ def create_app() -> Flask:
         with closing(read_database()) as connection:
             row = connection.execute(
                 "select r.*, coalesce(m.status, 'open') as status, coalesce(m.note, '') as note, "
-                "m.deleted_at, m.updated_at " + _REPORT_JOIN + "where r.draft_id = ?",
+                "m.deleted_at, m.updated_at, coalesce(m.fix_pr, '') as fix_pr, "
+                "coalesce(m.fix_version, '') as fix_version "
+                + _REPORT_JOIN
+                + "where r.draft_id = ?",
                 (draft_id,),
             ).fetchone()
         if row is None:

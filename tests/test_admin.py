@@ -428,6 +428,80 @@ class AdminTest(unittest.TestCase):
             ).status_code,
         )
 
+    def test_fix_links_validation_upgrade_and_batch_preservation(self) -> None:
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            connection.execute("drop table report_management")
+            connection.execute(
+                "create table report_management (draft_id text primary key, "
+                "status text not null default 'open', note text not null default '', "
+                "deleted_at text, "
+                "updated_by integer not null, updated_at text not null default CURRENT_TIMESTAMP)"
+            )
+            connection.execute(
+                "insert into report_management(draft_id,note,updated_by) "
+                "values('draft_ai','舊備註',123)"
+            )
+        client = create_app().test_client()
+        with client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 123
+            session["logout_token"] = "csrf"
+        path = "/reports/draft_ai/manage"
+        base = {"status": "in_progress", "note": "舊備註", "token": "csrf"}
+        for bad in [
+            "javascript:alert(1)",
+            "https://github.com.evil.test/a/b/pull/1",
+            "https://github.com/a/b/issues/1",
+            "https://github.com/a/b/pull/1?x=1",
+            "http://github.com/a/b/pull/1",
+        ]:
+            self.assertEqual(
+                400, client.post(path, data={**base, "fix_pr": bad}, base_url=ORIGIN).status_code
+            )
+        self.assertEqual(
+            400,
+            client.post(path, data={**base, "fix_version": "x" * 81}, base_url=ORIGIN).status_code,
+        )
+        pr = "https://github.com/HeiTang/Remindly/pull/123"
+        self.assertEqual(
+            303,
+            client.post(
+                path, data={**base, "fix_pr": pr, "fix_version": "v0.6.1"}, base_url=ORIGIN
+            ).status_code,
+        )
+        detail = client.get("/reports/draft_ai", base_url=ORIGIN).text
+        self.assertIn('href="' + pr + '"', detail)
+        self.assertIn('value="v0.6.1"', detail)
+        for action, extra in [("status", {"status": "resolved"}), ("delete", {}), ("restore", {})]:
+            self.assertEqual(
+                303,
+                client.post(
+                    "/reports/batch",
+                    data={"action": action, "id": "draft_ai", "token": "csrf", **extra},
+                    base_url=ORIGIN,
+                ).status_code,
+            )
+        exported = client.get("/exports/reports.md?id=draft_ai", base_url=ORIGIN).text
+        self.assertIn(pr, exported)
+        self.assertIn('"修復版本": "v0.6.1"', exported)
+        self.assertIn("舊備註", exported)
+        self.assertNotIn("reporter_demo", exported)
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            self.assertEqual(
+                (pr, "v0.6.1", "resolved"),
+                connection.execute(
+                    "select fix_pr,fix_version,status from report_management "
+                    "where draft_id='draft_ai'"
+                ).fetchone(),
+            )
+        self.assertEqual(303, client.post(path, data=base, base_url=ORIGIN).status_code)
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            self.assertEqual(
+                ("", ""),
+                connection.execute(
+                    "select fix_pr,fix_version from report_management where draft_id='draft_ai'"
+                ).fetchone(),
+            )
+
     def test_manage_maintainers_and_revoke_active_session(self) -> None:
         with self.client.session_transaction(base_url=ORIGIN) as session:
             session["telegram_user_id"] = 123

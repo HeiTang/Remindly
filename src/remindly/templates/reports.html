@@ -359,6 +359,8 @@
               <p>這筆回報已移到回收區。</p>
               <p>狀態：{{ statuses[report.status] }}</p>
               <p class="report-note">{{ report.note or '未填寫備註。' }}</p>
+              <p>修復版本：{{ report.fix_version or '未填寫' }}</p>
+              {% if report.fix_pr %}<a href="{{ report.fix_pr }}" target="_blank" rel="noopener noreferrer">開啟修復 PR</a>{% endif %}
               {% if g.is_admin %}<a class="button button-secondary" href="{{ url_for('batch_reports', action='restore', id=report.draft_id) }}">還原回報</a>{% endif %}
             </div>
             {% else %}
@@ -370,6 +372,14 @@
               <label class="filter-field" for="report-note">維護者備註（最多 2,000 字）
                 <textarea id="report-note" name="note" rows="6" maxlength="2000">{{ report.note }}</textarea>
               </label>
+              <label class="filter-field" for="fix-pr">修復 PR（選填）
+                <input id="fix-pr" name="fix_pr" type="url" maxlength="500" value="{{ report.fix_pr }}" placeholder="https://github.com/HeiTang/Remindly/pull/123" aria-describedby="fix-help">
+              </label>
+              <label class="filter-field" for="fix-version">修復版本（選填）
+                <input id="fix-version" name="fix_version" maxlength="80" value="{{ report.fix_version }}" placeholder="例如：v0.6.1">
+              </label>
+              <p id="fix-help" class="muted">填入 GitHub PR 網址及修復版本；只記錄關聯，不會自動改為已解決。</p>
+              {% if report.fix_pr %}<a href="{{ report.fix_pr }}" target="_blank" rel="noopener noreferrer">開啟修復 PR</a>{% endif %}
               {% if report.updated_at %}<p class="muted">最後更新：{{ report.updated_at }} UTC</p>{% endif %}
               <button class="button button-primary" type="submit">儲存處理紀錄</button>
               {% if g.is_admin %}<a class="button button-quiet" href="{{ url_for('batch_reports', action='delete', id=report.draft_id) }}">刪除此回報</a>{% endif %}

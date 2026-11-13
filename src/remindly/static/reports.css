@@ -272,7 +272,7 @@ h3 + .metadata { margin-top: .65rem; }
 }
 
 .management-form { display: grid; gap: 1rem; }
-.management-form textarea {
+.management-form textarea, .management-form input:not([type="hidden"]) {
   width: 100%; min-width: 0; resize: vertical; padding: .7rem;
   font: inherit; line-height: 1.6; color: var(--text);
   background: var(--surface); border: 1px solid var(--border); border-radius: .5rem;
