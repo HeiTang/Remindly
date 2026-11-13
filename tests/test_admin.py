@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import time
 import unittest
+from html import unescape
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
@@ -501,6 +503,77 @@ class AdminTest(unittest.TestCase):
                     "select fix_pr,fix_version from report_management where draft_id='draft_ai'"
                 ).fetchone(),
             )
+
+    def test_content_search_is_literal_and_preserves_filters_and_pagination(self) -> None:
+        with self.client.session_transaction(base_url=ORIGIN) as session:
+            session["telegram_user_id"] = 123
+        with sqlite3.connect(os.environ["DATABASE_PATH"]) as connection:
+            connection.execute(
+                "update reminder_parse_reports set attachment_json=?, expected_result=? "
+                "where draft_id='draft_ai'",
+                (
+                    json.dumps({"source_text": "Test %_ 原句文字", "title": "解析事項"}),
+                    "每週六下午三點",
+                ),
+            )
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            connection.execute(
+                "insert into report_management(draft_id,status,note,updated_by) "
+                "values('draft_ai','resolved','修復時區問題',123)"
+            )
+        for query in ["test", "%_", "原句文字", "解析事項", "每週六", "時區問題"]:
+            with self.subTest(query=query):
+                page = self.client.get(
+                    "/", query_string={"q": query, "status": "resolved"}, base_url=ORIGIN
+                )
+                self.assertEqual(200, page.status_code)
+                self.assertIn("/reports/draft_ai", page.text)
+                self.assertNotIn("/reports/draft_rules", page.text)
+                self.assertIn("q=", page.text)
+        for query in ["source_text", "' OR 1=1 --"]:
+            self.assertNotIn(
+                'href="/reports/draft_ai',
+                self.client.get("/", query_string={"q": query}, base_url=ORIGIN).text,
+            )
+        escaped = self.client.get("/", query_string={"q": "<script>"}, base_url=ORIGIN).text
+        self.assertIn('value="&lt;script&gt;"', escaped)
+        self.assertNotIn('value="<script>"', escaped)
+        self.assertEqual(
+            400, self.client.get("/", query_string={"q": "字" * 201}, base_url=ORIGIN).status_code
+        )
+        detail = self.client.get(
+            "/reports/draft_ai",
+            query_string={"q": "時區問題", "status": "resolved"},
+            base_url=ORIGIN,
+        ).text
+        self.assertIn("q=", detail)
+        self.assertIn("status=resolved", detail)
+        with sqlite3.connect(os.environ["ADMIN_DATABASE_PATH"]) as connection:
+            connection.execute(
+                "update report_management set deleted_at='2026-11-13' where draft_id='draft_ai'"
+            )
+        self.assertNotIn(
+            'href="/reports/draft_ai',
+            self.client.get("/", query_string={"q": "時區問題"}, base_url=ORIGIN).text,
+        )
+        self.assertIn(
+            "/reports/draft_ai",
+            self.client.get(
+                "/", query_string={"q": "時區問題", "trash": "1"}, base_url=ORIGIN
+            ).text,
+        )
+        with sqlite3.connect(os.environ["DATABASE_PATH"]) as connection:
+            connection.executemany(
+                "insert into reminder_parse_reports "
+                "(draft_id,reported_at,reason,parser_source,bot_version,expected_result) "
+                "values(?, '2026-11-13', 'time', 'rules', '0.6.0', '分頁關鍵字')",
+                [(f"page_{index}",) for index in range(55)],
+            )
+        page = self.client.get("/", query_string={"q": "分頁關鍵字"}, base_url=ORIGIN)
+        next_url = unescape(re.search(r'href="([^"\n]+)">下一頁', page.text).group(1))
+        self.assertEqual(["分頁關鍵字"], parse_qs(urlsplit(next_url).query)["q"])
+        second = self.client.get(next_url, base_url=ORIGIN)
+        self.assertIn("本頁 5 筆", second.text)
 
     def test_manage_maintainers_and_revoke_active_session(self) -> None:
         with self.client.session_transaction(base_url=ORIGIN) as session:

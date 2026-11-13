@@ -398,11 +398,13 @@ def create_app() -> Flask:
     @app.get("/")
     def reports():
         filters = {name: request.args.get(name, "") for name in _FILTERS}
+        query = request.args.get("q", "").strip()
         if (
             filters["reason"] not in {"", *REPORT_REASONS}
             or filters["parser_source"] not in {"", *PARSER_SOURCES}
             or filters["status"] not in {"", *_REPORT_STATUSES}
             or filters["trash"] not in {"", "1"}
+            or len(query) > 200
             or any(len(value) > 128 for value in filters.values())
         ):
             abort(400)
@@ -416,6 +418,23 @@ def create_app() -> Flask:
         conditions.append(
             "m.deleted_at is not null" if filters["trash"] else "m.deleted_at is null"
         )
+        parameters = [value for name, value in active.items() if name != "trash"]
+        if query:
+            active["q"] = query
+            searchable = (
+                "json_extract(r.attachment_json, '$.source_text')",
+                "json_extract(r.attachment_json, '$.title')",
+                "r.expected_result",
+                "m.note",
+            )
+            conditions.append(
+                "("
+                + " or ".join(
+                    f"instr(lower(coalesce({column}, '')), lower(?)) > 0" for column in searchable
+                )
+                + ")"
+            )
+            parameters.extend([query] * len(searchable))
         where = " where " + " and ".join(conditions)
         with closing(read_database()) as connection:
             rows = connection.execute(
@@ -426,7 +445,7 @@ def create_app() -> Flask:
                 + where
                 + " order by r.reported_at desc, r.draft_id desc limit ? offset ?",
                 (
-                    *[value for name, value in active.items() if name != "trash"],
+                    *parameters,
                     _PAGE_SIZE + 1,
                     (page - 1) * _PAGE_SIZE,
                 ),
@@ -453,6 +472,7 @@ def create_app() -> Flask:
             models=models,
             versions=versions,
             filters=filters,
+            search_query=query,
             statuses=_REPORT_STATUSES,
             detail_query={**active, **({"page": page} if page > 1 else {})},
             page=page,
@@ -636,7 +656,7 @@ def create_app() -> Flask:
                 "reports",
                 **{
                     name: request.args[name]
-                    for name in (*_FILTERS, "page")
+                    for name in (*_FILTERS, "q", "page")
                     if request.args.get(name)
                 },
             ),

@@ -162,6 +162,9 @@
           {{ icon('filter') }} <h2 id="filter-heading">篩選回報</h2>
         </div>
         <form id="report-filters" class="filters" action="{{ url_for('reports') }}" method="get" aria-labelledby="filter-heading">
+          <label class="filter-field search-field" for="filter-query">搜尋回報內容
+            <input id="filter-query" name="q" type="search" maxlength="200" value="{{ search_query }}" placeholder="原句、解析事項、預期結果或維護者備註">
+          </label>
           {{ select_filter('status', '處理狀態', statuses, filters.status) }}
           <label class="filter-field" for="filter-trash">顯示範圍
             <span class="filter-control"><select id="filter-trash" name="trash">
@@ -175,7 +178,7 @@
           {{ select_filter('bot_version', 'Bot 版本', versions, filters.bot_version) }}
           <div class="filter-actions">
             <a class="button button-quiet" href="{{ url_for('reports') }}">清除</a>
-            <button class="button button-primary" type="submit">套用</button>
+            <button class="button button-primary" type="submit">搜尋</button>
           </div>
         </form>
       </section>
