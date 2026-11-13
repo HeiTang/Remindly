@@ -194,20 +194,29 @@
           <label class="selection-label"><input type="checkbox" data-select-all>全選本頁</label>
           <span class="selection-count" data-selected-count>已選 0 筆</span>
           <div class="export-actions">
-            {% if not filters.trash %}
-            <button class="button button-secondary" type="button" data-copy-reports disabled>複製所選</button>
-            <button class="button button-secondary" type="submit" data-download-reports disabled>下載 Markdown</button>
-            <button class="button button-secondary" type="submit" data-selection-action
-              formaction="{{ url_for('batch_reports') }}" name="action" value="status" disabled>修改所選狀態</button>
+            {% if not filters.trash or g.is_admin %}
+            <details class="action-menu" data-selection-menu hidden>
+              <summary class="button button-secondary" role="button" aria-disabled="true"> 批次處理 </summary>
+              <div class="action-menu-panel">
+                {% if not filters.trash %}
+                <button class="button button-quiet" type="submit" data-selection-action formaction="{{ url_for('batch_reports') }}" name="action" value="status" disabled> 修改狀態</button>
+                {% endif %}
+                {% if g.is_admin %}
+                <button class="button button-quiet" type="submit" data-selection-action formaction="{{ url_for('batch_reports') }}" name="action" value="{{ 'restore' if filters.trash else 'delete' }}" disabled> {{ '還原回報' if filters.trash else '移至回收區' }}</button>
+                {% endif %}
+              </div>
+            </details>
             {% endif %}
-            {% if g.is_admin %}
-            <button class="button button-secondary" type="submit" data-selection-action
-              formaction="{{ url_for('batch_reports') }}" name="action" value="{{ 'restore' if filters.trash else 'delete' }}" disabled>
-              {{ '還原所選' if filters.trash else '刪除所選' }}
-            </button>
+            {% if not filters.trash %}
+            <details class="action-menu" data-selection-menu hidden>
+              <summary class="button button-secondary" role="button" aria-disabled="true"> 匯出 </summary>
+              <div class="action-menu-panel">
+                <button class="button button-quiet" type="button" data-copy-reports disabled> 複製 Markdown</button>
+                <button class="button button-quiet" type="submit" data-download-reports disabled> 下載 Markdown</button>
+              </div>
+            </details>
             {% endif %}
           </div>
-          <p class="export-help">{% if filters.trash %}勾選後可還原回報，原狀態與備註會保留。{% else %}換頁或變更篩選會清除選取。匯出不含回報者欄位，原句與補充文字仍可能包含人名。{% endif %}</p>
           <p class="export-status" role="status" aria-live="polite" data-export-status></p>
           <div class="copy-fallback" data-copy-fallback hidden>
             <label for="export-text">無法自動複製，請選取下方文字手動複製，或下載 Markdown。</label>
@@ -310,7 +319,6 @@
         <form id="report-selection" class="detail-export" action="{{ url_for('export_reports') }}" method="get" data-report-export>
           <input type="hidden" name="id" value="{{ report.draft_id }}">
           <button class="button button-secondary" type="button" data-copy-reports>複製問題資料</button>
-          <p class="export-help">不含回報者欄位，原句與補充文字仍可能包含人名。</p>
           <p class="export-status" role="status" aria-live="polite" data-export-status></p>
           <div class="copy-fallback" data-copy-fallback hidden>
             <label for="export-text">無法自動複製，請選取下方文字手動複製。</label>

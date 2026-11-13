@@ -328,7 +328,7 @@ class AdminTest(unittest.TestCase):
         trash = self.client.get("/?trash=1&status=resolved", base_url=ORIGIN).text
         self.assertIn("/reports/draft_ai", trash)
         self.assertNotIn('href="/reports/draft_rules', trash)
-        self.assertIn("還原所選", trash)
+        self.assertIn("還原回報", trash)
         self.assertNotIn("data-copy-reports", trash)
         self.assertEqual(
             404, self.client.get("/exports/reports.md?id=draft_ai", base_url=ORIGIN).status_code
