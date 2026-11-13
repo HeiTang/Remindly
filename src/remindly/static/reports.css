@@ -304,5 +304,8 @@ h3 + .metadata { margin-top: .65rem; }
 
 .batch-heading { margin-top: .75rem; }
 
+.panel-header h2 { display: inline-flex; align-items: center; gap: .45rem; }
+.identity-pill .icon { width: .85rem; height: .85rem; }
+
 .advanced-filters summary::marker { content: ""; }
 .advanced-filters summary::-webkit-details-marker { display: none; }
