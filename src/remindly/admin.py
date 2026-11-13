@@ -554,7 +554,10 @@ def create_app() -> Flask:
                 management.execute("begin immediate")
             with closing(read_database()) as connection:
                 rows = connection.execute(
-                    "select r.draft_id, r.reason, m.deleted_at "
+                    "select r.draft_id, r.reason, m.deleted_at, "
+                    "coalesce(m.status, 'open') as status, "
+                    "coalesce(nullif(json_extract(r.attachment_json, '$.title'), ''), "
+                    "'未保存解析事項') as title "
                     + _REPORT_JOIN
                     + f"where r.draft_id in ({placeholders})",
                     ids,

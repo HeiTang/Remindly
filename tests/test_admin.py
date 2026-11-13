@@ -306,7 +306,7 @@ class AdminTest(unittest.TestCase):
         )
         self.assertEqual(200, confirm.status_code)
         self.assertIn("確認刪除", confirm.text)
-        self.assertIn("可隨時還原", confirm.text)
+        self.assertIn("可從回收區還原", confirm.text)
         self.assertIn("/reports/draft_ai", self.client.get("/", base_url=ORIGIN).text)
         self.assertEqual(
             403,

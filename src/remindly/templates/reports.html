@@ -283,27 +283,41 @@
         {% endif %}
       </section>
     {% elif screen == 'batch' %}
-      {% set action_label = {'restore':'還原', 'delete':'刪除', 'status':'修改狀態'}[action] %}
-      <h1>確認{{ action_label }}回報</h1>
-      <section class="panel panel-body management-form">
-        <p>{% if action == 'delete' %}將 {{ rows|length }} 筆回報移到回收區，可隨時還原；原始資料不會清除。{% elif action == 'restore' %}將 {{ rows|length }} 筆回報還原至一般列表，原狀態與備註保留。{% else %}將修改 {{ rows|length }} 筆回報的狀態，原備註與修復關聯保留。{% endif %}</p>
-        <ul>{% for row in rows %}<li>{{ reasons[row.reason] }} · <code>{{ row.draft_id }}</code></li>{% endfor %}</ul>
-        <form method="post" action="{{ url_for('batch_reports') }}">
-          <input type="hidden" name="token" value="{{ session.logout_token }}">
-          <input type="hidden" name="action" value="{{ action }}">
-          {% for row in rows %}<input type="hidden" name="id" value="{{ row.draft_id }}">{% endfor %}
-          {% if action == 'status' %}
-          <label class="filter-field" for="batch-status">新的處理狀態
-            <span class="filter-control"><select id="batch-status" name="status" required>
-              <option value="">請選擇狀態</option>
-              {% for value, label in statuses.items() %}<option value="{{ value }}"{% if target_status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select></span>
-          </label>
-          {% endif %}
-          <button class="button button-primary" type="submit">確認{{ action_label }}</button>
-          <a class="button button-quiet" href="{{ url_for('reports', trash='1' if action == 'restore' else '') }}">取消</a>
-        </form>
-      </section>
+      {% set action_label = {'restore':'還原回報', 'delete':'移至回收區', 'status':'批次修改狀態'}[action] %}
+      <a class="back-link" href="{{ url_for('reports', trash='1' if action == 'restore' else '') }}">{{ icon('back') }} 返回列表</a>
+      <div class="page-heading batch-heading">
+        <div class="eyebrow">批次處理 · {{ rows|length }} 筆回報</div>
+        <h1>{{ action_label }}</h1>
+        <p>{% if action == 'delete' %}原始資料與處理紀錄會保留，可從回收區還原。{% elif action == 'restore' %}回報將回到一般列表，原狀態與備註保留。{% else %}只更新處理狀態，原備註與修復 PR／版本不變。{% endif %}</p>
+      </div>
+      <form class="batch-layout" method="post" action="{{ url_for('batch_reports') }}">
+        <input type="hidden" name="token" value="{{ session.logout_token }}">
+        <input type="hidden" name="action" value="{{ action }}">
+        {% for row in rows %}<input type="hidden" name="id" value="{{ row.draft_id }}">{% endfor %}
+        <section class="panel" aria-labelledby="batch-selection-heading">
+          <div class="panel-header"><h2 id="batch-selection-heading">選取的回報 <span class="result-count">{{ rows|length }} 筆</span></h2></div>
+          <div class="batch-report-list">
+            {% for row in rows %}<div class="batch-report-item"><strong>{{ row.title }}</strong><div>{{ reasons[row.reason] }} · {{ statuses[row.status] }}</div><code>{{ row.draft_id }}</code></div>{% endfor %}
+          </div>
+        </section>
+        <section class="panel batch-decision" aria-labelledby="batch-decision-heading">
+          <div class="panel-header"><h2 id="batch-decision-heading">{{ '設定新狀態' if action == 'status' else '確認操作' }}</h2></div>
+          <div class="panel-body management-form">
+            {% if action == 'status' %}
+            <label class="filter-field" for="batch-status">套用至全部 {{ rows|length }} 筆回報
+              <span class="filter-control"><select id="batch-status" name="status" required>
+                <option value="">請選擇狀態</option>
+                {% for value, label in statuses.items() %}<option value="{{ value }}"{% if target_status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select></span>
+            </label>
+            {% else %}<p>確認將這 {{ rows|length }} 筆回報{{ '還原' if action == 'restore' else '移至回收區' }}？</p>{% endif %}
+            <div class="batch-confirm-actions">
+              <button class="button button-primary" type="submit"> {{ '套用狀態' if action == 'status' else ('確認還原' if action == 'restore' else '確認刪除') }}</button>
+              <a class="button button-quiet" href="{{ url_for('reports', trash='1' if action == 'restore' else '') }}"> 取消</a>
+            </div>
+          </div>
+        </section>
+      </form>
     {% else %}
       <a class="back-link" href="{{ list_url }}">{{ icon('back') }} 回到回報列表</a>
       <div class="page-heading detail-heading">
