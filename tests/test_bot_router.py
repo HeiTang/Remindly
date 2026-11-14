@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from dataclasses import dataclass, field
@@ -113,22 +114,39 @@ class BotRouterTest(unittest.TestCase):
             self.assertEqual(CHAT.id, client.messages[-1].chat_id)
             send_text(router, 4, start)
             click_button(router, 5, client.messages[-1], "時間錯了")
-            click_button(router, 6, client.messages[-1], "附上原句與結果")
-            self.assertIn("拿包裹", client.messages[-1].text)
-            click_button(router, 7, client.messages[-1], "移除附件")
             preview = client.messages[-1]
-            self.assertNotIn("拿包裹", preview.text)
+            self.assertIn("拿包裹", preview.text)
+            self.assertIn("原句：", preview.text)
+            self.assertIn("解析時間：", preview.text)
+            self.assertIn("重複設定：", preview.text)
+            self.assertIn("解析當下：", preview.text)
+            self.assertIn("回報會包含以下原句與解析結果", preview.text)
             self.assertIn("Telegram user ID：7", preview.text)
             self.assertIn("Telegram @username：@orange", preview.text)
             self.assertIn("送出時會記錄", preview.text)
-            self.assertIn("維護者可在回報詳情查看", preview.text)
-            legacy_button = preview.reply_markup["inline_keyboard"][-1][-1]
-            legacy_button["callback_data"] = legacy_button["callback_data"].replace(
-                "report:send_id:", "report:send:", 1
+            self.assertEqual(
+                ["補充預期結果", "返回", "送出回報"],
+                [
+                    button["text"]
+                    for row in preview.reply_markup["inline_keyboard"]
+                    for button in row
+                ],
             )
-            click_button(router, 8, preview, "送出回報")
-            preview = client.messages[-1]
-            self.assertIn("維護者可在回報詳情查看", preview.text)
+            for update_id, action in [(6, "send"), (7, "send_id")]:
+                legacy_button = preview.reply_markup["inline_keyboard"][-1][-1]
+                target = legacy_button["callback_data"].split(":", 3)[2]
+                legacy_button["callback_data"] = f"report:{action}:{target}:time,0"
+                click_button(router, update_id, preview, "送出回報")
+                preview = client.messages[-1]
+                self.assertIn("原句：", preview.text)
+                self.assertIn("維護者可在回報詳情查看", preview.text)
+                with repository.connect() as connection:
+                    self.assertEqual(
+                        0,
+                        connection.execute(
+                            "select count(*) from reminder_parse_reports"
+                        ).fetchone()[0],
+                    )
             click_button(router, 9, preview, "送出回報", user=TelegramUser(8, "Other"))
             with repository.connect() as connection:
                 self.assertEqual(
@@ -147,9 +165,26 @@ class BotRouterTest(unittest.TestCase):
                     "select reason, parser_source, attachment_json, "
                     "reporter_user_id, reporter_username from reminder_parse_reports"
                 ).fetchall()
-            self.assertEqual([("time", "rules", None, 7, "orange")], [tuple(row) for row in rows])
+            self.assertEqual(1, len(rows))
+            self.assertEqual(
+                ("time", "rules", 7, "orange"),
+                (
+                    rows[0]["reason"],
+                    rows[0]["parser_source"],
+                    rows[0]["reporter_user_id"],
+                    rows[0]["reporter_username"],
+                ),
+            )
+            attachment = json.loads(rows[0]["attachment_json"])
+            self.assertIn("拿包裹", attachment["source_text"])
+            self.assertEqual("拿包裹", attachment["title"])
+            self.assertEqual("無", attachment["recurrence"])
+            self.assertTrue(attachment["remind_at"])
+            self.assertTrue(attachment["participants"])
+            self.assertTrue(attachment["timezone"])
+            self.assertTrue(attachment["parsed_at"])
 
-    def test_report_rejects_old_preview_after_draft_changes_and_saves_opt_in(self) -> None:
+    def test_report_rejects_old_preview_after_draft_changes_and_always_saves_context(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FakeTelegramClient()
             repository = ReminderRepository(Path(directory) / "test.db")
@@ -169,9 +204,8 @@ class BotRouterTest(unittest.TestCase):
 
             start = "/start " + revised_card.text.split("?start=", 1)[1].split('"', 1)[0]
             send_text(router, 6, start)
-            click_button(router, 7, client.messages[-1], "時間錯了")
             no_username = TelegramUser(USER.id, USER.first_name)
-            click_button(router, 8, client.messages[-1], "附上原句與結果", user=no_username)
+            click_button(router, 7, client.messages[-1], "時間錯了", user=no_username)
             self.assertIn("Telegram @username：未設定", client.messages[-1].text)
             click_button(router, 9, client.messages[-1], "送出回報", user=no_username)
             with repository.connect() as connection:
@@ -185,6 +219,137 @@ class BotRouterTest(unittest.TestCase):
             self.assertIn('"parsed_at"', rows[0]["attachment_json"])
             self.assertEqual(USER.id, rows[0]["reporter_user_id"])
             self.assertIsNone(rows[0]["reporter_username"])
+
+    def test_report_expected_result_preview_edit_remove_and_submit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository, reports=True)
+            send_text(router, 1, "@ReminderBot 明天下午三點提醒我拿包裹", chat=GROUP_CHAT)
+            card = client.messages[-1]
+            start = "/start " + card.text.split("?start=", 1)[1].split('"', 1)[0]
+            send_text(router, 2, start)
+            draft_id, revision = start.removeprefix("/start report_").rsplit("_", 1)
+            for invalid in ["", "   ", "字" * 501]:
+                self.assertIsNone(
+                    ReportStore(repository).submit(
+                        draft_id,
+                        revision,
+                        USER.id,
+                        datetime.now(ZoneInfo("Asia/Taipei")),
+                        reporter_username=USER.username,
+                        reason="recurrence",
+                        expected_result=invalid,
+                    )
+                )
+            click_button(router, 3, client.messages[-1], "重複設定錯了")
+            self.assertIn("使用者未提供預期結果", client.messages[-1].text)
+            click_button(router, 4, client.messages[-1], "補充預期結果")
+            self.assertIn("你希望如何重複", client.messages[-1].text)
+            send_text(router, 5, "   ")
+            self.assertIn("1～500", client.messages[-1].text)
+            send_text(router, 6, "字" * 501)
+            self.assertIn("不會自動截短", client.messages[-1].text)
+            send_text(router, 7, "字" * 500)
+            preview = client.messages[-1]
+            self.assertIn("字" * 500, preview.text)
+            click_button(router, 8, preview, "修改預期結果")
+            click_button(router, 9, client.messages[-1], "取消補充")
+            self.assertIn("字" * 500, client.messages[-1].text)
+            click_button(router, 10, client.messages[-1], "修改預期結果")
+            send_text(router, 11, "每週五下午三點")
+            edited = client.messages[-1]
+            self.assertIn("每週五下午三點", edited.text)
+            click_button(router, 12, preview, "送出回報")
+            self.assertIn("預覽已更新", client.callback_answers[-1])
+            click_button(router, 13, edited, "移除預期結果", user=TelegramUser(8, "Other"))
+            self.assertIn("不是草稿建立者", client.callback_answers[-1])
+            click_button(router, 14, edited, "移除預期結果")
+            self.assertIn("使用者未提供預期結果", client.messages[-1].text)
+            without_expected = client.messages[-1]
+            click_button(router, 15, edited, "送出回報")
+            self.assertIn("預覽已更新", client.callback_answers[-1])
+            click_button(router, 16, without_expected, "補充預期結果")
+            expected = "每週六下午三點\n<script>內容是資料</script>\n```"
+            send_text(router, 17, expected)
+            with repository.connect() as connection:
+                self.assertEqual(
+                    0,
+                    connection.execute("select count(*) from reminder_parse_reports").fetchone()[0],
+                )
+            click_button(router, 18, client.messages[-1], "送出回報")
+            with repository.connect() as connection:
+                row = connection.execute(
+                    "select expected_result, attachment_json from reminder_parse_reports"
+                ).fetchone()
+            self.assertEqual(expected, row["expected_result"])
+            attachment = json.loads(row["attachment_json"])
+            self.assertEqual("無", attachment["recurrence"])
+            self.assertIn("拿包裹", attachment["source_text"])
+            self.assertEqual([], repository.list_pending(GROUP_CHAT.id))
+
+    def test_report_expected_result_rejects_changed_draft_and_expired_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository, reports=True)
+            send_text(router, 1, "@ReminderBot 明天下午三點提醒我拿包裹", chat=GROUP_CHAT)
+            card = client.messages[-1]
+            start = "/start " + card.text.split("?start=", 1)[1].split('"', 1)[0]
+            send_text(router, 2, start)
+            click_button(router, 3, client.messages[-1], "時間錯了")
+            click_button(router, 4, client.messages[-1], "補充預期結果")
+            send_text(router, 5, "改成下午四點", chat=GROUP_CHAT)
+            send_text(router, 6, "希望五點")
+            self.assertIn("確認卡已失效", client.messages[-1].text)
+            with repository.connect() as connection:
+                self.assertEqual(
+                    0,
+                    connection.execute("select count(*) from reminder_parse_reports").fetchone()[0],
+                )
+
+    def test_report_expected_result_long_unicode_preview_and_expired_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeTelegramClient()
+            repository = ReminderRepository(Path(directory) / "test.db")
+            router = build_router(client, repository, reports=True)
+            actor = TelegramUser(USER.id, "😀" * 250)
+            send_text(
+                router,
+                1,
+                "@ReminderBot 明天下午三點提醒我倒垃圾" + "😀" * 1500,
+                chat=GROUP_CHAT,
+                user=actor,
+            )
+            with repository.connect() as connection:
+                connection.execute("update reminder_drafts set title=?", ("😀" * 500,))
+            card = client.messages[-1]
+            start = "/start " + card.text.split("?start=", 1)[1].split('"', 1)[0]
+            send_text(router, 2, start, user=actor)
+            click_button(router, 3, client.messages[-1], "事項錯了", user=actor)
+            click_button(router, 4, client.messages[-1], "補充預期結果", user=actor)
+            before = len(client.messages)
+            send_text(router, 5, "😀" * 500, user=actor)
+            chunks = client.messages[before:]
+            self.assertGreater(len(chunks), 1)
+            self.assertTrue(all(len(chunk.text.encode("utf-16-le")) <= 8192 for chunk in chunks))
+            self.assertIn("😀" * 500, "".join(chunk.text for chunk in chunks))
+            self.assertFalse(chunks[0].reply_markup["inline_keyboard"])
+            preview = client.messages[-1]
+            click_button(router, 6, preview, "修改預期結果", user=actor)
+            router._reports._sessions[USER.id].expires_at = datetime.now(
+                ZoneInfo("Asia/Taipei")
+            ) - timedelta(seconds=1)
+            send_text(router, 7, "明天下午三點提醒我測試", user=actor)
+            self.assertIn("確認卡已失效", client.messages[-1].text)
+            with repository.connect() as connection:
+                self.assertEqual(
+                    0,
+                    connection.execute("select count(*) from reminder_parse_reports").fetchone()[0],
+                )
+                self.assertEqual(
+                    1, connection.execute("select count(*) from reminder_drafts").fetchone()[0]
+                )
 
     def test_group_plain_text_reminder_request_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -2,7 +2,7 @@ const exportForm = document.querySelector('[data-report-export]');
 
 if (exportForm) {
   const copyButton = exportForm.querySelector('[data-copy-reports]');
-  const downloadButton = exportForm.querySelector('button[type="submit"]');
+  const downloadButton = exportForm.querySelector('[data-download-reports]');
   const selectAll = exportForm.querySelector('[data-select-all]');
   const count = exportForm.querySelector('[data-selected-count]');
   const status = exportForm.querySelector('[data-export-status]');
@@ -21,9 +21,45 @@ if (exportForm) {
       selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
     }
     const empty = !new FormData(exportForm).getAll('id').length;
-    copyButton.disabled = copying || empty;
+    if (copyButton) copyButton.disabled = copying || empty;
+    for (const button of exportForm.querySelectorAll('[data-selection-action]')) {
+      button.disabled = empty;
+    }
     if (downloadButton) downloadButton.disabled = empty;
+    for (const menu of exportForm.querySelectorAll('[data-selection-menu]')) {
+      menu.hidden = empty;
+      menu.querySelector('summary').setAttribute('aria-disabled', String(empty));
+      if (empty) menu.open = false;
+    }
   };
+
+  for (const menu of exportForm.querySelectorAll('[data-selection-menu]')) {
+    menu.querySelector('summary').addEventListener('click', (event) => {
+      if (menu.querySelector('summary').getAttribute('aria-disabled') === 'true') {
+        event.preventDefault();
+      } else {
+        for (const other of exportForm.querySelectorAll('[data-selection-menu]')) {
+          if (other !== menu) other.open = false;
+        }
+      }
+    });
+    menu.addEventListener('click', (event) => {
+      if (event.target.closest('button')) menu.open = false;
+    });
+  }
+
+  document.addEventListener('click', (event) => {
+    for (const menu of exportForm.querySelectorAll('[data-selection-menu]')) {
+      if (!menu.contains(event.target)) menu.open = false;
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    for (const menu of exportForm.querySelectorAll('[data-selection-menu][open]')) {
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    }
+  });
 
   const clearFeedback = () => {
     status.textContent = '';
@@ -43,7 +79,7 @@ if (exportForm) {
     clearFeedback();
   });
 
-  copyButton.addEventListener('click', async () => {
+  copyButton?.addEventListener('click', async () => {
     const ids = new FormData(exportForm).getAll('id');
     if (!ids.length || copying) return;
     copying = true;
@@ -51,7 +87,7 @@ if (exportForm) {
     status.textContent = '正在準備問題資料…';
     updateSelection();
     try {
-      const url = new URL(exportForm.action);
+      const url = new URL(exportForm.getAttribute('action'), window.location.href);
       for (const id of ids) url.searchParams.append('id', id);
       const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok || !response.headers.get('Content-Type')?.startsWith('text/markdown')) {

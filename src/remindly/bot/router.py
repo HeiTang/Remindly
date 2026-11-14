@@ -80,6 +80,8 @@ class BotRouter:
         text = strip_bot_mention(message.text, self._bot_username)
         if self._reports and self._reports.handle_start(message, text, self._bot_username, now):
             return
+        if self._reports and self._reports.handle_text(message, now):
+            return
         if self._ai_commands is not None and self._ai_commands.handle(message):
             return
         self._reminder_service.record_message_context(message, now)
