@@ -12,6 +12,46 @@
   <path d="M19 12H5m6-6-6 6 6 6"/>
   {% elif name == 'attachment' %}
   <path d="m20 11-8 8a4 4 0 0 1-6-6l8-8a2.8 2.8 0 0 1 4 4l-8 8a1.4 1.4 0 0 1-2-2l7-7"/>
+  {% elif name == 'batch' %}
+  <rect x="4" y="4" width="12" height="12" rx="2"/><path d="M8 20h10a2 2 0 0 0 2-2V8M7 10l2 2 4-4"/>
+  {% elif name == 'export' %}
+  <path d="M12 15V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>
+  {% elif name == 'chevron-down' %}
+  <path d="m6 9 6 6 6-6"/>
+  {% elif name == 'status' %}
+  <circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>
+  {% elif name == 'copy' %}
+  <rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
+  {% elif name == 'download' %}
+  <path d="M12 3v12m-4-4 4 4 4-4M5 16v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>
+  {% elif name == 'trash' %}
+  <path d="M3 6h18M9 6V3h6v3M5 6l1 14h12l1-14M10 10v6m4-6v6"/>
+  {% elif name == 'restore' %}
+  <path d="M3 10a9 9 0 1 1 2 8M3 4v6h6M12 7v5l3 2"/>
+  {% elif name == 'search' %}
+  <circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>
+  {% elif name == 'clear' %}
+  <path d="m8 3 11 11-7 7H7l-4-4L14 6M6 14l7 7m-1 0h9"/>
+  {% elif name == 'save' %}
+  <path d="M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8"/>
+  {% elif name == 'external' %}
+  <path d="M14 3h7v7m0-7L10 14M10 3H3v18h18v-7"/>
+  {% elif name == 'cancel' %}
+  <path d="m6 6 12 12M6 18 18 6"/>
+  {% elif name == 'edit' %}
+  <path d="m15 4 5 5M4 20l5-1L21 7l-5-5L4 14v6Z"/>
+  {% elif name == 'user' %}
+  <circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
+  {% elif name == 'user-add' %}
+  <circle cx="9" cy="7" r="4"/><path d="M2 21v-2a7 7 0 0 1 12-5M19 12v8m-4-4h8"/>
+  {% elif name == 'record' %}
+  <path d="M5 3h14v18H5V3Zm4 5h6m-6 4h6m-6 4h4"/>
+  {% elif name == 'expected' %}
+  <path d="M3 4h18v13H9l-6 4V4Zm4 5h10m-10 4h6"/>
+  {% elif name == 'open' %}
+  <circle cx="12" cy="12" r="9"/>
+  {% elif name == 'in_progress' %}
+  <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
   {% elif name == 'logout' %}
   <path d="M11 5H5v14h6m-1-7h10m-4-4 4 4-4 4"/>
   {% endif %}
@@ -65,7 +105,7 @@
       {% if screen in ('list', 'detail', 'maintainers') %}
       <nav class="header-nav" aria-label="維護後台">
         <a class="workspace-link" href="{{ url_for('reports') }}"{% if screen == 'list' %} aria-current="page"{% endif %}>{{ icon('inbox') }} 回報中心</a>
-        {% if g.is_admin %}<a class="workspace-link" href="{{ url_for('maintainers') }}"{% if screen == 'maintainers' %} aria-current="page"{% endif %}>人員權限</a>{% endif %}
+        {% if g.is_admin %}<a class="workspace-link" href="{{ url_for('maintainers') }}"{% if screen == 'maintainers' %} aria-current="page"{% endif %}>{{ icon('user') }} 人員權限</a>{% endif %}
         <form action="{{ url_for('logout') }}" method="post">
           <input type="hidden" name="token" value="{{ session.logout_token }}">
           <button class="button button-quiet" type="submit">{{ icon('logout') }} 登出</button>
@@ -75,6 +115,7 @@
     </div>
   </header>
   <main id="main" class="shell">
+    {% for notice in get_flashed_messages() %}<p class="panel panel-body save-notice" role="status">{{ notice }}</p>{% endfor %}
     {% if screen == 'login' or screen == 'error' %}
       <section class="panel login">
         <span class="feature-icon">{{ icon('inbox') }}</span>
@@ -102,7 +143,7 @@
           <label class="filter-field" for="member-note">備註名稱（選填）
             <input id="member-note" name="note" maxlength="80" placeholder="例如：小橘／Bot 共同維護者">
           </label>
-          <button class="button button-primary" type="submit">新增維護者</button>
+          <button class="button button-primary" type="submit">{{ icon('user-add') }} 新增維護者</button>
         </form>
         <p id="member-help" class="muted">備註由管理者填寫；Telegram 名稱與帳號會在本人登入後取得，之後每次登入更新。權限仍依數字 ID 判斷。</p>
         {% if message %}<p id="member-error" role="alert">{{ message }}</p>{% endif %}
@@ -118,13 +159,13 @@
             {% if member.note %}<p class="muted">管理者備註：{{ member.note }}</p>{% endif %}
             <p class="muted">由 {{ (grantor.display_name if grantor else '') or '管理者' }}（{{ member.added_by }}）新增 · {{ member.added_at }} UTC</p>
             <details class="member-note-editor">
-              <summary>編輯備註</summary>
+              <summary>{{ icon('edit') }} 編輯備註</summary>
               <form class="member-form" action="{{ url_for('update_maintainer_note', user_id=member.user_id) }}" method="post">
                 <input type="hidden" name="token" value="{{ session.logout_token }}">
                 <label class="filter-field" for="note-{{ member.user_id }}">備註名稱（選填）
                   <input id="note-{{ member.user_id }}" name="note" maxlength="80" value="{{ member.note }}">
                 </label>
-                <button class="button button-secondary" type="submit">儲存備註</button>
+                <button class="button button-secondary" type="submit">{{ icon('save') }} 儲存備註</button>
               </form>
             </details>
           </div>
@@ -134,8 +175,8 @@
         <form class="remove-confirm" action="{{ url_for('remove_maintainer', user_id=member.user_id) }}" method="post">
           <input type="hidden" name="token" value="{{ session.logout_token }}">
           <p>確定移除 {{ (profile.display_name if profile else '') or member.note or '未命名帳號' }}（ID {{ member.user_id }}）？此帳號將無法再查閱回報。</p>
-          <button class="button button-primary" type="submit">確認移除</button>
-          <a class="button button-quiet" href="{{ url_for('maintainers') }}">取消</a>
+          <button class="button button-primary" type="submit">{{ icon('trash') }} 確認移除</button>
+          <a class="button button-quiet" href="{{ url_for('maintainers') }}">{{ icon('cancel') }} 取消</a>
         </form>
         {% endif %}
         {% else %}<div class="empty-state"><p>還沒有維護者。管理者仍可查閱回報。</p></div>{% endfor %}
@@ -161,31 +202,61 @@
           {{ icon('filter') }} <h2 id="filter-heading">篩選回報</h2>
         </div>
         <form id="report-filters" class="filters" action="{{ url_for('reports') }}" method="get" aria-labelledby="filter-heading">
+          <label class="filter-field search-field" for="filter-query">搜尋回報內容
+            <input id="filter-query" name="q" type="search" maxlength="200" value="{{ search_query }}" placeholder="原句、解析事項、預期結果或維護者備註">
+          </label>
+          {{ select_filter('status', '處理狀態', statuses, filters.status) }}
+          <input type="hidden" name="trash" value="{{ filters.trash }}">
           {{ select_filter('reason', '原因', reasons, filters.reason) }}
+          <div class="filter-actions">
+            <a class="button button-quiet" href="{{ url_for('reports') }}">{{ icon('clear') }} 清除</a>
+            <button class="button button-primary" type="submit">{{ icon('search') }} 搜尋</button>
+          </div>
+          {% set advanced_count = [filters.parser_source, filters.model, filters.bot_version]|select|list|length %}
+          <details class="advanced-filters" id="advanced-filters"{% if advanced_count %} open{% endif %}>
+            <summary>{{ icon('filter') }} 進階篩選{% if advanced_count %} · {{ advanced_count }} 個條件{% endif %}</summary>
+            <div class="advanced-filter-fields">
           {{ select_filter('parser_source', '解析來源', sources, filters.parser_source) }}
           {{ select_filter('model', '模型', models, filters.model) }}
           {{ select_filter('bot_version', 'Bot 版本', versions, filters.bot_version) }}
-          <div class="filter-actions">
-            <a class="button button-quiet" href="{{ url_for('reports') }}">清除</a>
-            <button class="button button-primary" type="submit">套用</button>
-          </div>
+            </div>
+          </details>
         </form>
       </section>
 
       <section class="panel report-panel" aria-labelledby="list-heading">
         <div class="panel-header">
-          <h2 id="list-heading">回報列表 <span class="result-count">本頁 {{ rows|length }} 筆</span></h2>
-          <span class="list-order">依回報時間排序</span>
+          <h2 id="list-heading">{{ '回收區' if filters.trash else '回報列表' }} <span class="result-count">本頁 {{ rows|length }} 筆</span></h2>
+          <a class="button button-quiet" href="{{ url_for('reports', **dict(detail_query, trash='' if filters.trash else '1', page=1)) }}">{{ icon('inbox' if filters.trash else 'trash') }} {{ '返回一般回報' if filters.trash else '回收區' }}</a>
         </div>
         {% if rows %}
         <form id="report-selection" class="export-toolbar" action="{{ url_for('export_reports') }}" method="get" data-report-export>
           <label class="selection-label"><input type="checkbox" data-select-all>全選本頁</label>
           <span class="selection-count" data-selected-count>已選 0 筆</span>
           <div class="export-actions">
-            <button class="button button-secondary" type="button" data-copy-reports disabled>複製所選</button>
-            <button class="button button-secondary" type="submit" disabled>下載 Markdown</button>
+            {% if not filters.trash or g.is_admin %}
+            <details class="action-menu" data-selection-menu hidden>
+              <summary class="button button-secondary" role="button" aria-disabled="true">{{ icon('batch') }} 批次處理 {{ icon('chevron-down') }}</summary>
+              <div class="action-menu-panel">
+                {% if not filters.trash %}
+                <button class="button button-quiet" type="submit" data-selection-action formaction="{{ url_for('batch_reports') }}" name="action" value="status" disabled>{{ icon('status') }} 修改狀態</button>
+                {% endif %}
+                {% if g.is_admin %}
+                <button class="button button-quiet" type="submit" data-selection-action formaction="{{ url_for('batch_reports') }}" name="action" value="{{ 'restore' if filters.trash else 'delete' }}" disabled>{{ icon('restore' if filters.trash else 'trash') }} {{ '還原回報' if filters.trash else '移至回收區' }}</button>
+                {% endif %}
+              </div>
+            </details>
+            {% endif %}
+            {% if not filters.trash %}
+            <details class="action-menu" data-selection-menu hidden>
+              <summary class="button button-secondary" role="button" aria-disabled="true">{{ icon('export') }} 匯出 {{ icon('chevron-down') }}</summary>
+              <div class="action-menu-panel">
+                <button class="button button-quiet" type="button" data-copy-reports disabled>{{ icon('copy') }} 複製 Markdown</button>
+                <button class="button button-quiet" type="submit" data-download-reports disabled>{{ icon('download') }} 下載 Markdown</button>
+              </div>
+            </details>
+            {% endif %}
           </div>
-          <p class="export-help">換頁或變更篩選會清除選取。匯出不含回報者欄位，原句仍可能包含人名。</p>
           <p class="export-status" role="status" aria-live="polite" data-export-status></p>
           <div class="copy-fallback" data-copy-fallback hidden>
             <label for="export-text">無法自動複製，請選取下方文字手動複製，或下載 Markdown。</label>
@@ -197,6 +268,7 @@
             <tr role="row">
               <th scope="col" role="columnheader">選取</th>
               <th scope="col" role="columnheader">回報原因</th>
+              <th scope="col" role="columnheader">狀態</th>
               <th scope="col" role="columnheader">解析來源／模型</th>
               <th scope="col" role="columnheader">回報時間 <span class="timezone">UTC</span></th>
               <th scope="col" role="columnheader">Bot 版本</th>
@@ -217,6 +289,10 @@
                   {{ reasons[row.reason] }} {{ icon('next') }}
                 </a>
               </td>
+              <td class="status-cell" role="cell">
+                <span class="identity-pill">{{ icon('status' if row.status == 'resolved' else row.status) }} {{ statuses[row.status] }}</span>
+                {% if row.note %}<small class="model-name">有備註</small>{% endif %}
+              </td>
               <td class="source-cell" role="cell">
                 {{ source_badge(row.parser_source) }}
                 {% if row.model %}<small class="model-name">{{ row.provider or '' }}{% if row.provider %} · {% endif %}{{ row.model }}</small>{% endif %}
@@ -235,17 +311,53 @@
         <div class="empty-state">
           <span class="feature-icon">{{ icon('inbox') }}</span>
           <p>目前沒有符合條件的回報。</p>
-          {% if detail_query %}<a class="button button-secondary" href="{{ url_for('reports') }}">清除篩選</a>{% endif %}
+          {% if detail_query %}<a class="button button-secondary" href="{{ url_for('reports') }}">{{ icon('clear') }} 清除篩選</a>{% endif %}
         </div>
         {% endif %}
         {% if previous or following %}
         <nav class="pagination" aria-label="回報分頁">
-          {% if previous %}<a class="button button-secondary" href="{{ previous }}">上一頁</a>{% endif %}
+          {% if previous %}<a class="button button-secondary" href="{{ previous }}">{{ icon('back') }} 上一頁</a>{% endif %}
           <span>第 {{ page }} 頁</span>
-          {% if following %}<a class="button button-secondary" href="{{ following }}">下一頁</a>{% endif %}
+          {% if following %}<a class="button button-secondary" href="{{ following }}">下一頁 {{ icon('next') }}</a>{% endif %}
         </nav>
         {% endif %}
       </section>
+    {% elif screen == 'batch' %}
+      {% set action_label = {'restore':'還原回報', 'delete':'移至回收區', 'status':'批次修改狀態'}[action] %}
+      <a class="back-link" href="{{ url_for('reports', trash='1' if action == 'restore' else '') }}">{{ icon('back') }} 返回列表</a>
+      <div class="page-heading batch-heading">
+        <div class="eyebrow">批次處理 · {{ rows|length }} 筆回報</div>
+        <h1>{{ action_label }}</h1>
+        <p>{% if action == 'delete' %}原始資料與處理紀錄會保留，可從回收區還原。{% elif action == 'restore' %}回報將回到一般列表，原狀態與備註保留。{% else %}只更新處理狀態，原備註與修復 PR／版本不變。{% endif %}</p>
+      </div>
+      <form class="batch-layout" method="post" action="{{ url_for('batch_reports') }}">
+        <input type="hidden" name="token" value="{{ session.logout_token }}">
+        <input type="hidden" name="action" value="{{ action }}">
+        {% for row in rows %}<input type="hidden" name="id" value="{{ row.draft_id }}">{% endfor %}
+        <section class="panel" aria-labelledby="batch-selection-heading">
+          <div class="panel-header"><h2 id="batch-selection-heading">選取的回報 <span class="result-count">{{ rows|length }} 筆</span></h2></div>
+          <div class="batch-report-list">
+            {% for row in rows %}<div class="batch-report-item"><strong>{{ row.title }}</strong><div>{{ reasons[row.reason] }} · {{ statuses[row.status] }}</div><code>{{ row.draft_id }}</code></div>{% endfor %}
+          </div>
+        </section>
+        <section class="panel batch-decision" aria-labelledby="batch-decision-heading">
+          <div class="panel-header"><h2 id="batch-decision-heading">{{ '設定新狀態' if action == 'status' else '確認操作' }}</h2></div>
+          <div class="panel-body management-form">
+            {% if action == 'status' %}
+            <label class="filter-field" for="batch-status">套用至全部 {{ rows|length }} 筆回報
+              <span class="filter-control"><select id="batch-status" name="status" required>
+                <option value="">請選擇狀態</option>
+                {% for value, label in statuses.items() %}<option value="{{ value }}"{% if target_status == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select></span>
+            </label>
+            {% else %}<p>確認將這 {{ rows|length }} 筆回報{{ '還原' if action == 'restore' else '移至回收區' }}？</p>{% endif %}
+            <div class="batch-confirm-actions">
+              <button class="button button-primary" type="submit">{{ icon('status' if action == 'status' else ('restore' if action == 'restore' else 'trash')) }} {{ '套用狀態' if action == 'status' else ('確認還原' if action == 'restore' else '確認刪除') }}</button>
+              <a class="button button-quiet" href="{{ url_for('reports', trash='1' if action == 'restore' else '') }}">{{ icon('cancel') }} 取消</a>
+            </div>
+          </div>
+        </section>
+      </form>
     {% else %}
       <a class="back-link" href="{{ list_url }}">{{ icon('back') }} 回到回報列表</a>
       <div class="page-heading detail-heading">
@@ -257,16 +369,17 @@
           <time datetime="{{ report.reported_at }}">{{ report.reported_at[:16]|replace('T', ' ') }} UTC</time>
         </div>
         </div>
+        {% if not report.deleted_at %}
         <form id="report-selection" class="detail-export" action="{{ url_for('export_reports') }}" method="get" data-report-export>
           <input type="hidden" name="id" value="{{ report.draft_id }}">
-          <button class="button button-secondary" type="button" data-copy-reports>複製問題資料</button>
-          <p class="export-help">不含回報者欄位，原句仍可能包含人名。</p>
+          <button class="button button-secondary" type="button" data-copy-reports>{{ icon('copy') }} 複製問題資料</button>
           <p class="export-status" role="status" aria-live="polite" data-export-status></p>
           <div class="copy-fallback" data-copy-fallback hidden>
             <label for="export-text">無法自動複製，請選取下方文字手動複製。</label>
             <textarea id="export-text" readonly rows="8"></textarea>
           </div>
         </form>
+        {% endif %}
       </div>
 
       <div class="detail-grid">
@@ -292,13 +405,55 @@
           {% else %}
           <div class="empty-state">
             <span class="feature-icon">{{ icon('attachment') }}</span>
-            <p>使用者未附上原句與解析結果。</p>
+            <p>這筆舊回報未保存原句與解析結果。</p>
           </div>
           {% endif %}
+          <div class="panel-header"><h2 id="expected-result-heading">{{ icon('expected') }} 使用者預期結果</h2></div>
+          <div class="panel-body">
+            {% if report.expected_result %}
+            <blockquote>{{ report.expected_result }}</blockquote>
+            {% else %}
+            <p>使用者未提供預期結果。</p>
+            {% endif %}
+          </div>
         </section>
         <div class="detail-sidebar">
+          <section class="panel" aria-labelledby="management-heading">
+            <div class="panel-header"><h2 id="management-heading">{{ icon('edit') }} 處理紀錄</h2></div>
+            {% if report.deleted_at %}
+            <div class="panel-body management-form">
+              <p>這筆回報已移到回收區。</p>
+              <p>狀態：{{ statuses[report.status] }}</p>
+              <p class="report-note">{{ report.note or '未填寫備註。' }}</p>
+              <p>修復版本：{{ report.fix_version or '未填寫' }}</p>
+              {% if report.fix_pr %}<a href="{{ report.fix_pr }}" target="_blank" rel="noopener noreferrer">{{ icon('external') }} 開啟修復 PR</a>{% endif %}
+              {% if g.is_admin %}<a class="button button-secondary" href="{{ url_for('batch_reports', action='restore', id=report.draft_id) }}">{{ icon('restore') }} 還原回報</a>{% endif %}
+            </div>
+            {% else %}
+            <form class="panel-body management-form" action="{{ url_for('update_report', draft_id=report.draft_id) }}" method="post">
+              <input type="hidden" name="token" value="{{ session.logout_token }}">
+              <label class="filter-field" for="report-status">處理狀態
+                <span class="filter-control"><select id="report-status" name="status">{% for value, label in statuses.items() %}<option value="{{ value }}"{% if value == report.status %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></span>
+              </label>
+              <label class="filter-field" for="report-note">維護者備註（最多 2,000 字）
+                <textarea id="report-note" name="note" rows="6" maxlength="2000">{{ report.note }}</textarea>
+              </label>
+              <label class="filter-field" for="fix-pr">修復 PR（選填）
+                <input id="fix-pr" name="fix_pr" type="url" maxlength="500" value="{{ report.fix_pr }}" placeholder="https://github.com/HeiTang/Remindly/pull/123" aria-describedby="fix-help">
+              </label>
+              <label class="filter-field" for="fix-version">修復版本（選填）
+                <input id="fix-version" name="fix_version" maxlength="80" value="{{ report.fix_version }}" placeholder="例如：v0.6.1">
+              </label>
+              <p id="fix-help" class="muted">填入 GitHub PR 網址及修復版本；只記錄關聯，不會自動改為已解決。</p>
+              {% if report.fix_pr %}<a href="{{ report.fix_pr }}" target="_blank" rel="noopener noreferrer">{{ icon('external') }} 開啟修復 PR</a>{% endif %}
+              {% if report.updated_at %}<p class="muted">最後更新：{{ report.updated_at }} UTC</p>{% endif %}
+              <button class="button button-primary" type="submit">{{ icon('save') }} 儲存處理紀錄</button>
+              {% if g.is_admin %}<a class="button button-quiet" href="{{ url_for('batch_reports', action='delete', id=report.draft_id) }}">{{ icon('trash') }} 刪除此回報</a>{% endif %}
+            </form>
+            {% endif %}
+          </section>
           <section class="panel" aria-labelledby="reporter-heading">
-            <div class="panel-header"><h2 id="reporter-heading">回報者</h2></div>
+            <div class="panel-header"><h2 id="reporter-heading">{{ icon('user') }} 回報者</h2></div>
             {% if report.reporter_user_id %}
             <dl class="metadata panel-body">
               <dt>Telegram user ID</dt><dd><code>{{ report.reporter_user_id }}</code></dd>
@@ -309,7 +464,7 @@
             {% endif %}
           </section>
           <section class="panel" aria-labelledby="summary-heading">
-            <div class="panel-header"><h2 id="summary-heading">解析紀錄</h2></div>
+            <div class="panel-header"><h2 id="summary-heading">{{ icon('record') }} 解析紀錄</h2></div>
             <dl class="metadata panel-body">
               <dt>供應商</dt><dd>{{ report.provider or '—' }}</dd>
               <dt>模型</dt><dd>{{ report.model or '—' }}</dd>
